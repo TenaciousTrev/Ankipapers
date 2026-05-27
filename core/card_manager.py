@@ -19,6 +19,158 @@ from .parser import (
 ANKIPAPERS_TAG = "AnkiPapers"
 ANKIPAPERS_FIELD = "AnkiPapers_Source"
 
+# Shared card styling — elegant, minimalistic, works in both Anki light & dark modes
+_ANKIPAPERS_CSS = """
+/* ─── Base Card ─────────────────────────────────── */
+.ankipapers-card {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 20px;
+  line-height: 1.65;
+  color: #1a1a2e;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 28px;
+  text-align: left;
+}
+
+/* ─── Context / Heading ─────────────────────────── */
+.ap-meta {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6c5ce7;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(108, 92, 231, 0.18);
+}
+
+/* ─── Question (Front) ──────────────────────────── */
+.ap-question {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: inherit;
+}
+
+/* ─── Answer (Back) ─────────────────────────────── */
+.ap-answer {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: #2d7d46;
+}
+
+/* ─── Cloze ─────────────────────────────────────── */
+.ap-cloze {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: inherit;
+}
+
+/* ─── Divider ───────────────────────────────────── */
+.ap-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(108, 92, 231, 0.35), transparent);
+  margin: 28px 0;
+  border: none;
+}
+
+/* ─── Direction Badge (Reversible) ──────────────── */
+.ap-direction {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6c5ce7;
+  background: rgba(108, 92, 231, 0.08);
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+
+/* ─── Footer & Jump Button ──────────────────────── */
+.ap-footer {
+  margin-top: 32px;
+  text-align: center;
+}
+.ap-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid rgba(108, 92, 231, 0.22);
+  border-radius: 8px;
+  color: #6c5ce7;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.ap-jump:hover {
+  background: rgba(108, 92, 231, 0.08);
+  border-color: #6c5ce7;
+}
+.ap-jump svg {
+  opacity: 0.7;
+}
+
+/* ─── Inline Elements ───────────────────────────── */
+b, strong { font-weight: 600; }
+i, em { font-style: italic; }
+code {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 0.82em;
+  background: rgba(108, 92, 231, 0.07);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #6c5ce7;
+}
+img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+/* ─── Markdown Table ────────────────────────────── */
+.ankipapers-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 16px;
+}
+.ankipapers-md-table th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 2px solid rgba(108, 92, 231, 0.25);
+  font-weight: 600;
+  color: #6c5ce7;
+}
+.ankipapers-md-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* ─── Dark Mode (Anki native .nightMode / .night_mode) ─── */
+.nightMode .ankipapers-card,
+.night_mode .ankipapers-card {
+  color: #e8e8f0;
+}
+.nightMode .ap-answer,
+.night_mode .ap-answer {
+  color: #6ecf8a;
+}
+.nightMode .ankipapers-md-table td,
+.night_mode .ankipapers-md-table td {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+"""
+
 _IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
@@ -242,129 +394,73 @@ def _ensure_basic_type(col):
 
         # Add template
         tmpl = col.models.new_template("Card 1")
-        tmpl["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="front">{{Front}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="front">{{Front}}</div>
-<hr id="answer">
-<div class="back">{{Back}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+<div class="ap-question">{{Front}}</div>
+<script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-question">{{Front}}</div>
+  <div class="ap-divider"></div>
+  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.add_template(model, tmpl)
 
-        # CSS
-        model["css"] = """
-.ankipapers-card {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    color: #e0e0e0;
-    background: #1a1a2e;
-    padding: 20px;
-    line-height: 1.6;
-}
-.context {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 12px;
-    font-style: italic;
-    border-bottom: 1px solid #2d2d44;
-    padding-bottom: 8px;
-}
-.front {
-    font-size: 20px;
-    font-weight: 500;
-    color: #ecf0f1;
-}
-.back {
-    font-size: 20px;
-    color: #82e0aa;
-    font-weight: 500;
-}
-hr#answer {
-    border: none;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #6c5ce7, transparent);
-    margin: 16px 0;
-}
-.ankipapers-jump-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 20px; padding: 6px 14px;
-    background: rgba(108, 92, 231, 0.15); border: 1px solid #6c5ce7;
-    border-radius: 6px; color: #6c5ce7; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; font-family: inherit;
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.ankipapers-jump-btn:hover {
-    background: #6c5ce7; color: white;
-}
-"""
+        model["css"] = _ANKIPAPERS_CSS
         col.models.add(model)
     else:
-        # Update existing model CSS and templates
-        model["css"] = """
-.ankipapers-card {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    color: #e0e0e0;
-    background: #1a1a2e;
-    padding: 20px;
-    line-height: 1.6;
-}
-.context {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 12px;
-    font-style: italic;
-    border-bottom: 1px solid #2d2d44;
-    padding-bottom: 8px;
-}
-.front {
-    font-size: 20px;
-    font-weight: 500;
-    color: #ecf0f1;
-}
-.back {
-    font-size: 20px;
-    color: #82e0aa;
-    font-weight: 500;
-}
-hr#answer {
-    border: none;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #6c5ce7, transparent);
-    margin: 16px 0;
-}
-.ankipapers-jump-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 20px; padding: 6px 14px;
-    background: rgba(108, 92, 231, 0.15); border: 1px solid #6c5ce7;
-    border-radius: 6px; color: #6c5ce7; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; font-family: inherit;
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.ankipapers-jump-btn:hover {
-    background: #6c5ce7; color: white;
-}
-"""
+        model["css"] = _ANKIPAPERS_CSS
         tmpl = model["tmpls"][0]
-        tmpl["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="front">{{Front}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="front">{{Front}}</div>
-<hr id="answer">
-<div class="back">{{Back}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+<div class="ap-question">{{Front}}</div>
+<script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-question">{{Front}}</div>
+  <div class="ap-divider"></div>
+  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.save(model)
 
 
@@ -389,106 +485,69 @@ def _ensure_cloze_type(col):
 
         # Add template
         tmpl = col.models.new_template("Cloze")
-        tmpl["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="cloze">{{cloze:Text}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="cloze">{{cloze:Text}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl["qfmt"] = '''<div class="ankipapers-card">
+    <div class="ap-meta" id="ctx">{{Context}}</div>
+    <div class="ap-cloze">{{cloze:Text}}</div>
+    <script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+    </script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-cloze">{{cloze:Text}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.add_template(model, tmpl)
 
-        # CSS
-        model["css"] = """
-.ankipapers-card {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    color: #e0e0e0;
-    background: #1a1a2e;
-    padding: 20px;
-    line-height: 1.6;
-}
-.context {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 12px;
-    font-style: italic;
-    border-bottom: 1px solid #2d2d44;
-    padding-bottom: 8px;
-}
-.cloze {
-    font-size: 20px;
-    font-weight: 500;
-}
-.cloze .cloze-deletion-inactive {
-    color: #adb5bd;
-}
-.ankipapers-jump-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 20px; padding: 6px 14px;
-    background: rgba(108, 92, 231, 0.15); border: 1px solid #6c5ce7;
-    border-radius: 6px; color: #6c5ce7; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; font-family: inherit;
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.ankipapers-jump-btn:hover {
-    background: #6c5ce7; color: white;
-}
-"""
+        model["css"] = _ANKIPAPERS_CSS
         col.models.add(model)
     else:
-        model["css"] = """
-.ankipapers-card {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    color: #e0e0e0;
-    background: #1a1a2e;
-    padding: 20px;
-    line-height: 1.6;
-}
-.context {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 12px;
-    font-style: italic;
-    border-bottom: 1px solid #2d2d44;
-    padding-bottom: 8px;
-}
-.cloze {
-    font-size: 20px;
-    font-weight: 500;
-}
-.cloze .cloze-deletion-inactive {
-    color: #adb5bd;
-}
-.ankipapers-jump-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 20px; padding: 6px 14px;
-    background: rgba(108, 92, 231, 0.15); border: 1px solid #6c5ce7;
-    border-radius: 6px; color: #6c5ce7; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; font-family: inherit;
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.ankipapers-jump-btn:hover {
-    background: #6c5ce7; color: white;
-}
-"""
+        model["css"] = _ANKIPAPERS_CSS
         tmpl = model["tmpls"][0]
-        tmpl["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="cloze">{{cloze:Text}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="cloze">{{cloze:Text}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+  <div class="ap-cloze">{{cloze:Text}}</div>
+  <script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-cloze">{{cloze:Text}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.save(model)
 
 
@@ -515,179 +574,147 @@ def _ensure_reversible_type(col):
 
         # Forward template (Front → Back)
         tmpl1 = col.models.new_template("Forward")
-        tmpl1["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">→ Forward</div>
-<div class="front">{{Front}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl1["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">→ Forward</div>
-<div class="front">{{Front}}</div>
-<hr id="answer">
-<div class="back">{{Back}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl1["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+  <div class="ap-direction">Forward</div>
+  <div class="ap-question">{{Front}}</div>
+  <script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl1["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-direction">Forward</div>
+  <div class="ap-question">{{Front}}</div>
+  <div class="ap-divider"></div>
+  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.add_template(model, tmpl1)
 
         # Reverse template (Back → Front)
         tmpl2 = col.models.new_template("Reverse")
-        tmpl2["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">← Reverse</div>
-<div class="front">{{Back}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl2["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">← Reverse</div>
-<div class="front">{{Back}}</div>
-<hr id="answer">
-<div class="back">{{Front}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl2["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+  <div class="ap-direction">Reverse</div>
+  <div class="ap-question">{{Back}}</div>
+  <script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl2["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-direction">Reverse</div>
+  <div class="ap-question">{{Back}}</div>
+  <div class="ap-divider"></div>
+  <div class="ap-answer">{{Front}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.add_template(model, tmpl2)
 
-        model["css"] = """
-.ankipapers-card {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    color: #e0e0e0;
-    background: #1a1a2e;
-    padding: 20px;
-    line-height: 1.6;
-}
-.context {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 12px;
-    font-style: italic;
-    border-bottom: 1px solid #2d2d44;
-    padding-bottom: 8px;
-}
-.direction {
-    font-size: 11px;
-    color: #6c5ce7;
-    font-weight: 600;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-}
-.front {
-    font-size: 20px;
-    font-weight: 500;
-    color: #ecf0f1;
-}
-.back {
-    font-size: 20px;
-    color: #82e0aa;
-    font-weight: 500;
-}
-hr#answer {
-    border: none;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #6c5ce7, transparent);
-    margin: 16px 0;
-}
-.ankipapers-jump-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 20px; padding: 6px 14px;
-    background: rgba(108, 92, 231, 0.15); border: 1px solid #6c5ce7;
-    border-radius: 6px; color: #6c5ce7; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; font-family: inherit;
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.ankipapers-jump-btn:hover {
-    background: #6c5ce7; color: white;
-}
-"""
+        model["css"] = _ANKIPAPERS_CSS
         col.models.add(model)
     else:
-        model["css"] = """
-.ankipapers-card {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    color: #e0e0e0;
-    background: #1a1a2e;
-    padding: 20px;
-    line-height: 1.6;
-}
-.context {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 12px;
-    font-style: italic;
-    border-bottom: 1px solid #2d2d44;
-    padding-bottom: 8px;
-}
-.direction {
-    font-size: 11px;
-    color: #6c5ce7;
-    font-weight: 600;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-}
-.front {
-    font-size: 20px;
-    font-weight: 500;
-    color: #ecf0f1;
-}
-.back {
-    font-size: 20px;
-    color: #82e0aa;
-    font-weight: 500;
-}
-hr#answer {
-    border: none;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #6c5ce7, transparent);
-    margin: 16px 0;
-}
-.ankipapers-jump-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 20px; padding: 6px 14px;
-    background: rgba(108, 92, 231, 0.15); border: 1px solid #6c5ce7;
-    border-radius: 6px; color: #6c5ce7; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; font-family: inherit;
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.ankipapers-jump-btn:hover {
-    background: #6c5ce7; color: white;
-}
-"""
+        model["css"] = _ANKIPAPERS_CSS
         tmpl1 = model["tmpls"][0]
-        tmpl1["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">→ Forward</div>
-<div class="front">{{Front}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl1["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">→ Forward</div>
-<div class="front">{{Front}}</div>
-<hr id="answer">
-<div class="back">{{Back}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl1["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+  <div class="ap-direction">Forward</div>
+  <div class="ap-question">{{Front}}</div>
+  <script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl1["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-direction">Forward</div>
+  <div class="ap-question">{{Front}}</div>
+  <div class="ap-divider"></div>
+  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         
         tmpl2 = model["tmpls"][1]
-        tmpl2["qfmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">← Reverse</div>
-<div class="front">{{Back}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
-        tmpl2["afmt"] = """<div class="ankipapers-card">
-<div class="context">{{Context}}</div>
-<div class="direction">← Reverse</div>
-<div class="front">{{Back}}</div>
-<hr id="answer">
-<div class="back">{{Front}}</div>
-<button class="ankipapers-jump-btn" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">📝 Open in Papers</button>
-</div>"""
+        tmpl2["qfmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta" id="ctx">{{Context}}</div>
+  <div class="ap-direction">Reverse</div>
+  <div class="ap-question">{{Back}}</div>
+  <script>
+(function() {
+  var tags = "{{Tags}}".split(" ");
+  if (tags.indexOf("ap-no-hierarchy") !== -1) {
+    document.getElementById("ctx").style.display = "none";
+  }
+})();
+</script>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
+        tmpl2["afmt"] = '''<div class="ankipapers-card">
+  <div class="ap-meta">{{Context}}</div>
+  <div class="ap-direction">Reverse</div>
+  <div class="ap-question">{{Back}}</div>
+  <div class="ap-divider"></div>
+  <div class="ap-answer">{{Front}}</div>
+  <div class="ap-footer">
+    <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Papers
+    </button>
+  </div>
+</div>'''
         col.models.save(model)
 
 

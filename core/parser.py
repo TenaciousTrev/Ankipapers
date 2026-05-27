@@ -287,12 +287,26 @@ def extract_cards(content: str) -> List[ParsedCard]:
 
 def get_context_heading(content: str, line_index: int) -> str:
     """
-    Get the nearest heading above a given line index.
-    Used to provide context for generated cards.
+    Get the full heading breadcrumb path above a given line index.
+    Walks upward collecting the nearest heading at each level,
+    returning them as 'H1 > H2 > H3' etc.
     """
     lines = content.split("\n")
+    headings = {}  # level -> heading text
+
     for i in range(line_index, -1, -1):
         heading_match = HEADING_PATTERN.match(lines[i].strip())
         if heading_match:
-            return heading_match.group(2).strip()
-    return ""
+            level = len(heading_match.group(1))
+            text = heading_match.group(2).strip()
+            if level not in headings:
+                headings[level] = text
+            # Once we have a heading at level 1, stop walking
+            if level == 1 and 1 in headings:
+                break
+
+    if not headings:
+        return ""
+
+    sorted_levels = sorted(headings.keys())
+    return " > ".join(headings[l] for l in sorted_levels)
