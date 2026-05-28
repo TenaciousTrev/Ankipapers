@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bold, Italic, Strikethrough, Code, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Minus, Braces, ChevronsRight, ArrowLeftRight, Image, Sigma, Table2, Rows3, Columns3 } from 'lucide-react'
+import { Bold, Italic, Strikethrough, Code, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Minus, Braces, ChevronsRight, ArrowLeftRight, Image, Sigma, Table2, Rows3, Columns3, Unlink } from 'lucide-react'
 
 const buttons = [
   { action: 'bold', icon: Bold, title: 'Bold (Ctrl+B)' },

@@ -365,12 +365,16 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
   if (type === 'cloze') {
     return (
       <div className="block-cloze-wrapper">
+        {/* Injected the standard card type container with a specific cloze class */}
+        <div className="block-card-type cloze-type">
+          <span>CLOZE</span>
+          {noteId && (
+            <button className="block-card-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
+              <ExternalLink size={10} />
+            </button>
+          )}
+        </div>
         <div className="block-cloze" dangerouslySetInnerHTML={{ __html: formatInline(t, mediaDir) }} />
-        {noteId && (
-          <button className="block-cloze-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
-            <ExternalLink size={10} />
-          </button>
-        )}
       </div>
     )
   }

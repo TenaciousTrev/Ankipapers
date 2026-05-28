@@ -832,16 +832,35 @@ textarea.block-input.block-input-textarea {
 
 /* Card blocks */
 .block-card {
-  background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 12px 16px;
-  margin: 6px 0; position: relative;
+  background: transparent; border: none;
+  border-radius: 0; padding: 2px 80px 2px 4px; /* Added 80px right padding so text doesn't overlap the badge */
+  margin: 0; position: relative;
 }
-.block-card-basic { border-left: 3px solid var(--green); }
-.block-card-reversible { border-left: 3px solid var(--blue); }
+.block-card-basic { border-left: none; }
+.block-card-reversible { border-left: none; }
 
 .block-card-type {
-  font-size: 10px; font-weight: 800; color: var(--accent); margin-bottom: 8px;
-  letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center;
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  /* Pins the badge to the top right of the line */
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Space between the bubble and the external link icon */
+}
+
+/* New rule to style the text as a bubble */
+.block-card-type span {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border: 1px solid var(--accent-glow);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
 }
 .block-card-browser-btn {
   background: transparent; border: none; color: var(--text-muted);
@@ -850,16 +869,55 @@ textarea.block-input.block-input-textarea {
 }
 .block-card-browser-btn:hover { background: var(--accent); color: white; }
 
-.block-card-front, .block-card-back { font-size: 15px; line-height: 1.5; color: var(--text-primary); }
-.block-card-front strong, .block-card-back strong { color: inherit; font-weight: 700; }
-.block-card-sep { color: var(--text-muted); font-size: 10px; text-align: center; margin: 3px 0; }
-.block-card-back { font-size: 14px; color: var(--green-light); padding-top: 4px; border-top: 1px dashed var(--border); }
+.block-card-front,
+.block-card-back {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-primary);
+  display: inline;
+  /* Forces elements onto the same line */
+}
+
+.block-card-front strong,
+.block-card-back strong {
+  color: inherit;
+  font-weight: 700;
+}
+
+.block-card-sep {
+  display: none;
+}
+
+.block-card-back {
+  font-size: 14px;
+  color: var(--green-light);
+  padding-top: 0;
+  /* Removed vertical padding */
+  border-top: none;
+  /* Removed the horizontal dashed line */
+  margin-left: 8px;
+}
 
 .block-cloze-wrapper {
-  background: rgba(108, 92, 231, 0.05); border-left: 3px solid var(--accent);
-  padding: 8px 12px; border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  margin: 10px 0; position: relative;
+  background: transparent;
+  border-left: none;
+  padding: 2px 80px 2px 4px;
+  /* Added 80px right padding to prevent overlap */
+  border-radius: 0;
+    /* Synced border-radius */
+    margin: 0;
+    /* Removed the 10px top/bottom margin */
+  position: relative;
 }
+
+/* Styles the new CLOZE bubble to match your pink cloze theme */
+.block-card-type.cloze-type span {
+  color: var(--pink);
+  background: rgba(253, 121, 168, 0.12);
+  border-color: rgba(253, 121, 168, 0.3);
+}
+
 .block-cloze-browser-btn {
   position: absolute; top: 4px; right: 4px;
   background: transparent; border: none; color: var(--text-muted);
@@ -870,11 +928,11 @@ textarea.block-input.block-input-textarea {
 .block-cloze-browser-btn:hover { color: var(--accent); }
 
 .block-cloze {
-  font-size: 15px; line-height: 1.6; color: var(--text-primary);
+  font-size: 15px; line-height: 1.5; color: var(--text-primary); display: inline;
 }
 .block-cloze strong { color: inherit; font-weight: 700; }
 
-.cloze-badge { background: rgba(253,121,168,0.15); color: var(--pink); font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-right: 2px; }
+.cloze-badge { display: none; }
 .cloze-text { background: linear-gradient(transparent 60%, rgba(253,121,168,0.12) 60%); color: var(--pink); font-weight: 600; padding: 0 2px; }
 
 .block-table-row {
@@ -1292,7 +1350,7 @@ textarea.block-input.block-input-textarea {
 }
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: #c0c0cc; }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-[data-theme="light"] .block-card { background: rgba(108, 92, 231, 0.05); }
+[data-theme="light"] .block-card { background: transparent; }
 [data-theme="light"] .kofi-banner { box-shadow: 0 2px 12px rgba(255, 64, 129, 0.2); }
 [data-theme="light"] .editor-header { background: #ffffff; border-bottom-color: #d8d8e0; }
 [data-theme="light"] .paper-title-input { color: #1a1a2e; }
@@ -1598,3 +1656,66 @@ textarea.block-input.block-input-textarea {
   transition: background var(--transition), color var(--transition);
 }
 .sidebar-home-btn:hover { background: var(--accent); color: #fff; }
+
+/* ═══════════════════════════════════════════════════
+   CUSTOM CARD TEXT COLORS
+   ═══════════════════════════════════════════════════ */
+
+/* ── DARK MODE (Default) ── */
+
+/* Basic Cards: Keep current green */
+.block-card-basic .block-card-back {
+  color: var(--green-light);
+}
+
+/* Reversible Cards: Carolina Blue */
+.block-card-reversible .block-card-back {
+  color: #4B9CD3;
+}
+
+
+/* ── LIGHT MODE OVERRIDES ── */
+
+/* Basic Cards: Forest Green */
+[data-theme="light"] .block-card-basic .block-card-back {
+  color: #228B22;
+}
+
+/* Reversible Cards: Royal Blue */
+[data-theme="light"] .block-card-reversible .block-card-back {
+  color: #4169E1;
+}
+
+/* ── BASIC CARD BUBBLE ── */
+
+/* Dark Mode (Default): Light Green */
+.block-card-basic .block-card-type span {
+  color: var(--green-light);
+  background: rgba(130, 224, 170, 0.12);
+  /* Faint tint of green-light */
+  border-color: rgba(130, 224, 170, 0.3);
+}
+
+/* Light Mode: Forest Green */
+[data-theme="light"] .block-card-basic .block-card-type span {
+  color: #228B22;
+  background: rgba(34, 139, 34, 0.12);
+  /* Faint tint of Forest Green */
+  border-color: rgba(34, 139, 34, 0.3);
+}
+
+/* ── REVERSIBLE CARD BUBBLE ── */
+
+/* Dark Mode (Default): Carolina Blue */
+.block-card-reversible .block-card-type span {
+  color: #4B9CD3;
+  background: rgba(75, 156, 211, 0.12);
+  border-color: rgba(75, 156, 211, 0.3);
+}
+
+/* Light Mode: Royal Blue */
+[data-theme="light"] .block-card-reversible .block-card-type span {
+  color: #4169E1;
+  background: rgba(65, 105, 225, 0.12);
+  border-color: rgba(65, 105, 225, 0.3);
+}
