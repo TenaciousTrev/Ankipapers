@@ -35,14 +35,61 @@ _ANKIPAPERS_CSS = """
 
 /* ─── Context / Heading ─────────────────────────── */
 .ap-meta {
-  font-size: 11px;
-  font-weight: 700;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.ap-meta-heading {
+  font-size: 18px; /* Increased from 14px */
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: #6c5ce7;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(108, 92, 231, 0.18);
+  margin-bottom: 4px;
+}
+
+.ap-meta-block {
+  font-size: 16px; /* Increased from 12px */
+  font-weight: 600;
+  color: #000000;
+}
+
+/* Dark Mode Meta Support */
+.nightMode .ap-meta {
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.nightMode .ap-meta-block {
+  color: #e0e0e0;
+}
+
+/* ─── Revealed Text Colors ──────────────────────── */
+
+/* Basic Cards (Default/Light: Forest Green) */
+.ap-answer-basic {
+  color: #228B22; 
+}
+/* Basic Cards (Dark: Light Green) */
+.nightMode .ap-answer-basic {
+  color: #82E0AA; 
+}
+
+/* Reversible Cards (Default/Light: Royal Blue) */
+.ap-answer-reversible {
+  color: #4169E1; 
+}
+/* Reversible Cards (Dark: Carolina Blue) */
+.nightMode .ap-answer-reversible {
+  color: #4B9CD3; 
+}
+
+/* Cloze Deletions (Reddish/Pink) */
+.cloze {
+  color: #e83e8c;
+  font-weight: 600;
+}
+.nightMode .cloze {
+  color: #ff8fb3; /* Slightly brighter so it pops on dark backgrounds */
 }
 
 /* ─── Question (Front) ──────────────────────────── */
@@ -58,7 +105,6 @@ _ANKIPAPERS_CSS = """
   font-size: 22px;
   font-weight: 500;
   line-height: 1.55;
-  color: #2d7d46;
 }
 
 /* ─── Cloze ─────────────────────────────────────── */
@@ -416,7 +462,7 @@ def _ensure_basic_type(col):
   <div class="ap-meta">{{Context}}</div>
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
-  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-answer ap-answer-basic">{{Back}}</div>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -453,7 +499,7 @@ def _ensure_basic_type(col):
   <div class="ap-meta">{{Context}}</div>
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
-  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-answer ap-answer-basic">{{Back}}</div>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -598,7 +644,7 @@ def _ensure_reversible_type(col):
   <div class="ap-direction">Forward</div>
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
-  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-answer ap-answer-reversible">{{Back}}</div>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -634,7 +680,7 @@ def _ensure_reversible_type(col):
   <div class="ap-direction">Reverse</div>
   <div class="ap-question">{{Back}}</div>
   <div class="ap-divider"></div>
-  <div class="ap-answer">{{Front}}</div>
+  <div class="ap-answer ap-answer-reversible">{{Front}}</div>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -673,7 +719,7 @@ def _ensure_reversible_type(col):
   <div class="ap-direction">Forward</div>
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
-  <div class="ap-answer">{{Back}}</div>
+  <div class="ap-answer ap-answer-reversible">{{Back}}</div>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -707,7 +753,7 @@ def _ensure_reversible_type(col):
   <div class="ap-direction">Reverse</div>
   <div class="ap-question">{{Back}}</div>
   <div class="ap-divider"></div>
-  <div class="ap-answer">{{Front}}</div>
+  <div class="ap-answer ap-answer-reversible">{{Front}}</div>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>

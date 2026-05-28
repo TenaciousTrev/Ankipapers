@@ -284,12 +284,71 @@ def extract_cards(content: str) -> List[ParsedCard]:
             cards.append(line.card)
     return cards
 
+def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
+    """
+    Walks backwards from a card to find its parent indented blocks.
+    Returns a list of clean text strings representing the parent hierarchy.
+    """
+    lines = content.split("\n")
+    if line_index >= len(lines):
+        return []
+
+    def get_indent(text: str) -> int:
+        stripped = text.rstrip()
+        indent = 0
+        while stripped.startswith("    ") or stripped.startswith("\t"):
+            indent += 1
+            stripped = stripped[1:] if stripped.startswith("\t") else stripped[4:]
+        return indent
+
+    card_level = get_indent(lines[line_index])
+    
+    if card_level == 0:
+        return []
+        
+    breadcrumbs = []
+    target_level = card_level - 1
+    
+    for i in range(line_index - 1, -1, -1):
+        line = lines[i]
+        stripped = line.strip()
+        
+        # Skip empty lines and headings
+        if not stripped or stripped.startswith('#'):
+            continue
+            
+        line_level = get_indent(line)
+        
+        if line_level == target_level:
+            # Clean up bullets or numbered lists
+            clean_text = re.sub(r'^[-*+]\s+', '', stripped)
+            clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
+            
+            # Clean up image syntax: ![alt|300](src) -> [Image: alt]
+            img_match = re.match(r'!\[([^\]]*)\]', clean_text)
+            if img_match:
+                alt_text = img_match.group(1).split('|')[0]
+                clean_text = f"[Image: {alt_text}]" if alt_text else "[Image]"
+                
+            # Strip markdown formatting for a cleaner breadcrumb look
+            clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+            clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
+            clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
+            clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
+            
+            breadcrumbs.insert(0, clean_text)
+            target_level -= 1
+            
+        if target_level < 0:
+            break
+            
+    return breadcrumbs
 
 def get_context_heading(content: str, line_index: int) -> str:
     """
     Get the full heading breadcrumb path above a given line index.
     Walks upward collecting the nearest heading at each level,
-    returning them as 'H1 > H2 > H3' etc.
+    AND the parent indented blocks leading down to the line.
     """
     lines = content.split("\n")
     headings = {}  # level -> heading text
@@ -305,8 +364,80 @@ def get_context_heading(content: str, line_index: int) -> str:
             if level == 1 and 1 in headings:
                 break
 
-    if not headings:
-        return ""
+    # 1. Build the heading path
+    heading_path = ""
+    if headings:
+        sorted_levels = sorted(headings.keys())
+        heading_path = " > ".join(headings[l] for l in sorted_levels)
 
-    sorted_levels = sorted(headings.keys())
-    return " > ".join(headings[l] for l in sorted_levels)
+    # 2. Get the block parent path
+    block_path_list = get_block_breadcrumbs(content, line_index)
+
+    # 3. Stitch them together using distinct HTML elements for separate styling
+    context_html = ""
+    if heading_path:
+        context_html += f'<div class="ap-meta-heading">{heading_path}</div>'
+    if block_path_list:
+        block_path_str = " > ".join(block_path_list)
+        context_html += f'<div class="ap-meta-block">{block_path_str}</div>'
+        
+    return context_html
+
+def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
+    """
+    Walks backwards from a card to find its parent indented blocks.
+    Returns a list of clean text strings representing the parent hierarchy.
+    """
+    lines = content.split("\n")
+    if line_index >= len(lines):
+        return []
+        
+    card_line = lines[line_index]
+    
+    # Calculate indent level (4 spaces = 1 level). Expand tabs to spaces for safety.
+    expanded_line = card_line.replace('\t', '    ')
+    raw_indent = len(expanded_line) - len(expanded_line.lstrip(' '))
+    card_level = raw_indent // 4
+    
+    if card_level == 0:
+        return [] # Card is at the root margin
+        
+    breadcrumbs = []
+    target_level = card_level - 1
+    
+    for i in range(line_index - 1, -1, -1):
+        line = lines[i]
+        stripped = line.strip()
+        
+        # Skip empty lines and headings
+        if not stripped or stripped.startswith('#'):
+            continue
+            
+        expanded = line.replace('\t', '    ')
+        line_indent = len(expanded) - len(expanded.lstrip(' '))
+        line_level = line_indent // 4
+        
+        if line_level == target_level:
+            # Clean up bullets or numbered lists
+            clean_text = re.sub(r'^[-*+]\s+', '', stripped)
+            clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
+            
+            # Handle images: ![alt|300](src) -> [Image: alt]
+            img_match = re.match(r'!\[([^\]]*)\]', clean_text)
+            if img_match:
+                alt_text = img_match.group(1).split('|')[0]
+                clean_text = f"[Image: {alt_text}]" if alt_text else "[Image]"
+                
+            # Strip markdown bold/italics for a cleaner breadcrumb look
+            clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+            clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
+            clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
+            clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
+            
+            breadcrumbs.insert(0, clean_text)
+            target_level -= 1
+            
+        if target_level < 0:
+            break
+            
+    return breadcrumbs
