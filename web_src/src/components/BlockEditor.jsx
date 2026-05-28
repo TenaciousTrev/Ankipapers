@@ -940,12 +940,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         const merged = prevDisplay + actualText
         lines[index - 1] = suf ? merged.replace(/\s+$/, '') + suf : merged
         
-        if (actualText.trim() === '') {
-           const { start, end } = getBlockRangeAndIndent(lines, index)
-           lines.splice(start, end - start + 1)
-        } else {
-           lines.splice(index, 1)
-        }
+        lines.splice(index, 1)
         
         onChange(lines.join('\n'))
         setFocusedIndex(index - 1)
