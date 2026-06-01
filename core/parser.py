@@ -157,7 +157,7 @@ def parse_line(index: int, line: str) -> ParsedLine:
     reversible_match = REVERSIBLE_CARD_PATTERN.match(card_content)
     if reversible_match:
         front = reversible_match.group(1).strip()
-        back = reversible_match.group(2).strip()
+        back = reversible_match.group(2).strip()        
         content_hash = compute_hash(card_content)
         card = ParsedCard(
             line_index=index,
@@ -285,10 +285,6 @@ def extract_cards(content: str) -> List[ParsedCard]:
     return cards
 
 def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
-    """
-    Walks backwards from a card to find its parent indented blocks.
-    Returns a list of clean text strings representing the parent hierarchy.
-    """
     lines = content.split("\n")
     if line_index >= len(lines):
         return []
@@ -302,46 +298,77 @@ def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
         return indent
 
     card_level = get_indent(lines[line_index])
-    
     if card_level == 0:
         return []
-        
+
     breadcrumbs = []
     target_level = card_level - 1
-    
+
     for i in range(line_index - 1, -1, -1):
         line = lines[i]
         stripped = line.strip()
-        
-        # Skip empty lines and headings
         if not stripped or stripped.startswith('#'):
             continue
-            
+
         line_level = get_indent(line)
-        
-        if line_level == target_level:
-            # Clean up bullets or numbered lists
+        if line_level <= target_level:
+            # Remove bullet/number prefixes
             clean_text = re.sub(r'^[-*+]\s+', '', stripped)
             clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
-            
-            # Clean up image syntax: ![alt|300](src) -> [Image: alt]
-            img_match = re.match(r'!\[([^\]]*)\]', clean_text)
-            if img_match:
-                alt_text = img_match.group(1).split('|')[0]
-                clean_text = f"[Image: {alt_text}]" if alt_text else "[Image]"
-                
-            # Strip markdown formatting for a cleaner breadcrumb look
+            clean_text = clean_text.strip()
+
+            # ----- IMPROVED IMAGE HANDLING (Markdown + HTML) -----
+            def markdown_replacer(m):
+                alt = m.group(1).strip()
+                url = m.group(2).strip()
+                if url.startswith('data:'):
+                    filename = 'screenshot'
+                else:
+                    filename = url.split('/')[-1].split('?')[0] or 'image'
+                # Show filename, optionally with alt if it's meaningful
+                if alt and alt.lower() not in ('', 'pasted', 'image', 'screenshot'):
+                    return f"[Image: {alt} ({filename})]"
+                return f"[Image: {filename}]"
+
+            clean_text = re.sub(r'!\[([^\]]*)\]\(([^\)]+)\)', markdown_replacer, clean_text)
+
+            def html_img_replacer(m):
+                attrs = m.group(0)
+                # Try src first, then alt, then title
+                src_match = re.search(r'src=["\']([^"\']+)["\']', attrs, re.I)
+                filename = ''
+                if src_match:
+                    url = src_match.group(1)
+                    filename = url.split('/')[-1].split('?')[0] if not url.startswith('data:') else 'screenshot'
+                alt_match = re.search(r'alt=["\']([^"\']+)["\']', attrs, re.I)
+                alt = alt_match.group(1) if alt_match else ''
+                if alt and alt.lower() not in ('', 'pasted', 'image', 'screenshot') and filename:
+                    return f"[Image: {alt} ({filename})]"
+                elif filename:
+                    return f"[Image: {filename}]"
+                elif alt:
+                    return f"[Image: {alt}]"
+                return "[Image]"
+
+            clean_text = re.sub(r'<img[^>]*>', html_img_replacer, clean_text, flags=re.IGNORECASE)
+
+            # Clean up any remaining empty placeholder
+            clean_text = re.sub(r'\[Image:\s*\]', '[Image]', clean_text)
+
+            # Strip other markdown formatting
             clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
             clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
             clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
             clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
-            
-            breadcrumbs.insert(0, clean_text)
-            target_level -= 1
-            
+
+            if clean_text:
+                breadcrumbs.insert(0, clean_text)
+
+            target_level = line_level - 1
+
         if target_level < 0:
             break
-            
+
     return breadcrumbs
 
 def get_context_heading(content: str, line_index: int) -> str:
@@ -382,62 +409,3 @@ def get_context_heading(content: str, line_index: int) -> str:
         context_html += f'<div class="ap-meta-block">{block_path_str}</div>'
         
     return context_html
-
-def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
-    """
-    Walks backwards from a card to find its parent indented blocks.
-    Returns a list of clean text strings representing the parent hierarchy.
-    """
-    lines = content.split("\n")
-    if line_index >= len(lines):
-        return []
-        
-    card_line = lines[line_index]
-    
-    # Calculate indent level (4 spaces = 1 level). Expand tabs to spaces for safety.
-    expanded_line = card_line.replace('\t', '    ')
-    raw_indent = len(expanded_line) - len(expanded_line.lstrip(' '))
-    card_level = raw_indent // 4
-    
-    if card_level == 0:
-        return [] # Card is at the root margin
-        
-    breadcrumbs = []
-    target_level = card_level - 1
-    
-    for i in range(line_index - 1, -1, -1):
-        line = lines[i]
-        stripped = line.strip()
-        
-        # Skip empty lines and headings
-        if not stripped or stripped.startswith('#'):
-            continue
-            
-        expanded = line.replace('\t', '    ')
-        line_indent = len(expanded) - len(expanded.lstrip(' '))
-        line_level = line_indent // 4
-        
-        if line_level == target_level:
-            # Clean up bullets or numbered lists
-            clean_text = re.sub(r'^[-*+]\s+', '', stripped)
-            clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
-            
-            # Handle images: ![alt|300](src) -> [Image: alt]
-            img_match = re.match(r'!\[([^\]]*)\]', clean_text)
-            if img_match:
-                alt_text = img_match.group(1).split('|')[0]
-                clean_text = f"[Image: {alt_text}]" if alt_text else "[Image]"
-                
-            # Strip markdown bold/italics for a cleaner breadcrumb look
-            clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
-            clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
-            clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
-            clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
-            
-            breadcrumbs.insert(0, clean_text)
-            target_level -= 1
-            
-        if target_level < 0:
-            break
-            
-    return breadcrumbs

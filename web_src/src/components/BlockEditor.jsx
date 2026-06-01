@@ -518,7 +518,7 @@ function syncBlockTextareaHeight(el) {
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
 }
 
-function Block({
+const Block = React.memo(function Block({
   index,
   line,
   type,
@@ -656,7 +656,7 @@ function Block({
       </div>
     </div>
   )
-}
+})
 
 
 function getBlockRangeAndIndent(lines, idx) {
@@ -1114,12 +1114,20 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     if (!sel?.length) return
     const lines = content.split('\n')
     const text = [...sel].sort((a, b) => a - b).map((i) => lines[i] ?? '').join('\n')
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      /* ignore */
-    }
+    
     closeBlockMenu()
+    // In QtWebEngine (Anki), navigator.clipboard and window.isSecureContext are
+    // both unreliable. Always use the execCommand path; just force focus first.
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:2em;height:2em;padding:0;border:none;outline:none;box-shadow:none;background:transparent;'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    ta.setSelectionRange(0, ta.value.length) // iOS + QtWebEngine belt-and-suspenders
+    try { document.execCommand('copy') } catch (err) { console.error('copy failed', err) }
+    document.body.removeChild(ta)
   }, [blockMenu, content, closeBlockMenu])
 
   const duplicateBlockAtMenu = useCallback(() => {
@@ -1203,7 +1211,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   }, [blockMenu, closeBlockMenu])
 
   const handlePaste = useCallback(async (e) => {
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items
+    const items = Array.from((e.clipboardData ?? e.nativeEvent?.clipboardData)?.items ?? [])
     for (let item of items) {
       if (item.type.indexOf('image') !== -1) {
         e.preventDefault()
@@ -1261,6 +1269,54 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         return
       }
     }
+    // ── Plain-text paste with newline splitting ──────────────────────────
+    // Only intercept when a block textarea is focused; otherwise let the
+    // browser handle it so native undo inside a focused textarea is preserved.
+    if (focusedIndex === null) return
+    const plainItem = Array.from(
+      (e.clipboardData || e.originalEvent?.clipboardData)?.items ?? []
+    ).find(it => it.type === 'text/plain')
+    if (!plainItem) return
+    plainItem.getAsString((pastedText) => {
+      if (!pastedText.includes('\n')) return // single-line: let browser handle it natively
+      e.preventDefault()
+      const lines = content.split('\n')
+      const input = activeBlockInputRef.current
+      const cursorPos = input ? input.selectionStart ?? 0 : 0
+      const cursorEnd = input ? input.selectionEnd ?? cursorPos : cursorPos
+
+      const full = lines[focusedIndex] ?? ''
+      const apSuf = extractApBlockSuffix(full)
+      const display = stripApBlockId(full)
+      const spacesMatch = display.match(/^[ \t]*/)
+      const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+      const actualText = display.slice(leadingSpaces.length)
+
+      const beforeCursor = actualText.slice(0, cursorPos)
+      const afterCursor = actualText.slice(cursorEnd)
+
+      const pastedLines = pastedText.split('\n')
+      // First pasted segment is appended to the current block's text before cursor
+      const firstSegment = leadingSpaces + beforeCursor + pastedLines[0]
+      // Last pasted segment gets the text that was after the cursor
+      const lastSegment = leadingSpaces + pastedLines[pastedLines.length - 1] + afterCursor
+
+      const newLines = [
+        apSuf ? firstSegment.replace(/\s+$/, '') + apSuf : firstSegment,
+        ...pastedLines.slice(1, -1).map(seg => leadingSpaces + seg),
+        lastSegment,
+      ]
+
+      lines.splice(focusedIndex, 1, ...newLines)
+      onChange(lines.join('\n'))
+      // Move focus to the end of the last inserted segment
+      const newFocusIndex = focusedIndex + newLines.length - 1
+      const newCursorPos = leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
+      setTimeout(() => {
+        setFocusedIndex(newFocusIndex)
+        scheduleRestoreSelection(activeBlockInputRef, newCursorPos, newCursorPos)
+      }, 10)
+    })
   }, [content, onChange, focusedIndex])
 
   // Apply formatting to focused block
@@ -1518,9 +1574,11 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }
 
+  const allLines = useMemo(() => blocks.map(b => b.line), [blocks])
+
   return (
     <div className="block-editor" ref={containerRef} onPaste={handlePaste} onMouseDown={handleEditorMouseDown} onClick={(e) => {
-      if (e.target === containerRef.current || e.target.classList.contains('block-editor-pad')) {
+      if ((e.target === containerRef.current || e.target.classList.contains('block-editor-pad')) && selectedIndices.size === 0) {
         const lines = content.split('\n')
         if (lines[lines.length - 1].trim() !== '') {
           onChange(content + '\n')
@@ -1531,13 +1589,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       }
     }}>
       {blocks.map((b, i) => {
-        if ((b.type === 'table-row' || b.type === 'table-separator') && !isTableHeadRow(blocks.map(x => x.line), i)) {
+        if ((b.type === 'table-row' || b.type === 'table-separator') && !isTableHeadRow(allLines, i)) {
           if (focusedIndex !== i && b.isHidden) return null // Hide nested table rows strictly
           if (focusedIndex !== i) return null
         }
-        const bounds = findTableBounds(blocks.map(x => x.line), i)
+        const bounds = findTableBounds(allLines, i)
         const isTableHead = !!bounds && bounds.start === i
-        const displayLine = isTableHead ? blocks.slice(bounds.start, bounds.end + 1).map(x => x.line).join('\n') : b.line
+        const displayLine = isTableHead ? allLines.slice(bounds.start, bounds.end + 1).join('\n') : b.line
         const displayType = isTableHead ? 'table' : b.type
         return (
           <div key={i} className={`block-row-wrapper ${b.isHidden ? 'block-row-hidden' : 'stagger-in'}`} style={{ animationDelay: `${Math.min((i % 40) * 25, 800)}ms` }}>
