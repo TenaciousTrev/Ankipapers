@@ -343,7 +343,7 @@ def _normalize_field_value(text: str) -> str:
 
 def _paper_derived_field_values(card: ParsedCard, paper: Paper) -> List[str]:
     """What the note fields would contain if generated right now."""
-    context = get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>")
+    context = get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4")
     if card.card_type in ("basic", "reversible"):
         return [_md_to_html(card.front), _md_to_html(card.back), context]
     if card.card_type == "cloze":
@@ -788,7 +788,7 @@ def get_deck_id(col, deck_name: str) -> int:
 def _update_note_from_card(col, note, card: ParsedCard, paper: Paper, deck_id: int) -> bool:
     """Apply parsed card fields to an existing note. Returns True on success."""
     try:
-        context = get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>")
+        context = get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4")
         source_ref = f"{paper.id}:{card.line_index}"
 
         if card.card_type == "basic":
@@ -930,7 +930,7 @@ def generate_cards(
 def _create_note(col, card: ParsedCard, paper: Paper, deck_id: int) -> Optional[int]:
     """Create a single Anki note from a ParsedCard."""
     try:
-        context = get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>")
+        context = get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4")
         source_ref = f"{paper.id}:{card.line_index}"
 
         # Build tags
