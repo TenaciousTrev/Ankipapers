@@ -302,16 +302,20 @@ def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
         return []
 
     breadcrumbs = []
-    target_level = card_level - 1
+    current_indent = card_level
 
     for i in range(line_index - 1, -1, -1):
         line = lines[i]
         stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
+        if not stripped:
             continue
+        if stripped.startswith('#'):
+            break
 
         line_level = get_indent(line)
-        if line_level <= target_level:
+            
+        # Look for ANY strictly smaller indent to catch skipped levels
+        if line_level < current_indent:
             # Remove bullet/number prefixes
             clean_text = re.sub(r'^[-*+]\s+', '', stripped)
             clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
@@ -364,9 +368,10 @@ def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
             if clean_text:
                 breadcrumbs.insert(0, clean_text)
 
-            target_level = line_level - 1
+            # Update current indent so we only look for even higher parents
+            current_indent = line_level
 
-        if target_level < 0:
+        if current_indent == 0:
             break
 
     return breadcrumbs
@@ -379,17 +384,19 @@ def get_context_heading(content: str, line_index: int) -> str:
     """
     lines = content.split("\n")
     headings = {}  # level -> heading text
+    current_min_level = 4  # Track the highest hierarchy level we've seen (1 is highest)
 
     for i in range(line_index, -1, -1):
         heading_match = HEADING_PATTERN.match(lines[i].strip())
         if heading_match:
             level = len(heading_match.group(1))
-            text = heading_match.group(2).strip()
-            if level not in headings:
+            # Restrict to H1-H3, and ONLY accept if it's a structural parent of what we already have
+            if level <= 3 and level < current_min_level:
+                text = heading_match.group(2).strip()
                 headings[level] = text
-            # Once we have a heading at level 1, stop walking
-            if level == 1 and 1 in headings:
-                break
+                current_min_level = level
+                if level == 1:
+                    break
 
     # 1. Build the heading path
     heading_path = ""

@@ -719,7 +719,12 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     const nextHead = content.slice(0, 200)
     const prevLines = prev.split('\n').length
     const nextLines = content.split('\n').length
-    const isDocumentSwap = prevHead !== nextHead && Math.abs(prevLines - nextLines) > 3
+    // Ignore leading whitespace changes (like Tab indentation) to prevent false positives
+    const prevHeadTrimmed = prevHead.replace(/^[ \t]+/gm, '')
+    const nextHeadTrimmed = nextHead.replace(/^[ \t]+/gm, '')
+    
+    // Require a significant structural change (≥50 chars or ≥15 lines) to trigger a full collapse reset
+    const isDocumentSwap = (prevHeadTrimmed !== nextHeadTrimmed && Math.abs(prev.length - content.length) >= 50) || Math.abs(prevLines - nextLines) >= 15
     if (isDocumentSwap) {
       setCollapsedKeys(computeInitialCollapsed(content))
     }
@@ -1160,7 +1165,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     const sel = blockMenu?.selection
     if (!sel?.length) return
     const lines = content.split('\n')
-    const text = [...sel].sort((a, b) => a - b).map((i) => lines[i] ?? '').join('\n')
+    const text = [...sel].sort((a, b) => a - b).map((i) => stripApBlockId(lines[i] ?? '')).join('\n')
     
     closeBlockMenu()
     // In QtWebEngine (Anki), navigator.clipboard and window.isSecureContext are
@@ -1178,18 +1183,21 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   }, [blockMenu, content, closeBlockMenu])
 
   const duplicateBlockAtMenu = useCallback(() => {
-    const sel = blockMenu?.selection
-    if (!sel?.length) return
-    const lines = content.split('\n')
-    const sorted = [...sel].sort((a, b) => a - b)
-    const slice = sorted.map((i) => lines[i])
-    const insertAt = sorted[sorted.length - 1] + 1
-    lines.splice(insertAt, 0, ...slice)
-    onChange(lines.join('\n'))
-    setSelectedIndices(new Set())
-    setFocusedIndex(null)
-    closeBlockMenu()
-  }, [blockMenu, content, onChange, closeBlockMenu])
+  const sel = blockMenu?.selection
+  if (!sel?.length) return
+  const lines = content.split('\n')
+  const sorted = [...sel].sort((a, b) => a - b)
+  
+  // FIX: Strip the ID so the new block generates a fresh Anki Note
+  const slice = sorted.map((i) => stripApBlockId(lines[i] ?? ''))
+  
+  const insertAt = sorted[sorted.length - 1] + 1
+  lines.splice(insertAt, 0, ...slice)
+  onChange(lines.join('\n'))
+  setSelectedIndices(new Set())
+  setFocusedIndex(null)
+  closeBlockMenu()
+}, [blockMenu, content, onChange, closeBlockMenu])
 
   const mergeBlocksAtMenu = useCallback(() => {
     const sel = blockMenu?.selection
@@ -1359,7 +1367,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       // Move focus to the end of the last inserted segment
       const newFocusIndex = focusedIndex + newLines.length - 1
       const newCursorPos = leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
-      setTimeout(() => {
+      setTimeout(() => { 
         setFocusedIndex(newFocusIndex)
         scheduleRestoreSelection(activeBlockInputRef, newCursorPos, newCursorPos)
       }, 10)
