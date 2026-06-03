@@ -678,7 +678,54 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   const [selectionAnchor, setSelectionAnchor] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
   const [blockMenu, setBlockMenu] = useState(null)
-  const [collapsedKeys, setCollapsedKeys] = useState(() => new Set())
+  // ── Collapse-by-default: compute which keys should start collapsed ──────────
+  // A block is auto-collapsed on mount if it has at least one child (i.e. the
+  // next line is indented deeper).  We only re-run this initialiser when the
+  // *identity* of the content prop changes (new document loaded), not on every
+  // keystroke — that's why we track a stable "document id" via useRef so the
+  // reset effect below can distinguish a real document swap from an edit.
+  const computeInitialCollapsed = useCallback((rawContent) => {
+    const lines = rawContent.split('\n')
+    const initial = new Set()
+    for (let i = 0; i < lines.length - 1; i++) {
+      const line = lines[i]
+      const rawDisplay = stripApBlockId(line)
+      const spacesMatch = rawDisplay.match(/^[ \t]*/)
+      const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+      const actualText = rawDisplay.slice(leadingSpaces.length)
+      const indentLevel = Math.floor(leadingSpaces.replace(/\t/g, '    ').length / 4)
+      const nextLine = lines[i + 1]
+      const nextSpacesMatch = stripApBlockId(nextLine).match(/^[ \t]*/)
+      const nextLeading = nextSpacesMatch ? nextSpacesMatch[0] : ''
+      const nextIndent = Math.floor(nextLeading.replace(/\t/g, '    ').length / 4)
+      if (nextIndent > indentLevel) {
+        initial.add(`${indentLevel}:${actualText.trim()}`)
+      }
+    }
+    return initial
+  }, [])
+
+  const [collapsedKeys, setCollapsedKeys] = useState(() => computeInitialCollapsed(content))
+
+  // When the document itself is swapped in (not just edited), reset collapse
+  // state so the new document also opens collapsed-by-default.
+  const prevContentRef = useRef(content)
+  useEffect(() => {
+    const prev = prevContentRef.current
+    // Heuristic: a "new document" swap produces a large diff.  Edits are
+    // character-level; a full document replacement typically changes ≥50 chars
+    // in the first 200 characters OR the line-count changes significantly.
+    const prevHead = prev.slice(0, 200)
+    const nextHead = content.slice(0, 200)
+    const prevLines = prev.split('\n').length
+    const nextLines = content.split('\n').length
+    const isDocumentSwap = prevHead !== nextHead && Math.abs(prevLines - nextLines) > 3
+    if (isDocumentSwap) {
+      setCollapsedKeys(computeInitialCollapsed(content))
+    }
+    prevContentRef.current = content
+  }, [content, computeInitialCollapsed])
+
   const [lasso, setLasso] = useState(null)
   const [zettelSearch, setZettelSearch] = useState(null)
   const containerRef = useRef(null)
