@@ -365,12 +365,16 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
   if (type === 'cloze') {
     return (
       <div className="block-cloze-wrapper">
+        {/* Injected the standard card type container with a specific cloze class */}
+        <div className="block-card-type cloze-type">
+          <span>CLOZE</span>
+          {noteId && (
+            <button className="block-card-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
+              <ExternalLink size={10} />
+            </button>
+          )}
+        </div>
         <div className="block-cloze" dangerouslySetInnerHTML={{ __html: formatInline(t, mediaDir) }} />
-        {noteId && (
-          <button className="block-cloze-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
-            <ExternalLink size={10} />
-          </button>
-        )}
       </div>
     )
   }
@@ -514,7 +518,7 @@ function syncBlockTextareaHeight(el) {
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
 }
 
-function Block({
+const Block = React.memo(function Block({
   index,
   line,
   type,
@@ -652,7 +656,7 @@ function Block({
       </div>
     </div>
   )
-}
+})
 
 
 function getBlockRangeAndIndent(lines, idx) {
@@ -674,7 +678,59 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   const [selectionAnchor, setSelectionAnchor] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
   const [blockMenu, setBlockMenu] = useState(null)
-  const [collapsedKeys, setCollapsedKeys] = useState(() => new Set())
+  // ── Collapse-by-default: compute which keys should start collapsed ──────────
+  // A block is auto-collapsed on mount if it has at least one child (i.e. the
+  // next line is indented deeper).  We only re-run this initialiser when the
+  // *identity* of the content prop changes (new document loaded), not on every
+  // keystroke — that's why we track a stable "document id" via useRef so the
+  // reset effect below can distinguish a real document swap from an edit.
+  const computeInitialCollapsed = useCallback((rawContent) => {
+    const lines = rawContent.split('\n')
+    const initial = new Set()
+    for (let i = 0; i < lines.length - 1; i++) {
+      const line = lines[i]
+      const rawDisplay = stripApBlockId(line)
+      const spacesMatch = rawDisplay.match(/^[ \t]*/)
+      const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+      const actualText = rawDisplay.slice(leadingSpaces.length)
+      const indentLevel = Math.floor(leadingSpaces.replace(/\t/g, '    ').length / 4)
+      const nextLine = lines[i + 1]
+      const nextSpacesMatch = stripApBlockId(nextLine).match(/^[ \t]*/)
+      const nextLeading = nextSpacesMatch ? nextSpacesMatch[0] : ''
+      const nextIndent = Math.floor(nextLeading.replace(/\t/g, '    ').length / 4)
+      if (nextIndent > indentLevel) {
+        initial.add(`${indentLevel}:${actualText.trim()}`)
+      }
+    }
+    return initial
+  }, [])
+
+  const [collapsedKeys, setCollapsedKeys] = useState(() => computeInitialCollapsed(content))
+
+  // When the document itself is swapped in (not just edited), reset collapse
+  // state so the new document also opens collapsed-by-default.
+  const prevContentRef = useRef(content)
+  useEffect(() => {
+    const prev = prevContentRef.current
+    // Heuristic: a "new document" swap produces a large diff.  Edits are
+    // character-level; a full document replacement typically changes ≥50 chars
+    // in the first 200 characters OR the line-count changes significantly.
+    const prevHead = prev.slice(0, 200)
+    const nextHead = content.slice(0, 200)
+    const prevLines = prev.split('\n').length
+    const nextLines = content.split('\n').length
+    // Ignore leading whitespace changes (like Tab indentation) to prevent false positives
+    const prevHeadTrimmed = prevHead.replace(/^[ \t]+/gm, '')
+    const nextHeadTrimmed = nextHead.replace(/^[ \t]+/gm, '')
+    
+    // Require a significant structural change (≥50 chars or ≥15 lines) to trigger a full collapse reset
+    const isDocumentSwap = (prevHeadTrimmed !== nextHeadTrimmed && Math.abs(prev.length - content.length) >= 50) || Math.abs(prevLines - nextLines) >= 15
+    if (isDocumentSwap) {
+      setCollapsedKeys(computeInitialCollapsed(content))
+    }
+    prevContentRef.current = content
+  }, [content, computeInitialCollapsed])
+
   const [lasso, setLasso] = useState(null)
   const [zettelSearch, setZettelSearch] = useState(null)
   const containerRef = useRef(null)
@@ -940,12 +996,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         const merged = prevDisplay + actualText
         lines[index - 1] = suf ? merged.replace(/\s+$/, '') + suf : merged
         
-        if (actualText.trim() === '') {
-           const { start, end } = getBlockRangeAndIndent(lines, index)
-           lines.splice(start, end - start + 1)
-        } else {
-           lines.splice(index, 1)
-        }
+        lines.splice(index, 1)
         
         onChange(lines.join('\n'))
         setFocusedIndex(index - 1)
@@ -1114,28 +1165,39 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     const sel = blockMenu?.selection
     if (!sel?.length) return
     const lines = content.split('\n')
-    const text = [...sel].sort((a, b) => a - b).map((i) => lines[i] ?? '').join('\n')
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      /* ignore */
-    }
+    const text = [...sel].sort((a, b) => a - b).map((i) => stripApBlockId(lines[i] ?? '')).join('\n')
+    
     closeBlockMenu()
+    // In QtWebEngine (Anki), navigator.clipboard and window.isSecureContext are
+    // both unreliable. Always use the execCommand path; just force focus first.
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:2em;height:2em;padding:0;border:none;outline:none;box-shadow:none;background:transparent;'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    ta.setSelectionRange(0, ta.value.length) // iOS + QtWebEngine belt-and-suspenders
+    try { document.execCommand('copy') } catch (err) { console.error('copy failed', err) }
+    document.body.removeChild(ta)
   }, [blockMenu, content, closeBlockMenu])
 
   const duplicateBlockAtMenu = useCallback(() => {
-    const sel = blockMenu?.selection
-    if (!sel?.length) return
-    const lines = content.split('\n')
-    const sorted = [...sel].sort((a, b) => a - b)
-    const slice = sorted.map((i) => lines[i])
-    const insertAt = sorted[sorted.length - 1] + 1
-    lines.splice(insertAt, 0, ...slice)
-    onChange(lines.join('\n'))
-    setSelectedIndices(new Set())
-    setFocusedIndex(null)
-    closeBlockMenu()
-  }, [blockMenu, content, onChange, closeBlockMenu])
+  const sel = blockMenu?.selection
+  if (!sel?.length) return
+  const lines = content.split('\n')
+  const sorted = [...sel].sort((a, b) => a - b)
+  
+  // FIX: Strip the ID so the new block generates a fresh Anki Note
+  const slice = sorted.map((i) => stripApBlockId(lines[i] ?? ''))
+  
+  const insertAt = sorted[sorted.length - 1] + 1
+  lines.splice(insertAt, 0, ...slice)
+  onChange(lines.join('\n'))
+  setSelectedIndices(new Set())
+  setFocusedIndex(null)
+  closeBlockMenu()
+}, [blockMenu, content, onChange, closeBlockMenu])
 
   const mergeBlocksAtMenu = useCallback(() => {
     const sel = blockMenu?.selection
@@ -1204,7 +1266,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   }, [blockMenu, closeBlockMenu])
 
   const handlePaste = useCallback(async (e) => {
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items
+    const items = Array.from((e.clipboardData ?? e.nativeEvent?.clipboardData)?.items ?? [])
     for (let item of items) {
       if (item.type.indexOf('image') !== -1) {
         e.preventDefault()
@@ -1262,6 +1324,54 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         return
       }
     }
+    // ── Plain-text paste with newline splitting ──────────────────────────
+    // Only intercept when a block textarea is focused; otherwise let the
+    // browser handle it so native undo inside a focused textarea is preserved.
+    if (focusedIndex === null) return
+    const plainItem = Array.from(
+      (e.clipboardData || e.originalEvent?.clipboardData)?.items ?? []
+    ).find(it => it.type === 'text/plain')
+    if (!plainItem) return
+    plainItem.getAsString((pastedText) => {
+      if (!pastedText.includes('\n')) return // single-line: let browser handle it natively
+      e.preventDefault()
+      const lines = content.split('\n')
+      const input = activeBlockInputRef.current
+      const cursorPos = input ? input.selectionStart ?? 0 : 0
+      const cursorEnd = input ? input.selectionEnd ?? cursorPos : cursorPos
+
+      const full = lines[focusedIndex] ?? ''
+      const apSuf = extractApBlockSuffix(full)
+      const display = stripApBlockId(full)
+      const spacesMatch = display.match(/^[ \t]*/)
+      const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+      const actualText = display.slice(leadingSpaces.length)
+
+      const beforeCursor = actualText.slice(0, cursorPos)
+      const afterCursor = actualText.slice(cursorEnd)
+
+      const pastedLines = pastedText.split('\n')
+      // First pasted segment is appended to the current block's text before cursor
+      const firstSegment = leadingSpaces + beforeCursor + pastedLines[0]
+      // Last pasted segment gets the text that was after the cursor
+      const lastSegment = leadingSpaces + pastedLines[pastedLines.length - 1] + afterCursor
+
+      const newLines = [
+        apSuf ? firstSegment.replace(/\s+$/, '') + apSuf : firstSegment,
+        ...pastedLines.slice(1, -1).map(seg => leadingSpaces + seg),
+        lastSegment,
+      ]
+
+      lines.splice(focusedIndex, 1, ...newLines)
+      onChange(lines.join('\n'))
+      // Move focus to the end of the last inserted segment
+      const newFocusIndex = focusedIndex + newLines.length - 1
+      const newCursorPos = leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
+      setTimeout(() => { 
+        setFocusedIndex(newFocusIndex)
+        scheduleRestoreSelection(activeBlockInputRef, newCursorPos, newCursorPos)
+      }, 10)
+    })
   }, [content, onChange, focusedIndex])
 
   // Apply formatting to focused block
@@ -1519,9 +1629,11 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }
 
+  const allLines = useMemo(() => blocks.map(b => b.line), [blocks])
+
   return (
     <div className="block-editor" ref={containerRef} onPaste={handlePaste} onMouseDown={handleEditorMouseDown} onClick={(e) => {
-      if (e.target === containerRef.current || e.target.classList.contains('block-editor-pad')) {
+      if ((e.target === containerRef.current || e.target.classList.contains('block-editor-pad')) && selectedIndices.size === 0) {
         const lines = content.split('\n')
         if (lines[lines.length - 1].trim() !== '') {
           onChange(content + '\n')
@@ -1532,13 +1644,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       }
     }}>
       {blocks.map((b, i) => {
-        if ((b.type === 'table-row' || b.type === 'table-separator') && !isTableHeadRow(blocks.map(x => x.line), i)) {
+        if ((b.type === 'table-row' || b.type === 'table-separator') && !isTableHeadRow(allLines, i)) {
           if (focusedIndex !== i && b.isHidden) return null // Hide nested table rows strictly
           if (focusedIndex !== i) return null
         }
-        const bounds = findTableBounds(blocks.map(x => x.line), i)
+        const bounds = findTableBounds(allLines, i)
         const isTableHead = !!bounds && bounds.start === i
-        const displayLine = isTableHead ? blocks.slice(bounds.start, bounds.end + 1).map(x => x.line).join('\n') : b.line
+        const displayLine = isTableHead ? allLines.slice(bounds.start, bounds.end + 1).join('\n') : b.line
         const displayType = isTableHead ? 'table' : b.type
         return (
           <div key={i} className={`block-row-wrapper ${b.isHidden ? 'block-row-hidden' : 'stagger-in'}`} style={{ animationDelay: `${Math.min((i % 40) * 25, 800)}ms` }}>

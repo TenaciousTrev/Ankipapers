@@ -157,7 +157,7 @@ def parse_line(index: int, line: str) -> ParsedLine:
     reversible_match = REVERSIBLE_CARD_PATTERN.match(card_content)
     if reversible_match:
         front = reversible_match.group(1).strip()
-        back = reversible_match.group(2).strip()
+        back = reversible_match.group(2).strip()        
         content_hash = compute_hash(card_content)
         card = ParsedCard(
             line_index=index,
@@ -284,15 +284,135 @@ def extract_cards(content: str) -> List[ParsedCard]:
             cards.append(line.card)
     return cards
 
+def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
+    lines = content.split("\n")
+    if line_index >= len(lines):
+        return []
+
+    def get_indent(text: str) -> int:
+        stripped = text.rstrip()
+        indent = 0
+        while stripped.startswith("    ") or stripped.startswith("\t"):
+            indent += 1
+            stripped = stripped[1:] if stripped.startswith("\t") else stripped[4:]
+        return indent
+
+    card_level = get_indent(lines[line_index])
+    if card_level == 0:
+        return []
+
+    breadcrumbs = []
+    current_indent = card_level
+
+    for i in range(line_index - 1, -1, -1):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('#'):
+            break
+
+        line_level = get_indent(line)
+            
+        # Look for ANY strictly smaller indent to catch skipped levels
+        if line_level < current_indent:
+            # Remove bullet/number prefixes
+            clean_text = re.sub(r'^[-*+]\s+', '', stripped)
+            clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
+            clean_text = clean_text.strip()
+
+            # ----- IMPROVED IMAGE HANDLING (Markdown + HTML) -----
+            def markdown_replacer(m):
+                alt = m.group(1).strip()
+                url = m.group(2).strip()
+                if url.startswith('data:'):
+                    filename = 'screenshot'
+                else:
+                    filename = url.split('/')[-1].split('?')[0] or 'image'
+                # Show filename, optionally with alt if it's meaningful
+                if alt and alt.lower() not in ('', 'pasted', 'image', 'screenshot'):
+                    return f"[Image: {alt} ({filename})]"
+                return f"[Image: {filename}]"
+
+            clean_text = re.sub(r'!\[([^\]]*)\]\(([^\)]+)\)', markdown_replacer, clean_text)
+
+            def html_img_replacer(m):
+                attrs = m.group(0)
+                # Try src first, then alt, then title
+                src_match = re.search(r'src=["\']([^"\']+)["\']', attrs, re.I)
+                filename = ''
+                if src_match:
+                    url = src_match.group(1)
+                    filename = url.split('/')[-1].split('?')[0] if not url.startswith('data:') else 'screenshot'
+                alt_match = re.search(r'alt=["\']([^"\']+)["\']', attrs, re.I)
+                alt = alt_match.group(1) if alt_match else ''
+                if alt and alt.lower() not in ('', 'pasted', 'image', 'screenshot') and filename:
+                    return f"[Image: {alt} ({filename})]"
+                elif filename:
+                    return f"[Image: {filename}]"
+                elif alt:
+                    return f"[Image: {alt}]"
+                return "[Image]"
+
+            clean_text = re.sub(r'<img[^>]*>', html_img_replacer, clean_text, flags=re.IGNORECASE)
+
+            # Clean up any remaining empty placeholder
+            clean_text = re.sub(r'\[Image:\s*\]', '[Image]', clean_text)
+
+            # Strip other markdown formatting
+            clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+            clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
+            clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
+            clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
+
+            if clean_text:
+                breadcrumbs.insert(0, clean_text)
+
+            # Update current indent so we only look for even higher parents
+            current_indent = line_level
+
+        if current_indent == 0:
+            break
+
+    return breadcrumbs
 
 def get_context_heading(content: str, line_index: int) -> str:
     """
-    Get the nearest heading above a given line index.
-    Used to provide context for generated cards.
+    Get the full heading breadcrumb path above a given line index.
+    Walks upward collecting the nearest heading at each level,
+    AND the parent indented blocks leading down to the line.
     """
     lines = content.split("\n")
+    headings = {}  # level -> heading text
+    current_min_level = 4  # Track the highest hierarchy level we've seen (1 is highest)
+
     for i in range(line_index, -1, -1):
         heading_match = HEADING_PATTERN.match(lines[i].strip())
         if heading_match:
-            return heading_match.group(2).strip()
-    return ""
+            level = len(heading_match.group(1))
+            # Restrict to H1-H3, and ONLY accept if it's a structural parent of what we already have
+            if level <= 3 and level < current_min_level:
+                text = heading_match.group(2).strip()
+                headings[level] = text
+                current_min_level = level
+                if level == 1:
+                    break
+
+    # 1. Build the heading path
+    heading_path = ""
+    if headings:
+        sorted_levels = sorted(headings.keys())
+        heading_path = " > ".join(headings[l] for l in sorted_levels)
+
+    # 2. Get the block parent path
+    block_path_list = get_block_breadcrumbs(content, line_index)
+
+    # 3. Stitch them together using distinct HTML elements for separate styling
+    context_html = ""
+    if heading_path:
+        context_html += f'<div class="ap-meta-heading">{heading_path}</div>'
+    if block_path_list:
+        block_path_str = " > ".join(block_path_list)
+        context_html += f'<div class="ap-meta-block">{block_path_str}</div>'
+        
+    return context_html

@@ -142,6 +142,15 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
     papersByFolder[f].push(p)
   })
 
+  // Sort papers alphabetically within each folder
+  Object.values(papersByFolder).forEach(folderPapers => {
+    folderPapers.sort((a, b) => 
+      a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' })
+    )
+  })
+
+  // ─── Drag & Drop (papers + folders) ─────────────────
+
   // ─── Drag & Drop (papers + folders) ─────────────────
   const endSidebarDrag = useCallback(() => {
     dragPayloadRef.current = null
