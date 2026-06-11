@@ -389,6 +389,14 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
     return <div className="block-list-item"><span className="block-num">{m[1]}.</span><span dangerouslySetInnerHTML={{ __html: formatInline(m[2], mediaDir) }} /></div>
   }
 
+  if (t.startsWith('&& ')) {
+    return (
+      <p className="block-paragraph block-supplement">
+        <em dangerouslySetInnerHTML={{ __html: formatInline(t.slice(3), mediaDir) }} />
+      </p>
+    )
+  }
+
   // Default: paragraph
   return <p className="block-paragraph" dangerouslySetInnerHTML={{ __html: formatInline(t, mediaDir) }} />
 }

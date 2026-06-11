@@ -28,7 +28,8 @@ class ParsedCard:
     cloze_text: str  # For cloze cards (with Anki {{c1::...}} syntax)
     content_hash: str
     block_id: Optional[str] = None  # stable id from <!--ap:uuid--> suffix
-
+    supplement: str = ""
+    
     @property
     def is_valid(self) -> bool:
         if self.card_type in ("basic", "reversible"):
@@ -153,6 +154,18 @@ def parse_line(index: int, line: str) -> ParsedLine:
 
     card_content, stable_block_id = split_stable_block_id(card_content)
 
+    # If the line is meant to be a Supplement (&&), treat it as plain text 
+    # so it bypasses the card-creation regex below.
+    if card_content.startswith("&& "):
+        return ParsedLine(
+            index=index,
+            raw_text=line,
+            line_type="text",
+            heading_level=0,
+            indent_level=indent_level,
+            card=None,
+        )
+    
     # Check for reversible card (Front <> Back) - must check before basic
     reversible_match = REVERSIBLE_CARD_PATTERN.match(card_content)
     if reversible_match:
@@ -279,9 +292,40 @@ def extract_cards(content: str) -> List[ParsedCard]:
     """Extract all cards from a document."""
     parsed_lines = parse_document(content)
     cards = []
-    for line in parsed_lines:
+    for i, line in enumerate(parsed_lines):
         if line.card and line.card.is_valid:
+            supplement_texts = []
+            card_indent = line.indent_level
+            
+            # Lookahead for child lines
+            for j in range(i + 1, len(parsed_lines)):
+                next_line = parsed_lines[j]
+                stripped_raw = next_line.raw_text.rstrip()
+                
+                # Skip completely empty lines
+                if not stripped_raw.strip():
+                    continue
+                    
+                # Stop if we hit a line at the same or higher hierarchy level
+                if next_line.indent_level <= card_indent:
+                    break
+                    
+                # Process ONLY direct children (exactly 1 level deeper)
+                if next_line.indent_level == card_indent + 1:
+                    # Extract content (removing potential bullet prefixes)
+                    child_content = stripped_raw.lstrip()
+                    bullet_match = BULLET_PATTERN.match(stripped_raw)
+                    if bullet_match:
+                        child_content = bullet_match.group(3)
+                        
+                    # Check for the strict "&& " prefix
+                    if child_content.startswith("&& "):
+                        supplement_texts.append(child_content[3:].strip())
+            
+            # Assign to the card and append
+            line.card.supplement = "<br>".join(supplement_texts)
             cards.append(line.card)
+            
     return cards
 
 def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
