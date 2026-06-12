@@ -29,6 +29,7 @@ class ParsedCard:
     content_hash: str
     block_id: Optional[str] = None  # stable id from <!--ap:uuid--> suffix
     supplement: str = ""
+    inline_tags: List[str] = None  # Add this to store our [[tags]]
     
     @property
     def is_valid(self) -> bool:
@@ -76,6 +77,9 @@ BLOCK_ID_SUFFIX = re.compile(
     r"\s*<!--ap:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-->\s*$",
     re.IGNORECASE,
 )
+
+# Inline tags: [[tag]]
+INLINE_TAG_PATTERN = re.compile(r"\[\[(.*?)\]\]")
 
 
 def split_stable_block_id(text: str) -> Tuple[str, Optional[str]]:
@@ -165,6 +169,14 @@ def parse_line(index: int, line: str) -> ParsedLine:
             indent_level=indent_level,
             card=None,
         )
+        
+    # Extract and remove inline tags (e.g., [[nh]])
+    inline_tags = []
+    def extract_tag(match):
+        inline_tags.append(match.group(1).strip())
+        return ""
+        
+    card_content = INLINE_TAG_PATTERN.sub(extract_tag, card_content).strip()
     
     # Check for reversible card (Front <> Back) - must check before basic
     reversible_match = REVERSIBLE_CARD_PATTERN.match(card_content)
@@ -181,6 +193,7 @@ def parse_line(index: int, line: str) -> ParsedLine:
             cloze_text="",
             content_hash=content_hash,
             block_id=stable_block_id,
+            inline_tags=inline_tags,
         )
         return ParsedLine(
             index=index,
@@ -206,6 +219,7 @@ def parse_line(index: int, line: str) -> ParsedLine:
             cloze_text="",
             content_hash=content_hash,
             block_id=stable_block_id,
+            inline_tags=inline_tags,
         )
         return ParsedLine(
             index=index,
@@ -232,6 +246,7 @@ def parse_line(index: int, line: str) -> ParsedLine:
             cloze_text=cloze_text,
             content_hash=content_hash,
             block_id=stable_block_id,
+            inline_tags=inline_tags,
         )
         return ParsedLine(
             index=index,
