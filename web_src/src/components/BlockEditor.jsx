@@ -548,6 +548,7 @@ const Block = React.memo(function Block({
   hasChildren,
   isCollapsed,
   onToggleCollapse,
+  blockKey,
   onZettelSearch,
 }) {
   const inputRef = useRef(null)
@@ -621,7 +622,7 @@ const Block = React.memo(function Block({
       ))}
       <div className="block-collapse-wrapper">
          {hasChildren && (
-            <div className="block-collapse-btn" onClick={onToggleCollapse}>
+            <div className="block-collapse-btn" onClick={(e) => onToggleCollapse(e, blockKey)}>
               {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
             </div>
          )}
@@ -638,7 +639,7 @@ const Block = React.memo(function Block({
             value={actualText}
             rows={1}
             wrap="soft"
-            spellCheck={false}
+            spellCheck={true}
             autoComplete="off"
             onChange={e => {
               const val = type !== 'table' ? leadingSpaces + e.target.value : e.target.value
@@ -838,13 +839,34 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     onCardCountChange(countCards(blocks))
   }, [blocks])
 
+  // ── "Latest value" refs ──────────────────────────────────────────
+  // content/cardRefs/papers/blocks/zettelSearch all change frequently
+  // (content on every keystroke, blocks right alongside it). The
+  // callbacks below used to close over those values directly and list
+  // them as useCallback deps — which meant the callbacks were rebuilt
+  // every keystroke too, handing every <Block/> a brand-new
+  // onChange/onRowClick/onKeyDown/onImageResize prop each time and
+  // defeating Block's React.memo for the whole document. Reading from
+  // refs (kept in sync every render, below) lets these callbacks stay
+  // referentially stable while still always seeing the latest value.
+  const contentRef = useRef(content)
+  contentRef.current = content
+  const cardRefsRef = useRef(cardRefs)
+  cardRefsRef.current = cardRefs
+  const papersRef = useRef(papers)
+  papersRef.current = papers
+  const blocksRef = useRef(blocks)
+  blocksRef.current = blocks
+  const zettelSearchRef = useRef(zettelSearch)
+  zettelSearchRef.current = zettelSearch
+
   const getNoteId = useCallback(
     (index) => {
-      const lines = content.split('\n')
+      const lines = contentRef.current.split('\n')
       const lineText = lines[index] ?? ''
-      return resolveNoteIdForLine(index, lineText, cardRefs)
+      return resolveNoteIdForLine(index, lineText, cardRefsRef.current)
     },
-    [content, cardRefs]
+    []
   )
 
   const handleZettelSearch = useCallback((index, query) => {
@@ -856,7 +878,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   }, [])
 
   const handleBlockChange = useCallback((index, newValue) => {
-    const lines = content.split('\n')
+    const lines = contentRef.current.split('\n')
     const b = findTableBounds(lines, index)
     if (b && b.start === index) {
       lines.splice(b.start, b.end - b.start + 1, ...newValue.split('\n'))
@@ -864,7 +886,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       lines[index] = newValue
     }
     onChange(lines.join('\n'))
-  }, [content, onChange])
+  }, [onChange])
 
   const handleBlockRowClick = useCallback((e, index) => {
     if (e.button !== 0) return
@@ -896,16 +918,16 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         return
       }
     }
-    const lines = content.split('\n')
+    const lines = contentRef.current.split('\n')
     const b = findTableBounds(lines, index)
     const targetIndex = b ? b.start : index
     setSelectedIndices(new Set())
     setSelectionAnchor(targetIndex)
     setFocusedIndex(targetIndex)
-  }, [selectionAnchor, focusedIndex, content])
+  }, [selectionAnchor, focusedIndex])
 
   const handleImageResize = useCallback((index, newWidth) => {
-    const lines = content.split('\n')
+    const lines = contentRef.current.split('\n')
     const line = lines[index]
     // Parse existing image syntax
     const m = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
@@ -921,9 +943,20 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       lines[index] = `![${alt}](${src})`
     }
     onChange(lines.join('\n'))
-  }, [content, onChange])
+  }, [onChange])
 
   const handleKeyDown = useCallback((e, index) => {
+    // Read the latest values via ref instead of closing over the state/props
+    // directly. This keeps the callback's identity stable across keystrokes
+    // (see the refs declared above) instead of rebuilding it — and every
+    // <Block/>'s onKeyDown prop along with it — on every character typed.
+    // blocks/zettelSearch/papers were never in the old dependency array
+    // either, so simply dropping `content` from it without doing this would
+    // have frozen this closure on stale collapse/autocomplete state instead.
+    const content = contentRef.current
+    const blocks = blocksRef.current
+    const zettelSearch = zettelSearchRef.current
+    const papers = papersRef.current
     const lines = content.split('\n')
 
     const currentLine = lines[index]
@@ -1069,25 +1102,25 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       }
       onChange(lines.join('\n'))
     }
-  }, [content, onChange])
+  }, [onChange])
 
-  const handleDragStart = (e, index) => {
+  const handleDragStart = useCallback((e, index) => {
     e.dataTransfer.setData('text/plain', index.toString())
     e.dataTransfer.effectAllowed = 'move'
-  }
+  }, [])
 
-  const handleDragOver = (e, index) => {
+  const handleDragOver = useCallback((e, index) => {
     e.preventDefault()
     setDragOverIndex(index)
-  }
+  }, [])
 
-  const handleDrop = (e, targetIndex) => {
+  const handleDrop = useCallback((e, targetIndex) => {
     e.preventDefault()
     setDragOverIndex(null)
     const sourceIndex = parseInt(e.dataTransfer.getData('text/plain'))
     if (isNaN(sourceIndex) || sourceIndex === targetIndex) return
 
-    let lines = content.split('\n')
+    let lines = contentRef.current.split('\n')
     
     // Logic for dragging block & children under target block
     const { start: sStart, end: sEnd, indent: sIndent } = getBlockRangeAndIndent(lines, sourceIndex)
@@ -1115,7 +1148,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     lines.splice(insertPos, 0, ...extracted)
     onChange(lines.join('\n'))
     setSelectedIndices(new Set())
-  }
+  }, [onChange])
 
   const closeBlockMenu = useCallback(() => setBlockMenu(null), [])
 
@@ -1684,7 +1717,8 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
                 activeBlockInputRef={activeBlockInputRef}
                 hasChildren={b.hasChildren}
                 isCollapsed={collapsedKeys.has(b.key)}
-                onToggleCollapse={(e) => toggleCollapse(e, b.key)}
+                onToggleCollapse={toggleCollapse}
+                blockKey={b.key}
                 onZettelSearch={handleZettelSearch}
               />
               {zettelSearch?.index === i && (

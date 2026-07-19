@@ -19,9 +19,9 @@ import GenerateConflictModal from './components/GenerateConflictModal'
 import TableDialog from './components/TableDialog'
 import SourcePanel from './components/SourcePanel'
 
-const BLOCK_ID_RE = /\s*$/i
+const BLOCK_ID_RE = /<!--ap:([0-9a-f-]{36})-->\s*$/i
 const randomId = () => (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-const withBlockId = (line) => BLOCK_ID_RE.test(line || '') ? line : `${line || ''} `
+const withBlockId = (line) => BLOCK_ID_RE.test(line || '') ? line : `${line || ''} <!--ap:${randomId()}-->`
 const getBlockIdFromLine = (line) => {
   const m = (line || '').match(BLOCK_ID_RE)
   return m ? m[1] : null
@@ -89,18 +89,6 @@ export default function App() {
   const [showSourcePanel, setShowSourcePanel] = useState(false)
   const [sourcePanelWidth, setSourcePanelWidth] = useState(360)
   const [sourceState, setSourceState] = useState({ type: 'pdf', path: '', url: '', page: 1, jumpQuote: null })
-  
-  // ─── UI Operation Lock ───────────────────────────
-  const [isBusy, setIsBusy] = useState(false)
-  const isBusyRef = useRef(false)
-  const keyboardLockUntilRef = useRef(0)
-  
-  const setBusy = useCallback((state) => {
-    if (state) keyboardLockUntilRef.current = Date.now() + 600
-    setIsBusy(state)
-    isBusyRef.current = state
-  }, [])
-
   const editorRef = useRef(null)
   const blockEditorRef = useRef(null)
 
@@ -226,27 +214,17 @@ export default function App() {
 
   // ─── Save ────────────────────────────────────────
   const handleSave = useCallback(async () => {
-    if (!paper || isBusyRef.current) return
-    setBusy(true)
-    try {
-      await savePaper(paper)
-      await refreshPapers()
-      showToast('Saved ✓', 'success')
-    } finally {
-      setBusy(false)
-    }
-  }, [paper, refreshPapers, setBusy])
+    if (!paper) return
+    await savePaper(paper)
+    await refreshPapers()
+    showToast('Saved ✓', 'success')
+  }, [paper, refreshPapers])
 
   // ─── Auto-save ───────────────────────────────────
   useEffect(() => {
     if (!paper) return
     const interval = (settings.auto_save_interval_seconds || 30) * 1000
-    const timer = setInterval(async () => { 
-      // Respect the UI lock for autosaves too!
-      if (!isBusyRef.current) {
-         await savePaper(paper) 
-      }
-    }, interval)
+    const timer = setInterval(async () => { await savePaper(paper) }, interval)
     return () => clearInterval(timer)
   }, [paper, settings.auto_save_interval_seconds])
 
@@ -283,6 +261,7 @@ export default function App() {
         if (viewMode === 'source' && editorRef.current) {
           editorRef.current.applyFormat('insertImageMd', result.markdown)
         } else if (viewMode === 'blocks') {
+          // Insert image markdown as a new line
           const lines = paper.content.split('\n')
           lines.push(result.markdown)
           handleContentChange(lines.join('\n'))
@@ -307,18 +286,16 @@ export default function App() {
 
   // ─── PDF Export ──────────────────────────────────
   const handleExportPdf = useCallback(async () => {
-    if (!paper || isBusyRef.current) return
-    setBusy(true)
-    try {
-      await savePaper(paper)
-      const result = await exportPdf(paper.id)
-      if (result.cancelled) return
-      if (result.ok) showToast('PDF exported successfully', 'success')
-      else if (result.error) showToast(`Export failed: ${result.error}`, 'error')
-    } finally {
-      setBusy(false)
+    if (!paper) return
+    await savePaper(paper)
+    const result = await exportPdf(paper.id)
+    if (result.cancelled) return
+    if (result.ok) {
+      showToast('PDF exported successfully', 'success')
+    } else if (result.error) {
+      showToast(`Export failed: ${result.error}`, 'error')
     }
-  }, [paper, setBusy])
+  }, [paper])
 
   // ─── Markdown Import/Export ─────────────────────
   const handleImportMarkdown = useCallback(async () => {
@@ -332,23 +309,19 @@ export default function App() {
   }, [refreshPapers])
 
   const handleExportMarkdown = useCallback(async () => {
-    if (!paper || isBusyRef.current) return
-    setBusy(true)
-    try {
-      await savePaper(paper)
-      const result = await exportMarkdown(paper.id)
-      if (result.cancelled) return
-      if (result.ok) showToast('Markdown exported', 'success')
-      else if (result.error) showToast(`Export failed: ${result.error}`, 'error')
-    } finally {
-      setBusy(false)
-    }
-  }, [paper, setBusy])
+    if (!paper) return
+    await savePaper(paper)
+    const result = await exportMarkdown(paper.id)
+    if (result.cancelled) return
+    if (result.ok) showToast('Markdown exported', 'success')
+    else if (result.error) showToast(`Export failed: ${result.error}`, 'error')
+  }, [paper])
 
   // ─── Settings ────────────────────────────────────
   const handleSaveSettings = useCallback(async (newSettings) => {
     await saveSettingsBridge(newSettings)
     setSettings(newSettings)
+    // Apply theme immediately
     document.documentElement.dataset.theme = newSettings.editor_theme || 'dark'
     showToast('Settings saved', 'success')
   }, [])
@@ -414,72 +387,35 @@ export default function App() {
   }, [paper, refreshFolders, refreshPapers])
 
   const runGenerateWithPolicy = useCallback(async (policy) => {
-    if (!paper || isBusyRef.current) return
-    setBusy(true)
-    try {
-      await savePaper(paper)
-      const result = await generateCards(paper.id, policy)
-      await refreshPapers()
-      if (result.error === 'anki_edit_conflicts') {
-        showToast(
-          `Generate stopped: ${result.conflicts?.length ?? 0} card(s) edited in Anki (Settings: abort on conflict)`,
-          'error'
-        )
-        return
-      }
-      if (result.error) {
-        showToast(`Error: ${result.error}`, 'error')
-        return
-      }
-      const reloaded = await loadPaper(paper.id)
-      if (reloaded) setPaper(reloaded)
-      const parts = [`${result.created} created`]
-      if (result.updated) parts.push(`${result.updated} updated`)
-      if (result.deleted) parts.push(`${result.deleted} removed`)
-      showToast(parts.join(', '), 'success')
-    } finally {
-      setBusy(false)
-    }
-  }, [paper, refreshPapers, setBusy])
-
-  const handleGenerate = useCallback(async () => {
-    if (!paper || isBusyRef.current) return
-    
-    const mode = settings.anki_edit_conflict || 'ask'
-    if (mode === 'ask') {
-      setBusy(true)
-      let hasConflict = false
-      try {
-        await savePaper(paper)
-        const chk = await checkAnkiEditConflicts(paper.id)
-        if (chk.error) {
-          showToast(`Error: ${chk.error}`, 'error')
-          return
-        }
-        if (chk.conflicts?.length > 0) {
-          setGenerateConflict(chk.conflicts)
-          hasConflict = true
-        }
-      } finally {
-        setBusy(false) // Must unlock here so the user can click the modal
-      }
-      
-      if (hasConflict) return // Stop execution, wait for modal interaction
-      
-      await runGenerateWithPolicy('preserve')
+    if (!paper) return
+    await savePaper(paper)
+    const result = await generateCards(paper.id, policy)
+    await refreshPapers()
+    if (result.error === 'anki_edit_conflicts') {
+      showToast(
+        `Generate stopped: ${result.conflicts?.length ?? 0} card(s) edited in Anki (Settings: abort on conflict)`,
+        'error'
+      )
       return
     }
-    
-    // If not 'ask', run policy directly (it has its own lock)
-    await runGenerateWithPolicy(mode)
-  }, [paper, settings.anki_edit_conflict, runGenerateWithPolicy, setBusy])
-
+    if (result.error) {
+      showToast(`Error: ${result.error}`, 'error')
+      return
+    }
+    const reloaded = await loadPaper(paper.id)
+    if (reloaded) setPaper(reloaded)
+    const parts = [`${result.created} created`]
+    if (result.updated) parts.push(`${result.updated} updated`)
+    if (result.deleted) parts.push(`${result.deleted} removed`)
+    showToast(parts.join(', '), 'success')
+  }, [paper, refreshPapers])
 
   const handleExtractFromSource = useCallback(async ({ mode, page, customText }) => {
     if (!paper) return
     const trimmedSelection = (customText || '').trim()
     let extracted = null
     if (mode === 'pdf') {
+      // Text selected in the viewer — use it directly; skip Python (often empty on scanned PDFs).
       if (trimmedSelection) {
         extracted = {
           ok: true,
@@ -502,6 +438,7 @@ export default function App() {
       showToast('No extracted text', 'error')
       return
     }
+    // One block = one source line; newlines in PDF selection would split the document on next load.
     const noteText = rawNote.replace(/\r\n/g, '\n').replace(/\s*\n+\s*/g, ' ').replace(/ +/g, ' ').trim()
     const lines = (paper.content || '').split('\n')
     const idx = lines.length
@@ -566,15 +503,29 @@ export default function App() {
     window.addEventListener('mouseup', onUp)
   }, [sourcePanelWidth])
 
+  const handleGenerate = useCallback(async () => {
+    if (!paper) return
+    await savePaper(paper)
+    const mode = settings.anki_edit_conflict || 'ask'
+    if (mode === 'ask') {
+      const chk = await checkAnkiEditConflicts(paper.id)
+      if (chk.error) {
+        showToast(`Error: ${chk.error}`, 'error')
+        return
+      }
+      if (chk.conflicts?.length > 0) {
+        setGenerateConflict(chk.conflicts)
+        return
+      }
+      await runGenerateWithPolicy('preserve')
+      return
+    }
+    await runGenerateWithPolicy(mode)
+  }, [paper, settings.anki_edit_conflict, runGenerateWithPolicy])
+
   // ─── Keyboard Shortcuts ──────────────────────────
   useEffect(() => {
     const handle = (e) => {
-      // The lock completely ignores global keystrokes while busy
-       if ((isBusyRef.current || Date.now() < keyboardLockUntilRef.current) && e.ctrlKey && (e.key === 's' || e.key === 'g')) {
-        e.preventDefault()
-        return
-      }
-
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); handleSave() }
       else if (e.ctrlKey && e.key === 'g') { e.preventDefault(); handleGenerate() }
       else if (e.ctrlKey && e.shiftKey && e.key === 'V') { e.preventDefault(); setViewMode(v => v === 'blocks' ? 'source' : 'blocks') }
@@ -592,6 +543,7 @@ export default function App() {
   // ─── External API ───────────────────────────────
   useEffect(() => {
     window.jumpToBlock = async (source) => {
+      // source is "paper_id:line_index"
       const [paperId, lineIndex] = source.split(':')
       if (paperId && lineIndex !== undefined) {
         await handleSelectPaper(paperId)
@@ -681,12 +633,7 @@ export default function App() {
               )}
             </div>
 
-            <BottomToolbar 
-              cardCounts={cardCounts} 
-              onSave={handleSave} 
-              onGenerate={handleGenerate} 
-              isSaving={isBusy} // Passes lock state to toolbar UI
-            />
+            <BottomToolbar cardCounts={cardCounts} onSave={handleSave} onGenerate={handleGenerate} />
 
             <div className="status-bar">
               <span>Anki Papers</span>
