@@ -1,7 +1,7 @@
 import React from 'react'
-import { Pencil, Eye, FileDown, FileInput, FileText, PanelRight } from 'lucide-react'
+import { Pencil, Eye, FileDown, FileInput, FileText, PanelRight, Link2 } from 'lucide-react'
 
-export default function EditorHeader({ title, deckName, decks, viewMode, showSourcePanel, onTitleChange, onDeckChange, onViewChange, onToggleSource, onExportPdf, onExportMarkdown, onImportMarkdown }) {
+export default function EditorHeader({ title, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onTitleChange, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown }) {
   return (
     <div className="editor-header">
       <input className="paper-title-input" value={title}
@@ -43,6 +43,14 @@ export default function EditorHeader({ title, deckName, decks, viewMode, showSou
       </button>
 
       <div className="header-separator" />
+
+      <button
+        className={`header-icon-btn ${showLinksPanel ? 'active' : ''}`}
+        title="Links to and from this document"
+        onClick={onToggleLinks}
+      >
+        <Link2 size={16} />
+      </button>
 
       <button
         className={`header-icon-btn ${showSourcePanel ? 'active' : ''}`}

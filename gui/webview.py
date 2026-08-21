@@ -12,6 +12,7 @@ from aqt.qt import (
     QWidget,
     QVBoxLayout,
     Qt,
+    QTimer,
 )
 from aqt import mw
 
@@ -118,7 +119,71 @@ class AnkiPapersWindow(QMainWindow):
                 QUrl.fromLocalFile(web_dir + "/"),
             )
 
+    # ─── Shutdown ────────────────────────────────────
+    # Closing the window used to only clear the singleton. The QWebEngineView
+    # was never torn down and the window stayed alive as a child of `mw`, so
+    # the React app kept running after the window disappeared — including its
+    # autosave timer, which held the document as it looked at close time and
+    # kept writing that stale snapshot back to storage. Every open/close cycle
+    # left another one of these behind, so a hidden, forgotten window could
+    # silently overwrite work done in the current one.
+    #
+    # Now closing does two things, in order:
+    #   1. asks the page to flush a final save (nothing recent is lost), then
+    #   2. navigates the page to about:blank and deletes it, so no JavaScript
+    #      — and no autosave timer — can outlive the window.
+
+    _shutting_down = False
+
     def closeEvent(self, event):
-        """Clean up on close."""
-        AnkiPapersWindow._instance = None
-        super().closeEvent(event)
+        # Second pass (after the flush): actually tear everything down.
+        if self._shutting_down:
+            self._teardown_webview()
+            AnkiPapersWindow._instance = None
+            super().closeEvent(event)
+            return
+
+        # First pass: defer the close until the page has saved.
+        self._shutting_down = True
+        event.ignore()
+        self._flush_then_close()
+
+    def _flush_then_close(self):
+        """Ask the page to save, then close for real (with a safety timeout)."""
+        finished = {"done": False}
+
+        def finish(*_args):
+            if finished["done"]:
+                return
+            finished["done"] = True
+            self.close()  # re-enters closeEvent with _shutting_down = True
+
+        js = (
+            "(function(){ try {"
+            "  return window.ankiPapersFlush ? window.ankiPapersFlush() : false;"
+            "} catch (e) { return false; } })()"
+        )
+        try:
+            self.webview.page().runJavaScript(js, lambda _res: finish())
+        except Exception:
+            finish()
+            return
+        # Never let a wedged page block the window from closing.
+        QTimer.singleShot(2000, finish)
+
+    def _teardown_webview(self):
+        """Stop the page for good so nothing keeps running in the background."""
+        try:
+            self.webview.page().setWebChannel(None)
+        except Exception:
+            pass
+        try:
+            # Navigating away destroys the React app and every timer it owns.
+            self.webview.setUrl(QUrl("about:blank"))
+        except Exception:
+            pass
+        try:
+            self.webview.deleteLater()
+        except Exception:
+            pass
+        self.deleteLater()

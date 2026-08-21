@@ -13,6 +13,10 @@ import SourceEditor from './components/SourceEditor'
 import BlockEditor from './components/BlockEditor'
 import BottomToolbar from './components/BottomToolbar'
 import WelcomeScreen from './components/WelcomeScreen'
+import { resolveApTarget, parseApTarget, ensureApBlockId } from './docLinks'
+import LinkPicker from './components/LinkPicker'
+import LinksPanel from './components/LinksPanel'
+import GraphView from './components/GraphView'
 import Toast from './components/Toast'
 import Settings from './components/Settings'
 import GenerateConflictModal from './components/GenerateConflictModal'
@@ -104,6 +108,11 @@ export default function App() {
   const editorRef = useRef(null)
   const blockEditorRef = useRef(null)
 
+  // Always the currently-open paper. Read this (never a captured `paper`)
+  // anywhere that writes to storage.
+  const paperRef = useRef(null)
+  paperRef.current = paper
+
   // Undo/Redo history
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
@@ -131,8 +140,9 @@ export default function App() {
 
   // ─── Paper Operations ────────────────────────────
   const handleSelectPaper = useCallback(async (id) => {
-    if (paper && paper.id !== id) {
-      await savePaper(paper)
+    const current = paperRef.current
+    if (current && current.id !== id) {
+      await savePaper(current)
     }
     const loaded = await loadPaper(id)
     if (loaded) {
@@ -141,7 +151,7 @@ export default function App() {
       historyRef.current = [loaded.content]
       historyIndexRef.current = 0
     }
-  }, [paper])
+  }, [])
 
   const handleCreatePaper = useCallback(async (title, folderPath = '') => {
     const newPaper = await createPaper(title, folderPath)
@@ -181,12 +191,22 @@ export default function App() {
     historyIndexRef.current = historyRef.current.length - 1
   }, [])
 
+  // `paper` is replaced with a new object on every keystroke, so depending on
+  // it here gave this callback a new identity every keystroke. That flowed
+  // down as BlockEditor's `onChange`, rebuilding every callback that lists it
+  // as a dependency, which handed every <Block/> new props and defeated their
+  // React.memo — re-rendering the entire document on each character typed.
+  // Read the paper from a ref instead so the identity stays stable; the state
+  // update below already uses the functional form, so it never needs `paper`.
+  //
+  // paperRef is also what save/autosave/flush read, so they can never write a
+  // stale snapshot captured in an old closure.
   const handleContentChange = useCallback((newContent) => {
-    if (!paper) return
+    if (!paperRef.current) return
     setPaper(prev => ({ ...prev, content: newContent, modified_at: Date.now() / 1000 }))
     clearTimeout(historyTimerRef.current)
     historyTimerRef.current = setTimeout(() => pushHistory(newContent), 400)
-  }, [paper, pushHistory])
+  }, [pushHistory])
 
   const handleUndo = useCallback(() => {
     const idx = historyIndexRef.current
@@ -225,30 +245,156 @@ export default function App() {
   }, [paper])
 
   // ─── Save ────────────────────────────────────────
+  // Saves whatever is currently open. While this runs, isBusy is true, which
+  // disables BOTH toolbar buttons — so Generate cannot start mid-save — and it
+  // is cleared in `finally` so the buttons always come back, even on failure.
   const handleSave = useCallback(async () => {
-    if (!paper || isBusyRef.current) return
+    const current = paperRef.current
+    if (!current || isBusyRef.current) return
     setBusy(true)
     try {
-      await savePaper(paper)
+      const res = await savePaper(current)
+      if (res && res.error) {
+        showToast(`Save failed: ${res.error}`, 'error')
+        return
+      }
       await refreshPapers()
       showToast('Saved ✓', 'success')
+    } catch (e) {
+      showToast(`Save failed: ${e?.message || e}`, 'error')
     } finally {
       setBusy(false)
     }
-  }, [paper, refreshPapers, setBusy])
+  }, [refreshPapers, setBusy])
 
   // ─── Auto-save ───────────────────────────────────
+  // Reads paperRef rather than closing over `paper`, for two reasons:
+  //   - it can never persist a stale snapshot from an old closure, and
+  //   - the timer no longer restarts on every keystroke (it used to depend on
+  //     `paper`, so while you were typing it was cleared and recreated
+  //     constantly and effectively never fired until you paused).
   useEffect(() => {
-    if (!paper) return
     const interval = (settings.auto_save_interval_seconds || 30) * 1000
-    const timer = setInterval(async () => { 
+    const timer = setInterval(async () => {
+      const current = paperRef.current
       // Respect the UI lock for autosaves too!
-      if (!isBusyRef.current) {
-         await savePaper(paper) 
+      if (current && !isBusyRef.current) {
+        try { await savePaper(current) } catch { /* keep the timer alive */ }
       }
     }, interval)
     return () => clearInterval(timer)
-  }, [paper, settings.auto_save_interval_seconds])
+  }, [settings.auto_save_interval_seconds])
+
+  // ─── Document links ──────────────────────────────
+  // Resolve a link target and go there. Anchors are resolved against the
+  // papers list (paperId is only a hint; a header moved to another document
+  // still resolves). Dangling links are reported rather than failing silently.
+  const papersRef = useRef(papers)
+  papersRef.current = papers
+  const handleOpenDocLink = useCallback(async (target) => {
+    if (!target) return
+    const resolved = resolveApTarget(target, papersRef.current)
+    if (!resolved) {
+      const { blockId } = parseApTarget(target)
+      showToast(
+        blockId ? 'That link target no longer exists' : 'That linked document no longer exists',
+        'error'
+      )
+      return
+    }
+    const alreadyOpen = paperRef.current && paperRef.current.id === resolved.paperId
+    if (!alreadyOpen) await handleSelectPaper(resolved.paperId)
+    if (resolved.lineIndex >= 0) {
+      // Give the editor a beat to mount the newly opened document.
+      setTimeout(() => {
+        blockEditorRef.current?.revealBlock?.(resolved.lineIndex)
+      }, alreadyOpen ? 30 : 320)
+    }
+  }, [])
+
+  // ─── Creating a link ─────────────────────────────
+  // BlockEditor hands us the highlighted phrase; we pick a target, make sure
+  // that target has a stable anchor, then let BlockEditor write the link.
+  const [linkRequest, setLinkRequest] = useState(null)
+  const [showLinksPanel, setShowLinksPanel] = useState(false)
+  const [showGraph, setShowGraph] = useState(false)
+
+  // Open a document and reveal one of its lines. Used by the backlinks panel
+  // and by the graph, so both land the same way a link does.
+  const handleGoToLine = useCallback(async (paperId, lineIndex) => {
+    if (!paperId) return
+    const alreadyOpen = paperRef.current?.id === paperId
+    if (!alreadyOpen) await handleSelectPaper(paperId)
+    if (lineIndex != null && lineIndex >= 0) {
+      setTimeout(() => blockEditorRef.current?.revealBlock?.(lineIndex), alreadyOpen ? 30 : 320)
+    }
+  }, [handleSelectPaper])
+
+  const handleRequestCreateLink = useCallback((req) => {
+    if (req?.phrase) setLinkRequest(req)
+  }, [])
+
+  const handlePickLinkTarget = useCallback(async (pick) => {
+    const req = linkRequest
+    setLinkRequest(null)
+    if (!req || !pick) return
+
+    const openId = paperRef.current?.id
+    const sameDocument = pick.paperId === openId
+
+    // A header in ANOTHER document needs its anchor written over there first.
+    // Same-document targets are anchored by BlockEditor in the same edit, so
+    // the whole thing lands as one change.
+    let targetBlockId = ''
+    if (!pick.isDocument && pick.lineIndex >= 0 && !sameDocument) {
+      const target = papersRef.current.find((p) => p.id === pick.paperId)
+      if (!target) { showToast('That document could not be found', 'error'); return }
+      const lines = String(target.content || '').split('\n')
+      const anchored = ensureApBlockId(lines[pick.lineIndex] ?? '')
+      targetBlockId = anchored.blockId
+      if (anchored.changed) {
+        lines[pick.lineIndex] = anchored.line
+        const res = await savePaper({ ...target, content: lines.join('\n') })
+        if (res && res.error) { showToast(`Could not anchor the target: ${res.error}`, 'error'); return }
+        await refreshPapers()
+      }
+    }
+
+    const written = blockEditorRef.current?.insertDocLink({
+      index: req.index,
+      selStart: req.selStart,
+      selEnd: req.selEnd,
+      targetPaperId: pick.paperId,
+      targetBlockId,
+      targetLineIndex: (!pick.isDocument && sameDocument) ? pick.lineIndex : null,
+    })
+    if (written) showToast(`Linked to ${pick.label}`, 'success')
+    else showToast('Could not create the link', 'error')
+  }, [linkRequest, refreshPapers])
+
+  // ─── Final save on window close ──────────────────
+  // gui/webview.py calls window.ankiPapersFlush() and waits for it before it
+  // tears the page down, so closing the window can't discard recent edits.
+  useEffect(() => {
+    window.ankiPapersFlush = async () => {
+      const current = paperRef.current
+      if (!current) return true
+      try {
+        await savePaper(current)
+      } catch { /* closing anyway — never block the window */ }
+      return true
+    }
+    // A page-level backstop for any teardown that doesn't call the flush.
+    const onPageHide = () => {
+      const current = paperRef.current
+      if (current) { try { savePaper(current) } catch { /* ignore */ } }
+    }
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      delete window.ankiPapersFlush
+      window.removeEventListener('pagehide', onPageHide)
+    }
+  }, [])
 
   // ─── Format Actions ──────────────────────────────
   const openTableDialog = useCallback((mode = 'insert', preset = null) => {
@@ -282,10 +428,8 @@ export default function App() {
       if (!result.cancelled && result.markdown) {
         if (viewMode === 'source' && editorRef.current) {
           editorRef.current.applyFormat('insertImageMd', result.markdown)
-        } else if (viewMode === 'blocks') {
-          const lines = paper.content.split('\n')
-          lines.push(result.markdown)
-          handleContentChange(lines.join('\n'))
+        } else if (viewMode === 'blocks' && blockEditorRef.current) {
+          blockEditorRef.current.applyFormat('insertImageMd', result.markdown)
         }
       }
       return
@@ -413,11 +557,18 @@ export default function App() {
     showToast('Folder moved', 'success')
   }, [paper, refreshFolders, refreshPapers])
 
+  // Generate always saves first, then generates. The busy lock keeps the Save
+  // button disabled for the whole operation.
   const runGenerateWithPolicy = useCallback(async (policy) => {
+    const paper = paperRef.current
     if (!paper || isBusyRef.current) return
     setBusy(true)
     try {
-      await savePaper(paper)
+      const saved = await savePaper(paper)
+      if (saved && saved.error) {
+        showToast(`Save failed, not generating: ${saved.error}`, 'error')
+        return
+      }
       const result = await generateCards(paper.id, policy)
       await refreshPapers()
       if (result.error === 'anki_edit_conflicts') {
@@ -437,12 +588,15 @@ export default function App() {
       if (result.updated) parts.push(`${result.updated} updated`)
       if (result.deleted) parts.push(`${result.deleted} removed`)
       showToast(parts.join(', '), 'success')
+    } catch (e) {
+      showToast(`Generate failed: ${e?.message || e}`, 'error')
     } finally {
       setBusy(false)
     }
-  }, [paper, refreshPapers, setBusy])
+  }, [refreshPapers, setBusy])
 
   const handleGenerate = useCallback(async () => {
+    const paper = paperRef.current
     if (!paper || isBusyRef.current) return
     
     const mode = settings.anki_edit_conflict || 'ask'
@@ -472,7 +626,7 @@ export default function App() {
     
     // If not 'ask', run policy directly (it has its own lock)
     await runGenerateWithPolicy(mode)
-  }, [paper, settings.anki_edit_conflict, runGenerateWithPolicy, setBusy])
+  }, [settings.anki_edit_conflict, runGenerateWithPolicy, setBusy])
 
 
   const handleExtractFromSource = useCallback(async ({ mode, page, customText }) => {
@@ -645,9 +799,11 @@ export default function App() {
             <EditorHeader
               title={paper.title} deckName={paper.deck_name} decks={decks}
               viewMode={viewMode} showSourcePanel={showSourcePanel}
+              showLinksPanel={showLinksPanel}
               onTitleChange={handleTitleChange}
               onDeckChange={handleDeckChange} onViewChange={setViewMode}
               onToggleSource={() => setShowSourcePanel((v) => !v)}
+              onToggleLinks={() => setShowLinksPanel((v) => !v)}
               onExportPdf={handleExportPdf} onExportMarkdown={handleExportMarkdown}
               onImportMarkdown={handleImportMarkdown}
             />
@@ -677,6 +833,8 @@ export default function App() {
                   papers={papers}
                   onTableEditRequest={(ctx) => openTableDialog('edit', ctx)}
                   onGoToSource={handleGoToSource}
+                  onOpenDocLink={handleOpenDocLink}
+                  onRequestCreateLink={handleRequestCreateLink}
                 />
               )}
             </div>
@@ -706,6 +864,16 @@ export default function App() {
           />
         )}
       </div>
+      {showLinksPanel && paper && (
+        <LinksPanel
+          papers={papers}
+          paperId={paper.id}
+          onOpenLink={handleOpenDocLink}
+          onGoToLine={handleGoToLine}
+          onOpenGraph={() => setShowGraph(true)}
+          onClose={() => setShowLinksPanel(false)}
+        />
+      )}
       {showSourcePanel && (
         <>
           <div className="source-panel-resizer" onMouseDown={handleSourcePanelResizeStart} />
@@ -734,6 +902,24 @@ export default function App() {
           }}
         />
       )}
+      {showGraph && (
+        <GraphView
+          papers={papers}
+          currentPaperId={paper?.id}
+          onOpen={(pid, lineIndex) => { setShowGraph(false); handleGoToLine(pid, lineIndex) }}
+          onClose={() => setShowGraph(false)}
+        />
+      )}
+
+      {linkRequest && (
+        <LinkPicker
+          phrase={linkRequest.phrase}
+          papers={papers}
+          onPick={handlePickLinkTarget}
+          onClose={() => setLinkRequest(null)}
+        />
+      )}
+
       {tableDialog && (
         <TableDialog
           mode={tableDialog.mode}

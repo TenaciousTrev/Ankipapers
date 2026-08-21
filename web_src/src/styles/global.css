@@ -773,6 +773,225 @@ textarea.block-input.block-input-textarea {
   transform: translateY(-1px);
 }
 
+/* ── Document links ───────────────────────────────────────────────
+   A phrase pointing at a header (or a whole document) elsewhere.
+   Double-click opens the target. The colour is theme-aware: true navy
+   is unreadable on the dark theme, so dark mode uses a lighter blue
+   that still reads as "navy" in character. Tune these two values to
+   taste — nothing else depends on them. */
+:root, [data-theme="dark"] {
+  --ap-link: #7aa7ff;
+  --ap-link-underline: rgba(122, 167, 255, 0.75);
+  --ap-link-hover-bg: rgba(122, 167, 255, 0.16);
+}
+[data-theme="light"] {
+  --ap-link: #123a8a;
+  --ap-link-underline: rgba(18, 58, 138, 0.85);
+  --ap-link-hover-bg: rgba(18, 58, 138, 0.10);
+}
+
+.ap-link {
+  color: var(--ap-link);
+  text-decoration: underline;
+  text-decoration-color: var(--ap-link-underline);
+  text-underline-offset: 2px;
+  text-decoration-thickness: 2px;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+  transition: background 120ms ease;
+}
+.ap-link:hover {
+  background: var(--ap-link-hover-bg);
+}
+
+/* Brief highlight when you arrive at a link's target, so the eye lands
+   on the right line without the block entering edit mode. */
+.block-row.block-row-revealed {
+  animation: ap-reveal 2.4s ease-out 1;
+  border-radius: 6px;
+}
+@keyframes ap-reveal {
+  0%   { background: var(--ap-link-hover-bg); box-shadow: 0 0 0 2px var(--ap-link-underline); }
+  70%  { background: var(--ap-link-hover-bg); box-shadow: 0 0 0 2px var(--ap-link-underline); }
+  100% { background: transparent; box-shadow: 0 0 0 2px transparent; }
+}
+
+/* ── Links panel (backlinks + outgoing) ──────────────────────────── */
+.links-panel {
+  width: 330px; min-width: 330px;
+  display: flex; flex-direction: column;
+  background: var(--bg-elevated, #16162a);
+  border-left: 1px solid var(--border, #2a2a44);
+  overflow: hidden;
+}
+.links-panel-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border, #2a2a44);
+}
+.links-panel-title { font-size: 13px; font-weight: 600; color: var(--text, #e8e8f0); flex: 1; }
+.links-panel-graph-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--ap-link-hover-bg); color: var(--ap-link);
+  border: none; border-radius: 6px; padding: 4px 8px;
+  font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.links-panel-close {
+  background: none; border: none; color: var(--text-dim, #9a9ab5);
+  font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.links-panel-body { overflow-y: auto; padding: 8px; flex: 1; }
+.links-panel-section { margin-bottom: 14px; }
+.links-panel-section-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-dim, #9a9ab5);
+  padding: 4px 6px 8px;
+}
+.links-panel-empty { font-size: 12px; color: var(--text-dim, #9a9ab5); padding: 4px 8px 10px; opacity: 0.8; }
+.links-panel-item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: 1px solid transparent;
+  border-radius: 8px; padding: 8px 9px; margin-bottom: 4px;
+  cursor: pointer; font-family: inherit; color: inherit;
+}
+.links-panel-item:hover { background: var(--ap-link-hover-bg); border-color: var(--ap-link-underline); }
+.links-panel-item.is-dangling { cursor: default; opacity: 0.75; }
+.links-panel-item.is-dangling:hover { background: transparent; border-color: transparent; }
+.links-panel-item-top {
+  font-size: 11px; font-weight: 600; color: var(--ap-link);
+  margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.links-panel-item-text {
+  font-size: 12px; color: var(--text, #e8e8f0); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.links-panel-item-sub { font-size: 11px; color: var(--text-dim, #9a9ab5); margin-top: 3px; }
+.links-panel-hit { background: var(--ap-link-hover-bg); color: var(--ap-link); border-radius: 3px; padding: 0 2px; }
+.links-panel-warn { display: inline-flex; align-items: center; gap: 4px; color: #e17055; }
+[data-theme="light"] .links-panel { background: #fafaff; }
+
+/* ── Graph view ──────────────────────────────────────────────────── */
+.graph-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center; padding: 3vh 3vw;
+}
+.graph-window {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg, #0b0b14);
+  border: 1px solid var(--border, #2a2a44);
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+.graph-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border, #2a2a44);
+}
+.graph-title { font-size: 13px; font-weight: 600; color: var(--text, #e8e8f0); }
+.graph-modes { display: flex; gap: 4px; }
+.graph-modes button {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; color: var(--text-dim, #9a9ab5);
+  border: 1px solid var(--border, #2a2a44); border-radius: 6px;
+  padding: 4px 9px; font-size: 11px; cursor: pointer; font-family: inherit;
+}
+.graph-modes button.is-active { background: var(--ap-link-hover-bg); color: var(--ap-link); border-color: var(--ap-link-underline); }
+.graph-search { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--text-dim, #9a9ab5); }
+.graph-search input {
+  background: transparent; border: none; outline: none;
+  color: var(--text, #e8e8f0); font-family: inherit; font-size: 12px; width: 160px;
+}
+.graph-close { background: none; border: none; color: var(--text-dim, #9a9ab5); cursor: pointer; display: flex; }
+.graph-svg { flex: 1; width: 100%; cursor: grab; user-select: none; }
+.graph-svg:active { cursor: grabbing; }
+.graph-edge { stroke: var(--ap-link-underline); opacity: 0.5; }
+.graph-edge.is-contains { stroke: var(--text-dim, #9a9ab5); opacity: 0.28; stroke-dasharray: 3 3; }
+.graph-edge.is-dim { opacity: 0.08; }
+.graph-node { cursor: pointer; }
+.graph-node circle { fill: var(--ap-link); stroke: var(--bg, #0b0b14); stroke-width: 2; }
+.graph-node.header circle { fill: var(--text-dim, #9a9ab5); }
+.graph-node.is-current circle { fill: #6c5ce7; stroke: var(--ap-link); }
+.graph-node.is-match circle { fill: #f6c945; }
+.graph-node.is-dim { opacity: 0.18; }
+.graph-node text { fill: var(--text, #e8e8f0); font-size: 11px; pointer-events: none; }
+.graph-node.header text { fill: var(--text-dim, #9a9ab5); font-size: 10px; }
+.graph-foot {
+  display: flex; justify-content: space-between;
+  padding: 8px 14px; font-size: 11px; color: var(--text-dim, #9a9ab5);
+  border-top: 1px solid var(--border, #2a2a44);
+}
+[data-theme="light"] .graph-window { background: #fff; }
+[data-theme="light"] .graph-node circle { stroke: #fff; }
+
+/* ── Link picker ──────────────────────────────────────────────── */
+.link-picker-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+}
+.link-picker {
+  width: min(720px, 92vw);
+  max-height: 66vh;
+  display: flex; flex-direction: column;
+  background: var(--bg-elevated, #16162a);
+  border: 1px solid var(--border, #2a2a44);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.link-picker-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border, #2a2a44);
+  color: var(--text-dim, #9a9ab5);
+}
+.link-picker-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text, #e8e8f0); font-size: 15px; font-family: inherit;
+}
+.link-picker-phrase {
+  padding: 8px 14px; font-size: 12px;
+  color: var(--text-dim, #9a9ab5);
+  border-bottom: 1px solid var(--border, #2a2a44);
+}
+.link-picker-phrase-text { color: var(--ap-link); font-weight: 600; }
+.link-picker-results { overflow-y: auto; padding: 6px; }
+.link-picker-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+}
+.link-picker-row.is-selected { background: var(--ap-link-hover-bg); }
+.link-picker-badge {
+  flex: 0 0 auto; min-width: 26px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px; font-size: 10px; font-weight: 700;
+  background: rgba(122, 167, 255, 0.16); color: var(--ap-link);
+}
+.link-picker-badge.level-1 { background: rgba(122, 167, 255, 0.28); }
+.link-picker-badge.level-doc { background: rgba(160, 160, 190, 0.18); color: var(--text-dim, #9a9ab5); }
+.link-picker-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.link-picker-title {
+  color: var(--text, #e8e8f0); font-size: 14px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.link-picker-crumbs {
+  color: var(--text-dim, #9a9ab5); font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.link-picker-sep { opacity: 0.55; }
+.link-picker-enter { color: var(--ap-link); flex: 0 0 auto; }
+.link-picker-empty { padding: 22px; text-align: center; color: var(--text-dim, #9a9ab5); font-size: 13px; }
+.link-picker-foot {
+  display: flex; justify-content: space-between;
+  padding: 8px 14px; font-size: 11px;
+  color: var(--text-dim, #9a9ab5);
+  border-top: 1px solid var(--border, #2a2a44);
+}
+[data-theme="light"] .link-picker { background: #fff; }
+
 .zettel-popup {
   position: absolute;
   top: 100%;

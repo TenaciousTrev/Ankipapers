@@ -104,6 +104,11 @@ def _get_collection():
     return None
 
 
+class StorageError(Exception):
+    """Raised when a paper could not be persisted, so callers can report it
+    instead of silently continuing as if the save had succeeded."""
+
+
 def _collection_get(key: str, default: Any) -> Any:
     col = _get_collection()
     if not col:
@@ -124,6 +129,22 @@ def _collection_set(key: str, value: Any) -> bool:
         return True
     except Exception:
         return False
+
+
+def _collection_get_strict(col, key: str) -> Any:
+    """Read a config value, letting failures raise.
+
+    The lenient _collection_get() above returns its default when a read fails.
+    That is fine for optional values, but dangerous for the papers map: a
+    failed read would look like "no papers yet", and the caller would then
+    write back a map containing only the paper being saved — destroying every
+    other paper. Reads that feed a read-modify-write must use this instead.
+    """
+    try:
+        value = col.get_config(key)
+    except Exception as exc:
+        raise StorageError(f"could not read {key} from the collection: {exc}") from exc
+    return value
 
 
 def _load_all_disk_papers() -> Dict[str, Dict[str, Any]]:
@@ -191,20 +212,40 @@ except Exception as e:
 
 
 def save_paper(paper: Paper) -> str:
-    """Save a paper. Returns a storage identifier/path."""
+    """Save a paper. Returns a storage identifier/path.
+
+    Raises StorageError if the collection is available but the paper could not
+    be written to it. Previously such a failure silently diverted the paper to
+    a disk file — but load_paper()/list_papers() read the collection FIRST and
+    only look at disk when the collection has no entry for that id, so those
+    "saves" were written somewhere they would never be read back, and the user
+    was told the save had succeeded. Failing loudly is what lets the UI say so.
+    """
     _migrate_to_collection_if_needed()
-    file_path = f"collection://{paper.id}"
 
     paper.content = _strip_block_ids(paper.content)
     data = paper.to_dict()
-    papers_map = _collection_get(COLLECTION_PAPERS_KEY, {})
-    if not isinstance(papers_map, dict):
-        papers_map = {}
-    papers_map[paper.id] = data
-    if _collection_set(COLLECTION_PAPERS_KEY, papers_map):
-        return file_path
 
-    # Fallback to disk if collection is unavailable
+    col = _get_collection()
+    if col is not None:
+        # Strict read: a failed read must not look like "no papers yet", or the
+        # write below would replace every other paper with just this one.
+        papers_map = _collection_get_strict(col, COLLECTION_PAPERS_KEY)
+        if papers_map is None:
+            papers_map = {}
+        if not isinstance(papers_map, dict):
+            raise StorageError(
+                f"stored papers are not a dictionary (got {type(papers_map).__name__}); "
+                "refusing to overwrite them"
+            )
+        papers_map[paper.id] = data
+        try:
+            col.set_config(COLLECTION_PAPERS_KEY, papers_map)
+        except Exception as exc:
+            raise StorageError(f"could not write to the Anki collection: {exc}") from exc
+        return f"collection://{paper.id}"
+
+    # No collection at all (e.g. Anki still starting) — fall back to disk.
     storage_dir = get_storage_dir()
     file_path = os.path.join(storage_dir, f"{paper.id}.json")
     with open(file_path, "w", encoding="utf-8") as f:

@@ -239,9 +239,28 @@ img {
 .night_mode .ankipapers-md-table td {
   border-bottom-color: rgba(255, 255, 255, 0.06);
 }
+
+/* ─── Document links ─── */
+/* A phrase that points at a header elsewhere in Anki Papers. It is not
+   clickable inside Anki, but it keeps the visual cue that it is a link. */
+.ankipapers-card .ap-link {
+  color: #123a8a;
+  text-decoration: underline;
+  text-decoration-color: rgba(18, 58, 138, 0.85);
+  text-underline-offset: 2px;
+}
+.nightMode .ankipapers-card .ap-link,
+.night_mode .ankipapers-card .ap-link {
+  color: #7aa7ff;
+  text-decoration-color: rgba(122, 167, 255, 0.75);
+}
 """
 
 _IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+# Document links: [phrase](ap://paperId#blockId). Rendered as styled text —
+# they are not clickable inside Anki, but the phrase must never show up as raw
+# markdown on a card.
+_AP_LINK_RE = re.compile(r"(?<!!)\[([^\]\[]+)\]\(ap://([^)\s]+)\)")
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
 _STRIKE_RE = re.compile(r"~~(.+?)~~")
@@ -258,6 +277,7 @@ def _md_inline_to_html(text: str) -> str:
     r = _MATH_BLOCK_RE.sub(r"\\[\1\\]", r)
     r = _MATH_INLINE_RE.sub(r"\\(\1\\)", r)
     r = _IMG_RE.sub(r'<img src="\2">', r)
+    r = _AP_LINK_RE.sub(r'<span class="ap-link">\1</span>', r)
     r = _BOLD_RE.sub(r"<b>\1</b>", r)
     r = _ITALIC_RE.sub(r"<i>\1</i>", r)
     r = _STRIKE_RE.sub(r"<s>\1</s>", r)

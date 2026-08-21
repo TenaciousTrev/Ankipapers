@@ -1,7 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { GripVertical, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { openInBrowser, pasteImage } from '../bridge'
-import { resolveNoteIdForLine } from '../crossLink'
+import { buildCardRefIndex, resolveNoteIdFromIndex } from '../crossLink'
+import {
+  AP_LINK_RE,
+  stripApBlockId,
+  extractApBlockSuffix,
+  mergeEditedWithApSuffix,
+  ensureApBlockId,
+  buildApUrl,
+} from '../docLinks'
 
 function ZettelkastenSearch({ query, selected, papers }) {
   const results = useMemo(() => {
@@ -34,23 +42,6 @@ function ZettelkastenSearch({ query, selected, papers }) {
  */
 
 // Stable block-id suffix (hidden in editor UI; kept in stored markdown)
-const AP_BLOCK_ID_TAIL = /\s*<!--ap:[0-9a-f-]{36}-->\s*$/i
-
-function stripApBlockId(line) {
-  return (line ?? '').replace(AP_BLOCK_ID_TAIL, '')
-}
-
-function extractApBlockSuffix(line) {
-  const m = (line ?? '').match(AP_BLOCK_ID_TAIL)
-  return m ? m[0] : ''
-}
-
-function mergeEditedWithApSuffix(editedBody, originalLine) {
-  const suf = extractApBlockSuffix(originalLine)
-  if (!suf) return editedBody ?? ''
-  return `${(editedBody ?? '').replace(/\s+$/, '')}${suf}`
-}
-
 // ─── Block type detection ───────────────────────────
 function getBlockType(line) {
   const t = line.trim()
@@ -158,7 +149,7 @@ function scheduleRestoreSelection(inputRef, start, end) {
 }
 
 // ─── Inline formatting ─────────────────────────────
-function formatInline(text, mediaDir) {
+function formatInlineRaw(text, mediaDir) {
   let r = text
     .replace(/&/g, '&amp;')
   // Images inline — must run before < > escaping
@@ -206,7 +197,46 @@ function formatInline(text, mediaDir) {
   r = r.replace(/`([^`]+?)`/g, '<code>$1</code>')
   // Zettelkasten links
   r = r.replace(/\[\[(.+?)\]\]/g, '<span class="block-zettel-link" data-title="$1">[[$1]]</span>')
+  // Document links: [text](ap://paperId#blockId)
+  r = r.replace(AP_LINK_RE, (_m, text, target) => {
+    const safe = String(target).replace(/["'<>]/g, '')
+    return `<span class="ap-link" data-ap-target="${safe}" title="Double-click to open">${text}</span>`
+  })
   return r
+}
+
+// formatInline() is called from every card/heading/bullet/paragraph render
+// (12 call sites in RenderBlock below) — including for blocks whose text
+// hasn't changed but whose position in the document has (e.g. every line
+// after a single Enter/paste/drag-reorder/duplicate/merge/delete). It's a
+// pure function — the same (text, mediaDir) always produces the same HTML —
+// so those re-renders can hit a cache instead of re-running the full regex
+// chain above. No eviction: at realistic document sizes the memory cost is
+// negligible (roughly 200 bytes/line — even tens of thousands of distinct
+// lines across a long session stays in the tens-of-MB range).
+//
+// Critically, what is cached is the whole `{ __html }` PROP OBJECT, not just
+// the HTML string. React 19 decides whether to touch dangerouslySetInnerHTML
+// by comparing that prop by OBJECT IDENTITY, not by the string inside it: a
+// fresh `{ __html: sameString }` literal on each render makes React re-set
+// innerHTML anyway, and the browser then destroys and re-parses the whole
+// subtree. On a large document that was thousands of DOM nodes torn down and
+// rebuilt per keystroke. Handing React back the identical object lets it skip
+// the DOM entirely whenever a block's text has not changed.
+const formatInlineCache = new Map()
+function formatInlineProp(text, mediaDir) {
+  const cacheKey = (mediaDir || '') + '\u0000' + text
+  let prop = formatInlineCache.get(cacheKey)
+  if (prop === undefined) {
+    prop = { __html: formatInlineRaw(text, mediaDir) }
+    formatInlineCache.set(cacheKey, prop)
+  }
+  return prop
+}
+
+// Kept for callers that want the HTML string rather than the prop object.
+function formatInline(text, mediaDir) {
+  return formatInlineProp(text, mediaDir).__html
 }
 
 // ─── Link Preview ─────────────────────────────────────
@@ -260,11 +290,11 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
     const m = t.match(/^(#{1,6})\s+(.+)$/)
     const level = m[1].length
     const Tag = `h${level}`
-    return <Tag className={`block-heading block-h${level}`} dangerouslySetInnerHTML={{ __html: formatInline(m[2], mediaDir) }} />
+    return <Tag className={`block-heading block-h${level}`} dangerouslySetInnerHTML={formatInlineProp(m[2], mediaDir)} />
   }
 
   if (type === 'blockquote') {
-    return <blockquote className="block-blockquote" dangerouslySetInnerHTML={{ __html: formatInline(t.slice(2), mediaDir) }} />
+    return <blockquote className="block-blockquote" dangerouslySetInnerHTML={formatInlineProp(t.slice(2), mediaDir)} />
   }
 
   if (type === 'link-preview') {
@@ -313,7 +343,7 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
           return (
             <div key={rowIdx} className="block-table-row">
               {cells.map((cell, idx) => (
-                <div key={idx} className="block-table-cell" dangerouslySetInnerHTML={{ __html: formatInline(cell, mediaDir) }} />
+                <div key={idx} className="block-table-cell" dangerouslySetInnerHTML={formatInlineProp(cell, mediaDir)} />
               ))}
             </div>
           )
@@ -335,9 +365,9 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
             </button>
           )}
         </div>
-        <div className="block-card-front" dangerouslySetInnerHTML={{ __html: formatInline(m[1], mediaDir) }} />
+        <div className="block-card-front" dangerouslySetInnerHTML={formatInlineProp(m[1], mediaDir)} />
         <div className="block-card-sep">▼</div>
-        <div className="block-card-back" dangerouslySetInnerHTML={{ __html: formatInline(m[2], mediaDir) }} />
+        <div className="block-card-back" dangerouslySetInnerHTML={formatInlineProp(m[2], mediaDir)} />
       </div>
     )
   }
@@ -355,9 +385,9 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
             </button>
           )}
         </div>
-        <div className="block-card-front" dangerouslySetInnerHTML={{ __html: formatInline(m[1], mediaDir) }} />
+        <div className="block-card-front" dangerouslySetInnerHTML={formatInlineProp(m[1], mediaDir)} />
         <div className="block-card-sep">⇅</div>
-        <div className="block-card-back" dangerouslySetInnerHTML={{ __html: formatInline(m[2], mediaDir) }} />
+        <div className="block-card-back" dangerouslySetInnerHTML={formatInlineProp(m[2], mediaDir)} />
       </div>
     )
   }
@@ -374,31 +404,31 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
             </button>
           )}
         </div>
-        <div className="block-cloze" dangerouslySetInnerHTML={{ __html: formatInline(t, mediaDir) }} />
+        <div className="block-cloze" dangerouslySetInnerHTML={formatInlineProp(t, mediaDir)} />
       </div>
     )
   }
 
   if (type === 'bullet') {
     const m = t.match(/^\s*[-*]\s+(.+)$/)
-    return <div className="block-list-item"><span className="block-bullet">•</span><span dangerouslySetInnerHTML={{ __html: formatInline(m[1], mediaDir) }} /></div>
+    return <div className="block-list-item"><span className="block-bullet">•</span><span dangerouslySetInnerHTML={formatInlineProp(m[1], mediaDir)} /></div>
   }
 
   if (type === 'numbered') {
     const m = t.match(/^\s*(\d+)\.\s+(.+)$/)
-    return <div className="block-list-item"><span className="block-num">{m[1]}.</span><span dangerouslySetInnerHTML={{ __html: formatInline(m[2], mediaDir) }} /></div>
+    return <div className="block-list-item"><span className="block-num">{m[1]}.</span><span dangerouslySetInnerHTML={formatInlineProp(m[2], mediaDir)} /></div>
   }
 
   if (t.startsWith('&& ')) {
     return (
       <p className="block-paragraph block-supplement">
-        <em dangerouslySetInnerHTML={{ __html: formatInline(t.slice(3), mediaDir) }} />
+        <em dangerouslySetInnerHTML={formatInlineProp(t.slice(3), mediaDir)} />
       </p>
     )
   }
 
   // Default: paragraph
-  return <p className="block-paragraph" dangerouslySetInnerHTML={{ __html: formatInline(t, mediaDir) }} />
+  return <p className="block-paragraph" dangerouslySetInnerHTML={formatInlineProp(t, mediaDir)} />
 }
 
 
@@ -417,6 +447,9 @@ function BlockContextMenu({
   canEditTable,
   onGoToSource,
   canGoToSource,
+  onCreateLink,
+  canCreateLink,
+  createLinkHint,
   selectionCount,
 }) {
   const multi = selectionCount > 1
@@ -474,6 +507,18 @@ function BlockContextMenu({
       >
         Edit block
       </button>
+      {createLinkHint !== null && (
+        <button
+          type="button"
+          className="block-context-menu-item"
+          role="menuitem"
+          disabled={multi || !canCreateLink}
+          title={canCreateLink ? 'Point this phrase at a header or document' : createLinkHint}
+          onClick={onCreateLink}
+        >
+          Create link…
+        </button>
+      )}
       {canEditTable && (
         <button
           type="button"
@@ -527,11 +572,12 @@ function syncBlockTextareaHeight(el) {
 }
 
 const Block = React.memo(function Block({
-  index,
+  blockId,
   line,
   type,
   focused,
   isSelected,
+  isRevealed,
   dragDisabled,
   onRowClick,
   onChange,
@@ -542,8 +588,9 @@ const Block = React.memo(function Block({
   onDragStart,
   onDragOver,
   onDrop,
-  dragOverIndex,
+  isDragOver,
   onBlockContextMenu,
+  onOpenLink,
   activeBlockInputRef,
   hasChildren,
   isCollapsed,
@@ -586,9 +633,9 @@ const Block = React.memo(function Block({
 
   return (
     <div
-      className={`block-row ${dragOverIndex === index ? 'drag-over' : ''} ${isSelected && !focused ? 'block-row-selected' : ''}`}
+      className={`block-row ${isDragOver ? 'drag-over' : ''} ${isSelected && !focused ? 'block-row-selected' : ''} ${isRevealed ? 'block-row-revealed' : ''}`}
       style={{ marginLeft: indentPx }}
-      data-index={index}
+      data-block-id={blockId}
       draggable={!focused && !dragDisabled}
       onClick={(e) => {
         const zettelEl = e.target.closest('.block-zettel-link')
@@ -601,16 +648,33 @@ const Block = React.memo(function Block({
             return
           }
         }
+        // Document links open on DOUBLE-click (see onDoubleClick below), so a
+        // single click on one must not swap the block into an editing textarea
+        // — the second click would then have no link element to land on. To
+        // edit a line containing a link, click it anywhere outside the link,
+        // or use "Edit block" in the right-click menu.
+        if (!focused && e.target.closest('.ap-link')) {
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
         if (!focused) {
-          onRowClick(e, index, type)
+          onRowClick(e, blockId, type)
         }
       }}
-      onDragStart={(e) => onDragStart(e, index)}
-      onDragOver={(e) => onDragOver(e, index)}
-      onDrop={(e) => onDrop(e, index)}
+      onDoubleClick={(e) => {
+        const linkEl = e.target.closest('.ap-link')
+        if (!linkEl) return
+        e.preventDefault()
+        e.stopPropagation()
+        onOpenLink?.(linkEl.dataset.apTarget)
+      }}
+      onDragStart={(e) => onDragStart(e, blockId)}
+      onDragOver={(e) => onDragOver(e, blockId)}
+      onDrop={(e) => onDrop(e, blockId)}
       onContextMenu={(e) => {
         e.preventDefault()
-        onBlockContextMenu?.(e, index)
+        onBlockContextMenu?.(e, blockId)
       }}
     >
       {Array.from({ length: indentLevel }).map((_, i) => (
@@ -643,24 +707,24 @@ const Block = React.memo(function Block({
             autoComplete="off"
             onChange={e => {
               const val = type !== 'table' ? leadingSpaces + e.target.value : e.target.value
-              onChange(index, mergeEditedWithApSuffix(val, line))
+              onChange(blockId, mergeEditedWithApSuffix(val, line))
               if (onZettelSearch) {
                 const selStart = e.target.selectionStart
                 const textBefore = e.target.value.slice(0, selStart)
                 const lastO = textBefore.lastIndexOf('[[')
                 const lastC = textBefore.lastIndexOf(']]')
                 if (lastO !== -1 && lastO > lastC) {
-                  onZettelSearch(index, textBefore.slice(lastO + 2))
+                  onZettelSearch(blockId, textBefore.slice(lastO + 2))
                 } else {
-                  onZettelSearch(index, null)
+                  onZettelSearch(blockId, null)
                 }
               }
             }}
             onInput={(e) => syncBlockTextareaHeight(e.target)}
-            onKeyDown={e => onKeyDown(e, index)}
+            onKeyDown={e => onKeyDown(e, blockId)}
           />
         ) : (
-          <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(index, w)} noteId={noteId} />
+          <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(blockId, w)} noteId={noteId} />
         )}
       </div>
     </div>
@@ -681,7 +745,7 @@ function getBlockRangeAndIndent(lines, idx) {
 }
 
 // ─── Block Editor ───────────────────────────────────
-const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, papers = [] }, ref) {
+const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, papers = [] }, ref) {
   const [focusedIndex, setFocusedIndex] = useState(null)
   const [selectedIndices, setSelectedIndices] = useState(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState(null)
@@ -767,8 +831,8 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         const cRect = child.getBoundingClientRect()
         // Determine overlap
         if (cRect.top <= bottom && cRect.bottom >= top && cRect.left <= right && cRect.right >= left) {
-          const idx = parseInt(child.dataset.index)
-          if (!isNaN(idx)) nextSelection.add(idx)
+          const idx = idToIndexRef.current.get(child.dataset.blockId)
+          if (idx !== undefined) nextSelection.add(idx)
         }
       })
       setSelectedIndices(nextSelection)
@@ -784,6 +848,25 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }, [lasso])
 
+// ── Expand All Shortcut ──────────────────────────────────────────
+  useEffect(() => {
+    const handleExpandAll = (e) => {
+      // Listens for Shift + Command (metaKey) + Down Arrow
+      if (e.shiftKey && e.metaKey && e.key === 'ArrowDown') {
+        e.preventDefault()
+        // Passing an empty Set clears all collapsed states globally
+        setCollapsedKeys(new Set())
+      }
+    }
+
+    // Attach to the window to catch the command even if a specific block isn't focused
+    window.addEventListener('keydown', handleExpandAll)
+    
+    return () => {
+      window.removeEventListener('keydown', handleExpandAll)
+    }
+  }, [])
+
   const toggleCollapse = useCallback((e, key) => {
     e.stopPropagation()
     setFocusedIndex(null)
@@ -795,9 +878,74 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     })
   }, [])
 
+  // Built once per cardRefs change (not per keystroke — cardRefs only
+  // changes after generating/syncing cards) so note-ID lookups below are
+  // O(1) Map reads instead of rescanning the whole card_refs array for
+  // every card line in the document. See crossLink.js for details.
+  const cardRefIndex = useMemo(() => buildCardRefIndex(cardRefs), [cardRefs])
+
+  // ── Stable per-line identity for React keys ──────────────────────────
+  // Keying blocks by array position means that inserting or deleting a line
+  // hands every block below it a DIFFERENT line's text, forcing them all to
+  // re-render (and re-parse their HTML). Instead, give each line an id that
+  // survives edits above it: match the unchanged prefix and suffix of the
+  // document against the previous version, and reuse ids positionally in the
+  // changed middle. Typing reuses the id for the edited line (so the focused
+  // textarea is never remounted and never loses the cursor), and pressing
+  // Enter reuses every id below the insertion point.
+  const lineIdsRef = useRef({ lines: [], ids: [] })
+  const nextLineIdRef = useRef(1)
+  const lineIds = useMemo(() => {
+    const newLines = content.split('\n')
+    const { lines: oldLines, ids: oldIds } = lineIdsRef.current
+    const n = newLines.length
+    const m = oldLines.length
+    // Longest common prefix, then longest common suffix of what remains.
+    // Bounding the suffix by (n - p) and (m - p) keeps the two regions from
+    // overlapping, which guarantees no id is reused twice.
+    let p = 0
+    while (p < n && p < m && newLines[p] === oldLines[p]) p++
+    let suf = 0
+    while (suf < (n - p) && suf < (m - p) && newLines[n - 1 - suf] === oldLines[m - 1 - suf]) suf++
+    const ids = new Array(n)
+    for (let i = 0; i < p; i++) ids[i] = oldIds[i]
+    for (let i = 0; i < suf; i++) ids[n - 1 - i] = oldIds[m - 1 - i]
+    const newMid = n - p - suf
+    const oldMid = m - p - suf
+    for (let i = 0; i < newMid; i++) {
+      ids[p + i] = i < oldMid ? oldIds[p + i] : 'L' + (nextLineIdRef.current++)
+    }
+    lineIdsRef.current = { lines: newLines, ids }
+    return ids
+  }, [content])
+
+  // id -> current line index. Callbacks below take a stable blockId and look
+  // the index up here at event time, so they never need the index as a prop
+  // (a prop that shifts for every block below an edit, which would defeat
+  // Block's React.memo and re-render the whole document).
+  const idToIndex = useMemo(() => {
+    const m = new Map()
+    for (let i = 0; i < lineIds.length; i++) m.set(lineIds[i], i)
+    return m
+  }, [lineIds])
+  const idToIndexRef = useRef(idToIndex)
+  idToIndexRef.current = idToIndex
+
+  // Entrance-animation delay, assigned once per line id and then held steady.
+  // Deriving it from the row's position meant the inline style changed for
+  // every block below an edit, causing a wave of style writes.
+  const staggerRef = useRef(new Map())
+  const staggerDelays = useMemo(() => {
+    const m = staggerRef.current
+    lineIds.forEach((id, i) => {
+      if (!m.has(id)) m.set(id, Math.min((i % 40) * 25, 800))
+    })
+    return m
+  }, [lineIds])
+
   const blocks = useMemo(() => {
     const lines = content.split('\n')
-    const parsed = lines.map((line) => {
+    const parsed = lines.map((line, i) => {
       const type = getBlockType(line)
       const rawDisplay = stripApBlockId(line)
       const spacesMatch = type !== 'table' ? rawDisplay.match(/^[ \t]*/) : null
@@ -805,7 +953,14 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       const actualText = type !== 'table' ? rawDisplay.slice(leadingSpaces.length) : rawDisplay
       const indentLevel = Math.floor(leadingSpaces.replace(/\t/g, '    ').length / 4)
       const key = `${indentLevel}:${actualText.trim()}`
-      return { line, type, key, indentLevel, actualText }
+      // Resolve the linked Anki note ID here, in the single pass we already
+      // make over every line, instead of a separate lookup per card block
+      // during render (which used to re-split the whole document and
+      // rescan card_refs for every single card — see crossLink.js).
+      const noteId = (type === 'basic' || type === 'reversible' || type === 'cloze')
+        ? resolveNoteIdFromIndex(i, line, cardRefIndex)
+        : null
+      return { line, type, key, indentLevel, actualText, noteId, id: lineIds[i] }
     })
 
     const hiddenIndices = new Set()
@@ -832,7 +987,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     parsed.forEach((b, i) => { b.isHidden = hiddenIndices.has(i) })
     
     return parsed
-  }, [content, collapsedKeys])
+  }, [content, collapsedKeys, cardRefIndex, lineIds])
 
   // Update card counts
   useEffect(() => {
@@ -851,25 +1006,20 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   // referentially stable while still always seeing the latest value.
   const contentRef = useRef(content)
   contentRef.current = content
-  const cardRefsRef = useRef(cardRefs)
-  cardRefsRef.current = cardRefs
   const papersRef = useRef(papers)
   papersRef.current = papers
   const blocksRef = useRef(blocks)
   blocksRef.current = blocks
   const zettelSearchRef = useRef(zettelSearch)
   zettelSearchRef.current = zettelSearch
+  const focusedIndexRef = useRef(focusedIndex)
+  focusedIndexRef.current = focusedIndex
+  const selectionAnchorRef = useRef(selectionAnchor)
+  selectionAnchorRef.current = selectionAnchor
 
-  const getNoteId = useCallback(
-    (index) => {
-      const lines = contentRef.current.split('\n')
-      const lineText = lines[index] ?? ''
-      return resolveNoteIdForLine(index, lineText, cardRefsRef.current)
-    },
-    []
-  )
-
-  const handleZettelSearch = useCallback((index, query) => {
+  const handleZettelSearch = useCallback((blockId, query) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     if (query !== null) {
       setZettelSearch(prev => (prev?.index === index && prev?.query === query) ? prev : { index, query, selected: 0 })
     } else {
@@ -877,7 +1027,9 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }, [])
 
-  const handleBlockChange = useCallback((index, newValue) => {
+  const handleBlockChange = useCallback((blockId, newValue) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     const lines = contentRef.current.split('\n')
     const b = findTableBounds(lines, index)
     if (b && b.start === index) {
@@ -888,7 +1040,9 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     onChange(lines.join('\n'))
   }, [onChange])
 
-  const handleBlockRowClick = useCallback((e, index) => {
+  const handleBlockRowClick = useCallback((e, blockId) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     if (e.button !== 0) return
     const el = e.target
     if (el.closest && el.closest('button, a, [role="button"]')) return
@@ -906,7 +1060,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       return
     }
     if (e.shiftKey) {
-      const anchor = selectionAnchor !== null ? selectionAnchor : focusedIndex
+      const anchor = selectionAnchorRef.current !== null ? selectionAnchorRef.current : focusedIndexRef.current
       if (anchor !== null && anchor !== undefined) {
         e.preventDefault()
         setFocusedIndex(null)
@@ -924,9 +1078,11 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     setSelectedIndices(new Set())
     setSelectionAnchor(targetIndex)
     setFocusedIndex(targetIndex)
-  }, [selectionAnchor, focusedIndex])
+  }, [])
 
-  const handleImageResize = useCallback((index, newWidth) => {
+  const handleImageResize = useCallback((blockId, newWidth) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     const lines = contentRef.current.split('\n')
     const line = lines[index]
     // Parse existing image syntax
@@ -945,7 +1101,9 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     onChange(lines.join('\n'))
   }, [onChange])
 
-  const handleKeyDown = useCallback((e, index) => {
+  const handleKeyDown = useCallback((e, blockId) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     // Read the latest values via ref instead of closing over the state/props
     // directly. This keeps the callback's identity stable across keystrokes
     // (see the refs declared above) instead of rebuilding it — and every
@@ -1104,17 +1262,23 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }, [onChange])
 
-  const handleDragStart = useCallback((e, index) => {
+  const handleDragStart = useCallback((e, blockId) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     e.dataTransfer.setData('text/plain', index.toString())
     e.dataTransfer.effectAllowed = 'move'
   }, [])
 
-  const handleDragOver = useCallback((e, index) => {
+  const handleDragOver = useCallback((e, blockId) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     e.preventDefault()
     setDragOverIndex(index)
   }, [])
 
-  const handleDrop = useCallback((e, targetIndex) => {
+  const handleDrop = useCallback((e, blockId) => {
+    const targetIndex = idToIndexRef.current.get(blockId)
+    if (targetIndex === undefined) return
     e.preventDefault()
     setDragOverIndex(null)
     const sourceIndex = parseInt(e.dataTransfer.getData('text/plain'))
@@ -1150,20 +1314,121 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     setSelectedIndices(new Set())
   }, [onChange])
 
+  // Opening a document link is delegated to App, which owns paper switching.
+  // Kept stable via a ref so every <Block/> keeps its memoized props.
+  const onOpenDocLinkRef = useRef(onOpenDocLink)
+  onOpenDocLinkRef.current = onOpenDocLink
+  const handleOpenLink = useCallback((target) => {
+    if (target) onOpenDocLinkRef.current?.(target)
+  }, [])
+
+  // Transient highlight used when arriving at a link's target, so the reader's
+  // eye lands on the right line without the block flipping into edit mode.
+  const [revealedIndex, setRevealedIndex] = useState(null)
+  const revealTimerRef = useRef(null)
+  const revealBlock = useCallback((index) => {
+    setSelectedIndices(new Set())
+    setFocusedIndex(null)
+    setRevealedIndex(index)
+    setTimeout(() => {
+      const el = containerRef.current?.children[index]
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    clearTimeout(revealTimerRef.current)
+    revealTimerRef.current = setTimeout(() => setRevealedIndex(null), 2400)
+  }, [])
+  useEffect(() => () => clearTimeout(revealTimerRef.current), [])
+
   const closeBlockMenu = useCallback(() => setBlockMenu(null), [])
 
-  const handleBlockContextMenu = useCallback((e, index) => {
+  const handleBlockContextMenu = useCallback((e, blockId) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
     e.preventDefault()
     e.stopPropagation()
+    // Snapshot the highlighted phrase now: opening the menu moves focus away
+    // from the textarea, so reading its selection later is unreliable.
+    const input = activeBlockInputRef.current
+    const isFocusedBlock = focusedIndexRef.current === index && !!input
+    const textSel =
+      isFocusedBlock && input.selectionStart !== input.selectionEnd
+        ? {
+            start: input.selectionStart,
+            end: input.selectionEnd,
+            text: input.value.slice(input.selectionStart, input.selectionEnd),
+          }
+        : null
     setSelectedIndices((prev) => {
       const next = prev.has(index) && prev.size > 1 ? new Set(prev) : new Set([index])
       queueMicrotask(() => {
         const sorted = [...next].sort((a, b) => a - b)
-        setBlockMenu({ x: e.clientX, y: e.clientY, index, selection: sorted })
+        setBlockMenu({ x: e.clientX, y: e.clientY, index, selection: sorted, textSel })
       })
       return next
     })
   }, [])
+
+  // Hand the request up to App, which owns the picker and paper switching.
+  const onRequestCreateLinkRef = useRef(onRequestCreateLink)
+  onRequestCreateLinkRef.current = onRequestCreateLink
+  const createLinkAtMenu = useCallback(() => {
+    const menu = blockMenu
+    if (!menu?.textSel?.text) return
+    closeBlockMenu()
+    onRequestCreateLinkRef.current?.({
+      phrase: menu.textSel.text,
+      index: menu.index,
+      selStart: menu.textSel.start,
+      selEnd: menu.textSel.end,
+    })
+  }, [blockMenu, closeBlockMenu])
+
+  /**
+   * Write the link into the document in ONE content update:
+   *   - anchor the target header when it lives in this same document,
+   *   - replace the highlighted phrase with [phrase](ap://…),
+   *   - anchor the SOURCE line too, so a future graph can address both ends.
+   * Doing it as a single edit avoids a half-applied link if anything throws.
+   */
+  const insertDocLink = useCallback((opts) => {
+    const { index, selStart, selEnd, targetPaperId, targetLineIndex } = opts || {}
+    const lines = contentRef.current.split('\n')
+    if (index == null || index < 0 || index >= lines.length) return null
+
+    let blockId = opts.targetBlockId || ''
+    if (targetLineIndex != null && targetLineIndex >= 0 && targetLineIndex < lines.length
+        && targetLineIndex !== index) {
+      const anchored = ensureApBlockId(lines[targetLineIndex])
+      lines[targetLineIndex] = anchored.line
+      blockId = anchored.blockId
+    }
+
+    const full = lines[index]
+    const apSuffix = extractApBlockSuffix(full)
+    const display = stripApBlockId(full)
+    const spaces = (display.match(/^[ \t]*/) || [''])[0]
+    const body = display.slice(spaces.length)
+    // Never let a link swallow the line's markdown marker. Wrapping the "##"
+    // of a header (or a bullet's "-") in link syntax would stop the line being
+    // a header/bullet at all, so the selection is clamped past the marker.
+    const markerMatch = body.match(/^(#{1,6}\s+|[-*]\s+|\d+\.\s+|>\s+)/)
+    const markerLen = markerMatch ? markerMatch[0].length : 0
+    const from = Math.max(markerLen, Math.min(selStart ?? 0, body.length))
+    const to = Math.max(from, Math.min(selEnd ?? 0, body.length))
+    const phrase = body.slice(from, to)
+    if (!phrase) return null
+
+    const url = buildApUrl(targetPaperId, blockId)
+    const newBody = `${body.slice(0, from)}[${phrase}](${url})${body.slice(to)}`
+    let newLine = spaces + newBody
+    if (apSuffix) newLine = newLine.replace(/\s+$/, '') + apSuffix
+    const withSourceAnchor = ensureApBlockId(newLine)
+    lines[index] = withSourceAnchor.line
+
+    onChange(lines.join('\n'))
+    setFocusedIndex(null)
+    return { targetBlockId: blockId, sourceBlockId: withSourceAnchor.blockId }
+  }, [onChange])
 
   const editBlockAtMenu = useCallback(() => {
     const sel = blockMenu?.selection
@@ -1417,7 +1682,17 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
 
   // Apply formatting to focused block
   const applyFormat = useCallback((action, extra) => {
-    if (focusedIndex === null) return
+    if (focusedIndex === null) {
+      // No block has been focused yet (e.g. image inserted before clicking
+      // into the editor) — fall back to appending at the end instead of
+      // silently doing nothing.
+      if (action === 'insertImageMd' && extra) {
+        const lines = content.split('\n')
+        lines.push(extra)
+        onChange(lines.join('\n'))
+      }
+      return
+    }
     const lines = content.split('\n')
     const focusedTable = findTableBounds(lines, focusedIndex)
     const tableHead = focusedTable && focusedTable.start === focusedIndex
@@ -1653,8 +1928,10 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         const el = containerRef.current?.children[index]
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }, 50)
-    }
-  }), [applyFormat, content, focusedIndex])
+    },
+    revealBlock,
+    insertDocLink,
+  }), [applyFormat, content, focusedIndex, revealBlock, insertDocLink])
 
   const multiSelectCount = selectedIndices.size
 
@@ -1694,26 +1971,28 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         const displayLine = isTableHead ? allLines.slice(bounds.start, bounds.end + 1).join('\n') : b.line
         const displayType = isTableHead ? 'table' : b.type
         return (
-          <div key={i} className={`block-row-wrapper ${b.isHidden ? 'block-row-hidden' : 'stagger-in'}`} style={{ animationDelay: `${Math.min((i % 40) * 25, 800)}ms` }}>
+          <div key={b.id} className={`block-row-wrapper ${b.isHidden ? 'block-row-hidden' : 'stagger-in'}`} style={{ animationDelay: `${staggerDelays.get(b.id) ?? 0}ms` }}>
             <div className="block-row-inner">
               <Block
-                index={i}
+                blockId={b.id}
                 line={displayLine}
                 type={displayType}
                 focused={focusedIndex === i}
                 isSelected={selectedIndices.has(i)}
+                isRevealed={revealedIndex === i}
                 dragDisabled={multiSelectCount > 1}
                 onRowClick={handleBlockRowClick}
                 onChange={handleBlockChange}
                 onKeyDown={handleKeyDown}
                 mediaDir={mediaDir}
                 onImageResize={handleImageResize}
-                noteId={(displayType === 'basic' || displayType === 'reversible' || displayType === 'cloze') ? getNoteId(i) : null}
+                noteId={(displayType === 'basic' || displayType === 'reversible' || displayType === 'cloze') ? b.noteId : null}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
-                dragOverIndex={dragOverIndex}
+                isDragOver={dragOverIndex === i}
                 onBlockContextMenu={handleBlockContextMenu}
+                onOpenLink={handleOpenLink}
                 activeBlockInputRef={activeBlockInputRef}
                 hasChildren={b.hasChildren}
                 isCollapsed={collapsedKeys.has(b.key)}
@@ -1754,6 +2033,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
             return !!findTableBounds(lines, idx)
           })()}
           canGoToSource={blockMenu.selection?.length === 1}
+          onCreateLink={createLinkAtMenu}
+          canCreateLink={!!blockMenu.textSel?.text}
+          createLinkHint={
+            blockMenu.textSel?.text
+              ? ''
+              : 'Click into the line, highlight a phrase, then right-click it'
+          }
           selectionCount={blockMenu.selection?.length ?? 1}
         />
       )}
