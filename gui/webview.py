@@ -77,6 +77,18 @@ class AnkiPapersWindow(QMainWindow):
         self.channel.registerObject("bridge", self.bridge)
         self.webview.page().setWebChannel(self.channel)
 
+        # Tell us when the page's render process dies. Without this a crashed
+        # renderer just leaves a blank white window with no explanation and no
+        # way back — see _on_render_process_gone below.
+        try:
+            self.webview.page().renderProcessTerminated.connect(
+                self._on_render_process_gone
+            )
+        except Exception:
+            # Older Qt bindings may not expose the signal; a missing crash
+            # handler must never stop the window from opening.
+            pass
+
         # Configure web settings
         settings = self.webview.settings()
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
@@ -118,6 +130,73 @@ class AnkiPapersWindow(QMainWindow):
                 """,
                 QUrl.fromLocalFile(web_dir + "/"),
             )
+
+    # ─── Render process crashes ──────────────────────
+    # The React UI runs in a separate Chromium process. If that process dies,
+    # QWebEngineView does not tell the user anything — it just shows an empty
+    # white window, forever, and Anki carries on as though nothing happened.
+    # This turns that silent failure into something readable and recoverable.
+
+    _RENDER_EXIT_REASONS = {
+        0: "the page shut down normally",
+        1: "the page exited unexpectedly",
+        2: "the page crashed",
+        3: "the page was killed, usually because the system ran short of memory",
+    }
+
+    _reload_attempts = 0
+
+    def _on_render_process_gone(self, status, exit_code):
+        # Closing the window navigates to about:blank on purpose, which ends
+        # the render process normally. That is not a crash.
+        if self._shutting_down:
+            return
+        try:
+            status_value = int(status)
+        except (TypeError, ValueError):
+            status_value = -1
+        if status_value == 0:
+            return
+
+        reason = self._RENDER_EXIT_REASONS.get(status_value, "the page stopped unexpectedly")
+        print(f"[Anki Papers] render process gone: {reason} (exit code {exit_code})")
+
+        from aqt.qt import QMessageBox
+
+        self._reload_attempts += 1
+        if self._reload_attempts > 3:
+            QMessageBox.critical(
+                self,
+                "Anki Papers",
+                f"The Anki Papers window keeps failing — {reason}.\n\n"
+                "Close this window and reopen it from the Tools menu. If it "
+                "happens again, restarting Anki will clear it.",
+            )
+            return
+
+        # Anki 2.1.50+ ships PyQt6 (scoped enums); older builds use PyQt5.
+        try:
+            reload_button = QMessageBox.StandardButton.Reload
+            close_button = QMessageBox.StandardButton.Close
+        except AttributeError:
+            reload_button = QMessageBox.Reload
+            close_button = QMessageBox.Close
+
+        answer = QMessageBox.warning(
+            self,
+            "Anki Papers",
+            f"The Anki Papers window stopped because {reason}.\n\n"
+            "Your papers are safe on disk up to the last save. Anything typed "
+            "since then could not be recovered.\n\nReload the window?",
+            reload_button | close_button,
+            reload_button,
+        )
+        if answer == reload_button:
+            # Rebuild the page from scratch. reload() on a dead render process
+            # is unreliable, so load the file again instead.
+            QTimer.singleShot(0, self._load_ui)
+        else:
+            self.close()
 
     # ─── Shutdown ────────────────────────────────────
     # Closing the window used to only clear the singleton. The QWebEngineView

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
+import React, { useMemo, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { X, Search, Layers, FileText } from 'lucide-react'
 import { collectLinks, buildGraph } from '../docLinks'
 
@@ -9,19 +9,44 @@ import { collectLinks, buildGraph } from '../docLinks'
  * pull to centre) run on an SVG. Hand-rolled rather than pulled from a
  * charting library so the add-on bundle stays small and there is no runtime
  * dependency to keep working inside Anki's webview.
+ *
+ * Two rules keep it cheap, which matters because this runs inside Anki's
+ * embedded Chromium rather than a browser tab:
+ *
+ *   1. The simulation STOPS. Once nothing is moving any more the animation
+ *      frame is cancelled outright, so an open graph costs nothing until you
+ *      touch it. It used to coast forever at 60fps — measured at roughly half
+ *      a CPU core, indefinitely, on a graph of five nodes.
+ *
+ *   2. Frames don't go through React. The loop writes `transform` and the
+ *      line endpoints straight onto the DOM nodes it holds refs to. React
+ *      re-renders only when the SET of nodes changes, or when you hover or
+ *      search — not sixty times a second.
  */
+
+// Movement below this (px per frame, x+y summed) counts as "at rest".
+const SETTLE_PX = 0.2
+// ...and once it has been at rest this many frames, stop the loop.
+const SETTLE_FRAMES = 30
+
 export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
   const [mode, setMode] = useState('documents')
   const [query, setQuery] = useState('')
   const [hover, setHover] = useState(null)
-  const [view, setView] = useState({ x: 0, y: 0, k: 1 })
-  const [, setTick] = useState(0)
 
   const svgRef = useRef(null)
+  const rootGRef = useRef(null)
   const simRef = useRef({ nodes: [], edges: [], byId: new Map() })
+  const nodeElsRef = useRef(new Map())
+  const edgeElsRef = useRef(new Map())
   const dragRef = useRef(null)
   const panRef = useRef(null)
   const rafRef = useRef(null)
+  const runningRef = useRef(false)
+  const stepRef = useRef(null)
+  const alphaRef = useRef(1)
+  const calmRef = useRef(0)
+  const viewRef = useRef({ x: 0, y: 0, k: 1 })
 
   const links = useMemo(() => collectLinks(papers), [papers])
   const graph = useMemo(() => buildGraph(papers, links, mode), [papers, links, mode])
@@ -36,8 +61,42 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
     return { nodes, edges: graph.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) }
   }, [graph, currentPaperId])
 
+  // ── painting: the only thing that touches the DOM per frame ──
+  const paint = useCallback(() => {
+    const { nodes, edges, byId } = simRef.current
+    for (const n of nodes) {
+      const el = nodeElsRef.current.get(n.id)
+      if (el) el.setAttribute('transform', `translate(${n.x},${n.y})`)
+    }
+    for (const e of edges) {
+      const el = edgeElsRef.current.get(e.key)
+      if (!el) continue
+      const a = byId.get(e.from)
+      const b = byId.get(e.to)
+      if (!a || !b) continue
+      el.setAttribute('x1', a.x)
+      el.setAttribute('y1', a.y)
+      el.setAttribute('x2', b.x)
+      el.setAttribute('y2', b.y)
+    }
+  }, [])
+
+  const applyView = useCallback(() => {
+    const v = viewRef.current
+    rootGRef.current?.setAttribute('transform', `translate(${v.x},${v.y}) scale(${v.k})`)
+  }, [])
+
+  /** Wake the simulation back up (and re-heat it a little) after it settled. */
+  const kick = useCallback((heat = 0.3) => {
+    alphaRef.current = Math.max(alphaRef.current, heat)
+    calmRef.current = 0
+    if (runningRef.current || !stepRef.current) return
+    runningRef.current = true
+    rafRef.current = requestAnimationFrame(stepRef.current)
+  }, [])
+
   // ── force simulation ──
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Centre on the ACTUAL canvas, not a guess — otherwise the cluster settles
     // in a corner on wide screens.
     const box = svgRef.current?.getBoundingClientRect()
@@ -55,10 +114,14 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
     })
     const byId = new Map(nodes.map((n) => [n.id, n]))
     simRef.current = { nodes, edges: visible.edges, byId }
+    paint()
 
-    let alpha = 1
+    alphaRef.current = 1
+    calmRef.current = 0
+
     const step = () => {
       const { nodes: ns, edges: es } = simRef.current
+      const alpha = alphaRef.current
       // repulsion
       for (let i = 0; i < ns.length; i++) {
         for (let j = i + 1; j < ns.length; j++) {
@@ -85,34 +148,90 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
         a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy
       }
       // centre + integrate
+      let maxMove = 0
       for (const n of ns) {
         n.vx += (W / 2 - n.x) * 0.004
         n.vy += (H / 2 - n.y) * 0.004
         if (n.fixed) { n.vx = 0; n.vy = 0; continue }
         n.vx *= 0.82; n.vy *= 0.82
-        n.x += Math.max(-24, Math.min(24, n.vx * alpha))
-        n.y += Math.max(-24, Math.min(24, n.vy * alpha))
+        const mx = Math.max(-24, Math.min(24, n.vx * alpha))
+        const my = Math.max(-24, Math.min(24, n.vy * alpha))
+        n.x += mx; n.y += my
+        const moved = Math.abs(mx) + Math.abs(my)
+        if (moved > maxMove) maxMove = moved
       }
-      alpha = Math.max(0.02, alpha * 0.985)
-      setTick((t) => (t + 1) % 100000)
+      // Let alpha reach a true zero. It used to bottom out at 0.02 — small
+      // enough to look still, large enough to never stop.
+      alphaRef.current = alpha < 0.01 ? 0 : alpha * 0.985
+      paint()
+
+      if (maxMove < SETTLE_PX && !dragRef.current) calmRef.current += 1
+      else calmRef.current = 0
+
+      if (calmRef.current >= SETTLE_FRAMES) {
+        // At rest. Stop completely rather than burning a frame every 16ms for
+        // the rest of the session.
+        runningRef.current = false
+        rafRef.current = null
+        return
+      }
       rafRef.current = requestAnimationFrame(step)
     }
+
+    stepRef.current = step
+    runningRef.current = true
     rafRef.current = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [visible])
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+      runningRef.current = false
+      stepRef.current = null
+    }
+  }, [visible, paint])
+
+  // Any React re-render (hover, search, mode) re-attaches the element refs, so
+  // put the positions back on them. Cheap, and it keeps the DOM honest whether
+  // or not the simulation happens to be running.
+  useLayoutEffect(() => {
+    paint()
+    applyView()
+  })
+
+  // Don't animate a window nobody is looking at.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+        runningRef.current = false
+      } else {
+        kick(0.1)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [kick])
 
   // ── pointer interaction ──
   const toLocal = useCallback((e) => {
     const r = svgRef.current.getBoundingClientRect()
-    return { x: (e.clientX - r.left - view.x) / view.k, y: (e.clientY - r.top - view.y) / view.k }
-  }, [view])
+    const v = viewRef.current
+    return { x: (e.clientX - r.left - v.x) / v.k, y: (e.clientY - r.top - v.y) / v.k }
+  }, [])
 
-  const onNodeDown = (e, node) => {
+  const onNodeDown = (e, id) => {
     e.stopPropagation()
+    // Stop the webview from starting a native drag session for the element.
+    e.preventDefault()
+    const node = simRef.current.byId.get(id)
+    if (!node) return
     const p = toLocal(e)
-    dragRef.current = { id: node.id, dx: node.x - p.x, dy: node.y - p.y }
+    dragRef.current = { id, dx: node.x - p.x, dy: node.y - p.y }
     node.fixed = true
+    kick(0.15)
   }
+
   const onMove = (e) => {
     if (dragRef.current) {
       const n = simRef.current.byId.get(dragRef.current.id)
@@ -121,26 +240,43 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
         n.x = p.x + dragRef.current.dx
         n.y = p.y + dragRef.current.dy
       }
+      kick(0.15)
       return
     }
     if (panRef.current) {
-      setView((v) => ({ ...v, x: panRef.current.ox + (e.clientX - panRef.current.sx), y: panRef.current.oy + (e.clientY - panRef.current.sy) }))
+      const v = viewRef.current
+      viewRef.current = {
+        ...v,
+        x: panRef.current.ox + (e.clientX - panRef.current.sx),
+        y: panRef.current.oy + (e.clientY - panRef.current.sy),
+      }
+      // Panning writes the transform straight to the DOM. Routing it through
+      // React state meant a full re-render on every single mousemove.
+      applyView()
     }
   }
+
   const onUp = () => {
     if (dragRef.current) {
       const n = simRef.current.byId.get(dragRef.current.id)
       if (n) n.fixed = false
+      kick(0.25)   // let the neighbours settle around where you dropped it
     }
     dragRef.current = null
     panRef.current = null
   }
+
   const onBgDown = (e) => {
-    panRef.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y }
+    e.preventDefault()
+    const v = viewRef.current
+    panRef.current = { sx: e.clientX, sy: e.clientY, ox: v.x, oy: v.y }
   }
+
   const onWheel = (e) => {
     const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12
-    setView((v) => ({ ...v, k: Math.max(0.25, Math.min(3, v.k * factor)) }))
+    const v = viewRef.current
+    viewRef.current = { ...v, k: Math.max(0.25, Math.min(3, v.k * factor)) }
+    applyView()
   }
 
   const q = query.trim().toLowerCase()
@@ -155,7 +291,6 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
     return set
   }, [hover, visible.edges])
 
-  const { nodes } = simRef.current
   const linkCount = links.filter((l) => !l.dangling).length
   const danglingCount = links.filter((l) => l.dangling).length
 
@@ -187,23 +322,24 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
           onMouseUp={onUp}
           onMouseLeave={onUp}
           onWheel={onWheel}
+          onDragStart={(e) => e.preventDefault()}
         >
-          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+          <g ref={rootGRef}>
             {visible.edges.map((e) => {
-              const a = simRef.current.byId.get(e.from)
-              const b = simRef.current.byId.get(e.to)
-              if (!a || !b) return null
               const dim = neighbours && !(neighbours.has(e.from) && neighbours.has(e.to))
               return (
                 <line
                   key={e.key}
-                  x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                  ref={(el) => {
+                    if (el) edgeElsRef.current.set(e.key, el)
+                    else edgeElsRef.current.delete(e.key)
+                  }}
                   className={`graph-edge ${e.kind === 'contains' ? 'is-contains' : ''} ${dim ? 'is-dim' : ''}`}
                   strokeWidth={e.kind === 'contains' ? 1 : Math.min(5, 1 + e.weight)}
                 />
               )
             })}
-            {nodes.map((n) => {
+            {visible.nodes.map((n) => {
               // Documents read as the big anchors; headings sit smaller and
               // shrink with depth, so a chain like
               //   Document → H1 → H2 → the linked section
@@ -215,9 +351,17 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
               return (
                 <g
                   key={n.id}
-                  transform={`translate(${n.x},${n.y})`}
+                  ref={(el) => {
+                    if (el) {
+                      nodeElsRef.current.set(n.id, el)
+                      const s = simRef.current.byId.get(n.id)
+                      if (s) el.setAttribute('transform', `translate(${s.x},${s.y})`)
+                    } else {
+                      nodeElsRef.current.delete(n.id)
+                    }
+                  }}
                   className={`graph-node ${n.kind} ${dim ? 'is-dim' : ''} ${matches(n) ? 'is-match' : ''} ${n.paperId === currentPaperId ? 'is-current' : ''}`}
-                  onMouseDown={(e) => onNodeDown(e, n)}
+                  onMouseDown={(e) => onNodeDown(e, n.id)}
                   onMouseEnter={() => setHover(n.id)}
                   onMouseLeave={() => setHover(null)}
                   onDoubleClick={(e) => {

@@ -17,6 +17,7 @@ import { resolveApTarget, parseApTarget, ensureApBlockId } from './docLinks'
 import LinkPicker from './components/LinkPicker'
 import LinksPanel from './components/LinksPanel'
 import GraphView from './components/GraphView'
+import ErrorBoundary from './components/ErrorBoundary'
 import Toast from './components/Toast'
 import Settings from './components/Settings'
 import GenerateConflictModal from './components/GenerateConflictModal'
@@ -904,12 +905,14 @@ export default function App() {
         />
       )}
       {showGraph && (
-        <GraphView
-          papers={papers}
-          currentPaperId={paper?.id}
-          onOpen={(pid, lineIndex) => { setShowGraph(false); handleGoToLine(pid, lineIndex) }}
-          onClose={() => setShowGraph(false)}
-        />
+        <ErrorBoundary label="The link graph" onClose={() => setShowGraph(false)}>
+          <GraphView
+            papers={papers}
+            currentPaperId={paper?.id}
+            onOpen={(pid, lineIndex) => { setShowGraph(false); handleGoToLine(pid, lineIndex) }}
+            onClose={() => setShowGraph(false)}
+          />
+        </ErrorBoundary>
       )}
 
       {linkRequest && (
