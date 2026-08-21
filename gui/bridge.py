@@ -132,6 +132,21 @@ class AnkiPapersBridge(QObject):
             traceback.print_exc()
             return json.dumps({"error": str(e)})
 
+    @pyqtSlot(result=str)
+    def get_clipboard_text(self):
+        """Plain text from the system clipboard, for "Paste blocks".
+
+        Reading the clipboard from JavaScript is unreliable inside Anki's
+        webview (navigator.clipboard is permission-gated and
+        execCommand('paste') is blocked), so this goes through Qt the same
+        way image pasting already does.
+        """
+        try:
+            return json.dumps({"text": QApplication.clipboard().text() or ""})
+        except Exception as e:
+            traceback.print_exc()
+            return json.dumps({"error": str(e)})
+
     @pyqtSlot(str, str, result=str)
     def create_paper(self, title, folder_path):
         try:

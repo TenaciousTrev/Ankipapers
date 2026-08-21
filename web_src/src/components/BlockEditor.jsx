@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { GripVertical, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
-import { openInBrowser, pasteImage } from '../bridge'
+import { openInBrowser, pasteImage, getClipboardText } from '../bridge'
 import { buildCardRefIndex, resolveNoteIdFromIndex } from '../crossLink'
 import {
   AP_LINK_RE,
@@ -10,6 +10,13 @@ import {
   ensureApBlockId,
   buildApUrl,
 } from '../docLinks'
+
+// Shown next to "Paste blocks" and used in its error message.
+const IS_MAC = typeof navigator !== 'undefined' &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
+const PASTE_HINT = IS_MAC ? '\u2318V' : 'Ctrl+V'
+// Modifier on its own, for the menu row that tells you how to paste.
+const PASTE_MOD = IS_MAC ? '\u2318' : 'Ctrl'
 
 function ZettelkastenSearch({ query, selected, papers }) {
   const results = useMemo(() => {
@@ -440,6 +447,7 @@ function BlockContextMenu({
   onClose,
   onEdit,
   onCopy,
+  onPasteBlocks,
   onDuplicate,
   onMerge,
   onDelete,
@@ -541,6 +549,9 @@ function BlockContextMenu({
           Go to source
         </button>
       )}
+      <button type="button" className="block-context-menu-item" role="menuitem" onClick={onPasteBlocks}>
+        Press {PASTE_MOD} + V to Paste
+      </button>
       <button type="button" className="block-context-menu-item" role="menuitem" onClick={onCopy}>
         {multi ? 'Copy blocks' : 'Copy line'}
       </button>
@@ -745,7 +756,7 @@ function getBlockRangeAndIndent(lines, idx) {
 }
 
 // ─── Block Editor ───────────────────────────────────
-const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, papers = [] }, ref) {
+const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [] }, ref) {
   const [focusedIndex, setFocusedIndex] = useState(null)
   const [selectedIndices, setSelectedIndices] = useState(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState(null)
@@ -1488,6 +1499,80 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     document.body.removeChild(ta)
   }, [blockMenu, content, closeBlockMenu])
 
+  /**
+   * Insert the clipboard's lines as blocks BELOW the selection.
+   *
+   * Non-destructive on purpose: it never overwrites what you right-clicked,
+   * matching "Duplicate below". Any hidden <!--ap:…--> anchors are stripped so
+   * a pasted copy can never claim the same link anchor as the line it came
+   * from (Copy strips them too — this is belt-and-braces for text pasted in
+   * from elsewhere).
+   */
+  const notifyRef = useRef(onNotify)
+  notifyRef.current = onNotify
+
+  /** Insert `text` as blocks directly below the last selected block. */
+  const pasteLinesBelow = useCallback((text, selection) => {
+    const cleaned = String(text || '').replace(/\r\n/g, '\n').replace(/\n+$/, '')
+    if (!cleaned || !selection || !selection.length) return false
+    const lines = contentRef.current.split('\n')
+    const sorted = [...selection].sort((a, b) => a - b)
+    const insertAt = Math.min(lines.length, sorted[sorted.length - 1] + 1)
+    const pasted = cleaned.split('\n').map((l) => stripApBlockId(l))
+    lines.splice(insertAt, 0, ...pasted)
+    onChange(lines.join('\n'))
+    setSelectedIndices(new Set())
+    setFocusedIndex(null)
+    return true
+  }, [onChange])
+
+  // ⌘V / Ctrl+V with whole blocks selected pastes them below the selection.
+  //
+  // This listens for the real paste EVENT on the window rather than reading
+  // the clipboard on demand: the event carries the data with it, so it works
+  // even where programmatic clipboard reads are blocked. It deliberately does
+  // nothing while a block's textarea has focus, so ordinary text pasting into
+  // a line is untouched.
+  const selectedIndicesRef = useRef(selectedIndices)
+  selectedIndicesRef.current = selectedIndices
+  useEffect(() => {
+    const onWindowPaste = (e) => {
+      const sel = selectedIndicesRef.current
+      if (!sel || sel.size === 0) return
+      const active = document.activeElement
+      if (active && active.classList && active.classList.contains('block-input')) return
+      const text = e.clipboardData?.getData('text/plain') || ''
+      if (!text) return
+      e.preventDefault()
+      pasteLinesBelow(text, [...sel])
+    }
+    window.addEventListener('paste', onWindowPaste)
+    return () => window.removeEventListener('paste', onWindowPaste)
+  }, [pasteLinesBelow])
+
+  const pasteBlocksAtMenu = useCallback(async () => {
+    const sel = blockMenu?.selection
+    closeBlockMenu()
+    if (!sel?.length) return
+    // Reading the clipboard programmatically is unreliable inside Anki's
+    // webview, so try the Qt bridge, then the web API, and if neither can
+    // read it, SAY so and point at the keystroke — which always works,
+    // because a real paste event carries the data with it.
+    let text = ''
+    try {
+      const res = await getClipboardText()
+      text = (res && res.text) || ''
+    } catch { /* fall through */ }
+    if (!text) {
+      try { text = (await navigator.clipboard.readText()) || '' } catch { /* fall through */ }
+    }
+    if (!text) {
+      notifyRef.current?.(`Couldn't read the clipboard — press ${PASTE_HINT} instead`, 'error')
+      return
+    }
+    pasteLinesBelow(text, sel)
+  }, [blockMenu, closeBlockMenu, pasteLinesBelow])
+
   const duplicateBlockAtMenu = useCallback(() => {
   const sel = blockMenu?.selection
   if (!sel?.length) return
@@ -2020,6 +2105,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
           onClose={closeBlockMenu}
           onEdit={editBlockAtMenu}
           onCopy={copyBlockAtMenu}
+          onPasteBlocks={pasteBlocksAtMenu}
           onDuplicate={duplicateBlockAtMenu}
           onMerge={mergeBlocksAtMenu}
           onDelete={deleteBlockAtMenu}

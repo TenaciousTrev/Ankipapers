@@ -329,8 +329,48 @@ export function outgoingFrom(links, paperId) {
  *   with a faint "contains" edge back to its document, so you can see which
  *   part of a document is being cited.
  */
+/** Every heading in a paper, in document order. */
+function extractHeaders(content) {
+  const out = []
+  String(content || '').split('\n').forEach((raw, lineIndex) => {
+    const m = stripApBlockId(raw).trim().match(HEADER_RE)
+    if (m) out.push({ lineIndex, level: m[1].length, text: stripApLinkSyntax(m[2].trim()) })
+  })
+  return out
+}
+
+/**
+ * Position (in `headers`) of the heading that encloses a line — the nearest
+ * heading at or above it. A heading encloses itself, which is what makes a
+ * link written INSIDE a heading attach to that heading. -1 when the line sits
+ * above every heading, in which case the document itself is the container.
+ */
+function enclosingHeaderPos(headers, lineIndex) {
+  let pos = -1
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].lineIndex <= lineIndex) pos = i
+    else break
+  }
+  return pos
+}
+
+/** The heading at `pos` plus its ancestors, outermost first. */
+function headerChain(headers, pos) {
+  if (pos < 0) return []
+  const chain = [headers[pos]]
+  let level = headers[pos].level
+  for (let i = pos - 1; i >= 0 && level > 1; i--) {
+    if (headers[i].level < level) {
+      chain.unshift(headers[i])
+      level = headers[i].level
+    }
+  }
+  return chain
+}
+
 export function buildGraph(papers, links, mode = 'documents') {
   const list = Array.isArray(papers) ? papers : []
+  const byId = new Map(list.map((p) => [p.id, p]))
   const nodes = new Map()
   const edges = new Map()
 
@@ -355,28 +395,53 @@ export function buildGraph(papers, links, mode = 'documents') {
       paperId: p.id,
       folderPath: p.folder_path || '',
       lineIndex: -1,
+      level: 0,
     })
+  }
+
+  // headers mode: resolve a line to the SECTION that contains it, creating
+  // that heading and every ancestor heading up to the document, joined by
+  // "contains" edges. Returns the node id the link should attach to.
+  const headersByPaper = new Map()
+  const sectionNodeFor = (paper, lineIndex) => {
+    if (!headersByPaper.has(paper.id)) headersByPaper.set(paper.id, extractHeaders(paper.content))
+    const headers = headersByPaper.get(paper.id)
+    const chain = headerChain(headers, enclosingHeaderPos(headers, lineIndex))
+    let parentId = `doc:${paper.id}`
+    for (const h of chain) {
+      const id = `hdr:${paper.id}:${h.lineIndex}`
+      addNode(id, {
+        kind: 'header',
+        label: h.text || 'Untitled section',
+        paperId: paper.id,
+        lineIndex: h.lineIndex,
+        level: h.level,
+        folderPath: paper.folder_path || '',
+      })
+      addEdge(id, parentId, 'contains')
+      parentId = id
+    }
+    return parentId
   }
 
   for (const l of links) {
     if (l.dangling) continue
-    const srcId = `doc:${l.sourcePaperId}`
-    if (!nodes.has(srcId)) continue
+    const srcPaper = byId.get(l.sourcePaperId)
+    const tgtPaper = byId.get(l.targetPaperId)
+    if (!srcPaper || !tgtPaper) continue
 
-    if (mode === 'headers' && !l.isDocumentLink && l.targetLineIndex >= 0) {
-      const hId = `hdr:${l.targetPaperId}:${l.targetLineIndex}`
-      addNode(hId, {
-        kind: 'header',
-        label: l.targetLabel || 'Untitled section',
-        paperId: l.targetPaperId,
-        lineIndex: l.targetLineIndex,
-        folderPath: '',
-      })
-      addEdge(hId, `doc:${l.targetPaperId}`, 'contains')
-      addEdge(srcId, hId, 'link')
-    } else {
-      addEdge(srcId, `doc:${l.targetPaperId}`, 'link')
+    if (mode !== 'headers') {
+      addEdge(`doc:${srcPaper.id}`, `doc:${tgtPaper.id}`, 'link')
+      continue
     }
+
+    // Section to section: the heading containing the linked phrase, joined to
+    // the heading being pointed at — with both ancestor chains on show.
+    const srcId = sectionNodeFor(srcPaper, l.sourceLineIndex)
+    const tgtId = (!l.isDocumentLink && l.targetLineIndex >= 0)
+      ? sectionNodeFor(tgtPaper, l.targetLineIndex)
+      : `doc:${tgtPaper.id}`
+    addEdge(srcId, tgtId, 'link')
   }
 
   const edgeList = [...edges.values()]

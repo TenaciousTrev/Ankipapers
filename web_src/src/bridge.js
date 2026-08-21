@@ -118,6 +118,21 @@ export async function pickImage() {
   const b = await getBridge();
   return new Promise(r => b.pick_image(v => r(JSON.parse(v))));
 }
+/** Plain text from the system clipboard, for "Paste blocks". */
+export async function getClipboardText() {
+  const b = await getBridge()
+  if (!b.get_clipboard_text) {
+    // Older backend: fall back to the web API where the webview allows it.
+    try {
+      const text = await navigator.clipboard.readText()
+      return { text: text || '' }
+    } catch {
+      return { text: '', error: 'clipboard unavailable' }
+    }
+  }
+  return new Promise(r => b.get_clipboard_text(v => r(JSON.parse(v))))
+}
+
 export async function pasteImage() {
   const b = await getBridge();
   return new Promise(r => b.paste_image(v => r(JSON.parse(v))));
@@ -254,6 +269,9 @@ function createMockBridge() {
     get_media_dir: cb => cb('{"path":""}'),
     pick_image: cb => cb('{"cancelled":true}'),
     paste_image: cb => cb('{"cancelled":true}'),
+    get_clipboard_text: cb => cb(JSON.stringify({
+      text: (typeof window !== 'undefined' && window.__clipboardText) || '',
+    })),
     open_in_browser: id => console.log('Mock: Open in browser', id),
     diagnose_crosslink: (id, cb) => cb(JSON.stringify({
       note_id: Number(id) || 0,

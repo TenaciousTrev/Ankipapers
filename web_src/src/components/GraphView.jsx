@@ -110,7 +110,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
   const onNodeDown = (e, node) => {
     e.stopPropagation()
     const p = toLocal(e)
-    dragRef.current = { id: node.id, dx: node.x - p.x, dy: node.y - p.y, moved: false }
+    dragRef.current = { id: node.id, dx: node.x - p.x, dy: node.y - p.y }
     node.fixed = true
   }
   const onMove = (e) => {
@@ -120,7 +120,6 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
         const p = toLocal(e)
         n.x = p.x + dragRef.current.dx
         n.y = p.y + dragRef.current.dy
-        dragRef.current.moved = true
       }
       return
     }
@@ -205,7 +204,13 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
               )
             })}
             {nodes.map((n) => {
-              const r = n.kind === 'header' ? 6 : Math.min(20, 9 + Math.sqrt(n.degree) * 2.5)
+              // Documents read as the big anchors; headings sit smaller and
+              // shrink with depth, so a chain like
+              //   Document → H1 → H2 → the linked section
+              // is legible as a hierarchy at a glance.
+              const r = n.kind === 'header'
+                ? Math.max(4.5, 8.5 - (n.level || 1) * 1.1)
+                : Math.min(22, 12 + Math.sqrt(n.degree) * 2.2)
               const dim = neighbours && !neighbours.has(n.id)
               return (
                 <g
@@ -215,9 +220,8 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
                   onMouseDown={(e) => onNodeDown(e, n)}
                   onMouseEnter={() => setHover(n.id)}
                   onMouseLeave={() => setHover(null)}
-                  onClick={(e) => {
+                  onDoubleClick={(e) => {
                     e.stopPropagation()
-                    if (dragRef.current?.moved) return
                     onOpen(n.paperId, n.lineIndex)
                   }}
                 >
@@ -233,7 +237,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
 
         <div className="graph-foot">
           <span>{visible.nodes.length} nodes · {linkCount} links{danglingCount ? ` · ${danglingCount} broken` : ''}</span>
-          <span>drag to pan · scroll to zoom · drag a node to move it · click to open</span>
+          <span>drag to pan · scroll to zoom · drag a node to move it · double-click a node to open</span>
         </div>
       </div>
     </div>

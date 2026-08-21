@@ -835,6 +835,7 @@ export default function App() {
                   onGoToSource={handleGoToSource}
                   onOpenDocLink={handleOpenDocLink}
                   onRequestCreateLink={handleRequestCreateLink}
+                  onNotify={showToast}
                 />
               )}
             </div>
