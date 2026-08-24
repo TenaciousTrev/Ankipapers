@@ -20,6 +20,7 @@
   --green: #00b894;
   --green-light: #82e0aa;
   --pink: #fd79a8;
+  --pink-hint: #ffa8cd;   /* cloze hint, dark mode: light pink */
   --orange: #f39c12;
   --red: #e74c3c;
   --blue: #74b9ff;
@@ -50,6 +51,7 @@
   --green: #00a884;
   --green-light: #00d4a0;
   --pink: #e05486;
+  --pink-hint: #b01e63;   /* cloze hint, light mode: dark pink */
   --orange: #e58e0a;
   --red: #d63031;
   --blue: #4a90d9;
@@ -1156,6 +1158,9 @@ textarea.block-input.block-input-textarea {
 
 .cloze-badge { display: none; }
 .cloze-text { background: linear-gradient(transparent 60%, rgba(253,121,168,0.12) 60%); color: var(--pink); font-weight: 600; padding: 0 2px; }
+/* The optional "::hint" tail of a cloze, shown in brackets the way Anki shows
+   it while reviewing. */
+.cloze-hint { color: var(--pink-hint); font-weight: 600; }
 
 .block-table-row {
   display: grid;
@@ -1254,7 +1259,7 @@ textarea.block-input.block-input-textarea {
   background: var(--bg-tertiary);
 }
 .welcome-inner {
-  max-width: 640px;
+  max-width: 720px;
   margin: 0 auto;
 }
 .welcome-top {
@@ -1311,7 +1316,7 @@ textarea.block-input.block-input-textarea {
 }
 .welcome-syntax-card-centered {
   width: 100%;
-  max-width: 520px;
+  max-width: 580px;
   margin: 0 auto;
 }
 .welcome-scroll-cue {
@@ -1419,16 +1424,57 @@ textarea.block-input.block-input-textarea {
   padding: 14px 12px; font-size: 13px; color: var(--text-muted); text-align: center;
 }
 
-.welcome-syntax {
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
-  line-height: 1.85; text-align: left;
+/* ── The guide on the welcome screen ── */
+.welcome-ref {
+  text-align: left;
+  display: flex; flex-direction: column; gap: 20px;
 }
-.welcome-syntax .syn-label { color: var(--text-muted); display: inline-block; min-width: 118px; }
-.welcome-syntax .syn-basic { color: var(--green); }
-.welcome-syntax .syn-reversible { color: var(--blue); }
-.welcome-syntax .syn-cloze { color: var(--pink); }
-.welcome-syntax .syn-heading { color: var(--accent); }
-.welcome-syntax .syn-key { color: var(--orange); }
+.welcome-ref-compact { gap: 11px; }
+
+.welcome-ref-group { display: flex; flex-direction: column; gap: 10px; }
+.welcome-ref-group-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-secondary);
+  margin: 0; padding-bottom: 7px; border-bottom: 1px solid var(--border);
+}
+.welcome-ref-group-title svg { color: var(--accent); flex-shrink: 0; }
+.welcome-ref-blurb {
+  margin: 0 0 3px;
+  font-size: 12.5px; line-height: 1.65; color: var(--text-muted);
+}
+.welcome-ref-row {
+  display: grid;
+  grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
+  gap: 3px 16px;
+  align-items: baseline;
+}
+.welcome-ref-code {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-secondary); overflow-wrap: anywhere;
+}
+.welcome-ref-code.is-basic { color: var(--green); }
+.welcome-ref-code.is-reversible { color: var(--blue); }
+.welcome-ref-code.is-cloze { color: var(--pink); }
+.welcome-ref-code.is-heading { color: var(--accent); }
+.welcome-ref-code.is-key { color: var(--orange); }
+.welcome-ref-code.is-muted { color: var(--text-muted); }
+.welcome-ref-text {
+  font-size: 12.5px; line-height: 1.65; color: var(--text-secondary);
+}
+.welcome-ref-text b { color: var(--text-primary); font-weight: 600; }
+.welcome-ref-text code {
+  font-family: var(--font-mono); font-size: 11.5px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 4px; color: var(--text-primary);
+}
+.welcome-card-hint-center { text-align: center; }
+/* the closing line under the Start here list needs room to breathe */
+.welcome-ref + .welcome-card-hint-center { margin-top: 14px; }
+
+@media (max-width: 640px) {
+  .welcome-ref-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
 
 /* ═══════════════════════════════════════════════════
    MODALS & DIALOGS

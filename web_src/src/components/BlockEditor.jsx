@@ -190,8 +190,17 @@ function formatInlineRaw(text, mediaDir) {
   r = r.replace(/&lt;img /g, '<img ').replace(/\/&gt;/g, '/>')
   // Restore math placeholders
   mathBlocks.forEach((html, i) => { r = r.replace(`\x00MATH${i}\x00`, html) })
-  // Cloze numbered
-  r = r.replace(/\{\{(c\d+)::(.+?)\}\}/g, '<span class="cloze-badge">$1</span><span class="cloze-text">$2</span>')
+  // Cloze numbered. A cloze may carry a hint after a second "::", e.g.
+  // {{c1::.title()::string method}}. Anki shows that hint as "[string method]"
+  // while you review, so show it the same way here instead of printing the
+  // raw "::" separator in the middle of the phrase.
+  r = r.replace(/\{\{(c\d+)::(.+?)\}\}/g, (_m, num, body) => {
+    const at = body.indexOf('::')
+    const text = at === -1 ? body : body.slice(0, at)
+    const hint = at === -1 ? '' : body.slice(at + 2)
+    return `<span class="cloze-badge">${num}</span><span class="cloze-text">${text}</span>`
+      + (hint ? ` <span class="cloze-hint">[${hint}]</span>` : '')
+  })
   // Cloze simple
   r = r.replace(/\{\{([^}:]+?)\}\}/g, '<span class="cloze-badge">c</span><span class="cloze-text">$1</span>')
   // Bold

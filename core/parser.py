@@ -343,6 +343,19 @@ def extract_cards(content: str) -> List[ParsedCard]:
             
     return cards
 
+def _strip_breadcrumb_tags(text: str) -> str:
+    """Remove [[tags]] from a line that is being shown as a breadcrumb.
+
+    A tag such as [[NH]] is an instruction to Anki Papers, not something the
+    author wrote to read back. It already does its job by tagging the card, so
+    printing the literal "[[NH]]" in a child card's breadcrumb is just noise.
+    Everything else on the line is kept exactly as written -- that text is the
+    context the breadcrumb exists to show.
+    """
+    cleaned = INLINE_TAG_PATTERN.sub(" ", text)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
     lines = content.split("\n")
     if line_index >= len(lines):
@@ -378,7 +391,13 @@ def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
             # Remove bullet/number prefixes
             clean_text = re.sub(r'^[-*+]\s+', '', stripped)
             clean_text = re.sub(r'^\d+\.\s+', '', clean_text)
-            clean_text = clean_text.strip()
+            # A supplement line ("&& a note") can be the parent of a card. The
+            # ampersands are Anki Papers syntax marking the line as a comment,
+            # not part of what was written, so they must not show up in the
+            # breadcrumb on the card. Stripped after the bullet prefixes, which
+            # is the same order parse_line() uses.
+            clean_text = re.sub(r'^&&\s*', '', clean_text)
+            clean_text = _strip_breadcrumb_tags(clean_text)
 
             # ----- IMPROVED IMAGE HANDLING (Markdown + HTML) -----
             def markdown_replacer(m):
@@ -451,7 +470,7 @@ def get_context_heading(content: str, line_index: int) -> str:
             level = len(heading_match.group(1))
             # Restrict to H1-H3, and ONLY accept if it's a structural parent of what we already have
             if level <= 3 and level < current_min_level:
-                text = heading_match.group(2).strip()
+                text = _strip_breadcrumb_tags(heading_match.group(2))
                 headings[level] = text
                 current_min_level = level
                 if level == 1:

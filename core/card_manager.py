@@ -248,11 +248,24 @@ img {
   text-decoration: underline;
   text-decoration-color: rgba(18, 58, 138, 0.85);
   text-underline-offset: 2px;
+  text-decoration-thickness: 2px;
 }
 .nightMode .ankipapers-card .ap-link,
 .night_mode .ankipapers-card .ap-link {
   color: #7aa7ff;
   text-decoration-color: rgba(122, 167, 255, 0.75);
+}
+
+/* ─── Cloze hints ─── */
+/* The "[hint]" that follows a cloze phrase in the breadcrumb. Dark pink on a
+   light card, light pink on a dark one. */
+.ankipapers-card .ap-cloze-hint {
+  color: #b01e63;
+  font-weight: 600;
+}
+.nightMode .ankipapers-card .ap-cloze-hint,
+.night_mode .ankipapers-card .ap-cloze-hint {
+  color: #ffa8cd;
 }
 """
 
@@ -376,9 +389,37 @@ def _normalize_field_value(text: str) -> str:
     return " ".join(s.split()).strip()
 
 
+_CONTEXT_CLOZE_RE = re.compile(r"\{\{(?:c\d+::)?(.+?)\}\}")
+
+
+def _render_context(text: str) -> str:
+    """Render the Anki Papers syntax that can appear inside a breadcrumb.
+
+    A parent line is shown verbatim, so anything written in it arrives here as
+    raw source. Two things need translating, exactly as the editor shows them:
+
+      * a cloze, which may carry a hint after a second "::", as in
+        {{c1::.title()::string method}}. Anki shows that hint as
+        "[string method]" while you review, so the breadcrumb reads the same
+        way instead of printing the raw "::" in the middle of the phrase;
+
+      * a document link, [phrase](ap://paper#block), which should read as the
+        phrase alone — underlined and blue, the way it looks in the editor —
+        rather than spelling out the ap:// address.
+    """
+    def cloze(match):
+        head, sep, hint = match.group(1).partition("::")
+        if not sep:
+            return f"<b>{match.group(1)}</b>"
+        return f'<b>{head}</b> <span class="ap-cloze-hint">[{hint}]</span>'
+
+    text = _AP_LINK_RE.sub(r'<span class="ap-link">\1</span>', text)
+    return _CONTEXT_CLOZE_RE.sub(cloze, text)
+
+
 def _paper_derived_field_values(card: ParsedCard, paper: Paper) -> List[str]:
     """What the note fields would contain if generated right now."""
-    context = re.sub(r"\{\{(?:c\d+::)?(.+?)\}\}", r"<b>\1</b>", get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
+    context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
     supp = _md_to_html(getattr(card, "supplement", ""))
     
     if card.card_type in ("basic", "reversible"):
@@ -885,7 +926,7 @@ def get_deck_id(col, deck_name: str) -> int:
 def _update_note_from_card(col, note, card: ParsedCard, paper: Paper, deck_id: int) -> bool:
     """Apply parsed card fields to an existing note. Returns True on success."""
     try:
-        context = re.sub(r"\{\{(?:c\d+::)?(.+?)\}\}", r"<b>\1</b>", get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
+        context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
         source_ref = f"{paper.id}:{card.line_index}"
         supp = _md_to_html(getattr(card, "supplement", ""))
 
@@ -1044,7 +1085,7 @@ def generate_cards(
 def _create_note(col, card: ParsedCard, paper: Paper, deck_id: int) -> Optional[int]:
     """Create a single Anki note from a ParsedCard."""
     try:
-        context = re.sub(r"\{\{(?:c\d+::)?(.+?)\}\}", r"<b>\1</b>", get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
+        context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
         source_ref = f"{paper.id}:{card.line_index}"
         supp = _md_to_html(getattr(card, "supplement", ""))
 

@@ -21,7 +21,13 @@
  */
 
 // Hidden stable-id suffix on a line: "<!--ap:uuid-->" at end of line.
-export const AP_BLOCK_ID_TAIL = /\s*<!--ap:[0-9a-f-]{36}-->\s*$/i
+// This deliberately does NOT swallow the whitespace in front of the anchor.
+// It used to (/\s*<!--ap:.../), and since the anchor sits at the end of the
+// line, the space you had just typed was inside what got stripped when the
+// line was redrawn — so on any line carrying an anchor the space bar appeared
+// to do nothing at all. ensureApBlockId writes the anchor flush against the
+// text, so there is no whitespace of its own here to remove.
+export const AP_BLOCK_ID_TAIL = /<!--ap:[0-9a-f-]{36}-->[ \t]*$/i
 
 export function stripApBlockId(line) {
   return (line ?? '').replace(AP_BLOCK_ID_TAIL, '')
@@ -35,7 +41,10 @@ export function extractApBlockSuffix(line) {
 export function mergeEditedWithApSuffix(editedBody, originalLine) {
   const suf = extractApBlockSuffix(originalLine)
   if (!suf) return editedBody ?? ''
-  return `${(editedBody ?? '').replace(/\s+$/, '')}${suf}`
+  // Keep what was typed, exactly as it was typed. This runs on every single
+  // keystroke, and a space is always the last character at the moment you
+  // press it, so trimming here deleted every space before it could appear.
+  return `${editedBody ?? ''}${suf}`
 }
 
 /** The uuid inside a line's anchor suffix, or '' when the line has none. */
