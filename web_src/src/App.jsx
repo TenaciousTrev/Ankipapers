@@ -100,10 +100,15 @@ export default function App() {
   const isBusyRef = useRef(false)
   const keyboardLockUntilRef = useRef(0)
   
-  const setBusy = useCallback((state) => {
+  // What the lock is currently held for, so the window can say what it is
+  // waiting on if you close it mid-operation. 'saving' | 'generating' | null.
+  const busyKindRef = useRef(null)
+
+  const setBusy = useCallback((state, kind = 'saving') => {
     if (state) keyboardLockUntilRef.current = Date.now() + 600
     setIsBusy(state)
     isBusyRef.current = state
+    busyKindRef.current = state ? kind : null
   }, [])
 
   const editorRef = useRef(null)
@@ -374,9 +379,49 @@ export default function App() {
   }, [linkRequest, refreshPapers])
 
   // ─── Final save on window close ──────────────────
-  // gui/webview.py calls window.ankiPapersFlush() and waits for it before it
-  // tears the page down, so closing the window can't discard recent edits.
+  // When you close the window, gui/webview.py asks this page — repeatedly —
+  // whether it is safe to go yet, and only tears the page down once the answer
+  // is 'done'.
+  //
+  // It has to work by asking rather than by waiting, because Qt's
+  // runJavaScript() cannot wait for a Promise: it hands the return value back
+  // through a plain value conversion, and a Promise converts to "finished, no
+  // result" instantly. That is exactly what went wrong before. The old
+  // window.ankiPapersFlush() was an async function, so Qt treated the very
+  // first call as complete, closed the window, and cut the bridge out from
+  // under a save that had barely started — losing whatever had not reached
+  // storage yet.
+  //
+  // So this returns a plain string, every time, immediately:
+  //   'generating' — cards are being written to Anki; interrupting is worst
+  //   'saving'     — the document is being written to storage
+  //   'done'       — everything is on disk, the window can close
+  const closeFlushRef = useRef(null)  // null = not started | 'running' | 'done'
   useEffect(() => {
+    window.ankiPapersCloseState = () => {
+      // 1. Anything you started yourself finishes first.
+      if (isBusyRef.current) return busyKindRef.current || 'saving'
+      // 2. Then the state of the one final save, if it has been started.
+      if (closeFlushRef.current === 'running') return 'saving'
+      if (closeFlushRef.current === 'done') return 'done'
+      // 3. Nothing open means nothing to write. Answered fresh every time
+      //    rather than latched, so this can never be remembered as 'done'
+      //    from an earlier moment when no document happened to be open.
+      const current = paperRef.current
+      if (!current) return 'done'
+      // 4. Start that final save — once, however many times this is called.
+      closeFlushRef.current = 'running'
+      Promise.resolve()
+        .then(() => savePaper(current))
+        .catch(() => { /* closing anyway; never strand the window */ })
+        .finally(() => { closeFlushRef.current = 'done' })
+      return 'saving'
+    }
+
+    // Kept for an older gui/webview.py that still calls the flush — the two
+    // halves of the add-on are copied into place separately, so a new web/
+    // build has to stay compatible with a webview.py that has not been
+    // replaced yet.
     window.ankiPapersFlush = async () => {
       const current = paperRef.current
       if (!current) return true
@@ -385,13 +430,15 @@ export default function App() {
       } catch { /* closing anyway — never block the window */ }
       return true
     }
-    // A page-level backstop for any teardown that doesn't call the flush.
+
+    // A page-level backstop for any teardown that doesn't ask at all.
     const onPageHide = () => {
       const current = paperRef.current
       if (current) { try { savePaper(current) } catch { /* ignore */ } }
     }
     window.addEventListener('pagehide', onPageHide)
     return () => {
+      delete window.ankiPapersCloseState
       delete window.ankiPapersFlush
       window.removeEventListener('pagehide', onPageHide)
     }
@@ -563,7 +610,7 @@ export default function App() {
   const runGenerateWithPolicy = useCallback(async (policy) => {
     const paper = paperRef.current
     if (!paper || isBusyRef.current) return
-    setBusy(true)
+    setBusy(true, 'generating')
     try {
       const saved = await savePaper(paper)
       if (saved && saved.error) {
@@ -602,7 +649,7 @@ export default function App() {
     
     const mode = settings.anki_edit_conflict || 'ask'
     if (mode === 'ask') {
-      setBusy(true)
+      setBusy(true, 'generating')
       let hasConflict = false
       try {
         await savePaper(paper)

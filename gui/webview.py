@@ -208,47 +208,201 @@ class AnkiPapersWindow(QMainWindow):
     # silently overwrite work done in the current one.
     #
     # Now closing does two things, in order:
-    #   1. asks the page to flush a final save (nothing recent is lost), then
+    #   1. waits for the page to finish writing (nothing recent is lost), then
     #   2. navigates the page to about:blank and deletes it, so no JavaScript
     #      — and no autosave timer — can outlive the window.
+    #
+    # Step 1 used to call window.ankiPapersFlush() and treat the callback as
+    # "the save is done". It never was. runJavaScript() converts the script's
+    # return value to a plain value, and the flush was an async function, so
+    # what came back was a Promise — which converts to "finished, no result"
+    # immediately. The callback therefore fired while the save had barely
+    # started, the window closed, _teardown_webview() cut the bridge, and the
+    # in-flight write was dropped. Save-then-Generate-then-close lost work for
+    # exactly this reason: nothing ever waited for either operation.
+    #
+    # A Promise cannot be awaited from here, so the window asks instead of
+    # waiting. It polls window.ankiPapersCloseState(), which returns a plain
+    # string every time it is called ('saving', 'generating' or 'done'), and
+    # closes only on 'done'. If the page is still busy after a few seconds it
+    # says so and lets the user decide, rather than closing behind their back.
 
     _shutting_down = False
 
+    # How the close sequence is paced.
+    _CLOSE_POLL_MS = 120      # how often to ask the page where it is up to
+    _CLOSE_PROMPT_MS = 5000   # how long to wait quietly before asking the user
+    _LEGACY_GRACE_MS = 1500   # allowance for a web/ build with no status to give
+
+    _close_timer = None
+    _close_prompt_timer = None
+    _close_box = None
+    _closing_done = False
+    _close_state = "saving"
+
     def closeEvent(self, event):
-        # Second pass (after the flush): actually tear everything down.
+        # Second pass (once the page reports 'done'): tear everything down.
         if self._shutting_down:
+            self._stop_close_timers()
             self._teardown_webview()
             AnkiPapersWindow._instance = None
             super().closeEvent(event)
             return
 
-        # First pass: defer the close until the page has saved.
+        # First pass: hold the window open until the page has finished writing.
         self._shutting_down = True
+        self._closing_done = False
+        self._close_state = "saving"
         event.ignore()
-        self._flush_then_close()
+        self._begin_close()
 
-    def _flush_then_close(self):
-        """Ask the page to save, then close for real (with a safety timeout)."""
-        finished = {"done": False}
+    # The script is deliberately synchronous end to end: it must hand back a
+    # string on this call, not a promise of one later.
+    _CLOSE_STATE_JS = (
+        "(function(){ try {"
+        "  if (typeof window.ankiPapersCloseState === 'function') {"
+        "    var s = window.ankiPapersCloseState();"
+        "    return (typeof s === 'string') ? s : 'done';"
+        "  }"
+        "  if (typeof window.ankiPapersFlush === 'function') {"
+        "    window.ankiPapersFlush();"
+        "    return 'legacy';"
+        "  }"
+        "  return 'done';"
+        "} catch (e) { return 'done'; } })()"
+    )
 
-        def finish(*_args):
-            if finished["done"]:
-                return
-            finished["done"] = True
-            self.close()  # re-enters closeEvent with _shutting_down = True
+    def _begin_close(self):
+        """Wait for any save or card generation to finish, then close."""
+        self._close_timer = QTimer(self)
+        self._close_timer.setInterval(self._CLOSE_POLL_MS)
+        self._close_timer.timeout.connect(self._ask_page_for_state)
+        self._close_timer.start()
 
-        js = (
-            "(function(){ try {"
-            "  return window.ankiPapersFlush ? window.ankiPapersFlush() : false;"
-            "} catch (e) { return false; } })()"
+        # On its own timer on purpose. If the page has stopped answering
+        # altogether — a wedged script, a dead render process — no reply ever
+        # arrives, and this is what stops the window hanging there forever.
+        self._close_prompt_timer = QTimer(self)
+        self._close_prompt_timer.setSingleShot(True)
+        self._close_prompt_timer.timeout.connect(self._prompt_still_busy)
+        self._close_prompt_timer.start(self._CLOSE_PROMPT_MS)
+
+        self._ask_page_for_state()
+
+    def _ask_page_for_state(self):
+        if self._closing_done:
+            return
+        try:
+            self.webview.page().runJavaScript(
+                self._CLOSE_STATE_JS, self._on_close_state
+            )
+        except Exception:
+            # No page left to ask; there is nothing in flight to protect.
+            self._finish_close()
+
+    def _on_close_state(self, state):
+        if self._closing_done:
+            return
+        if not isinstance(state, str):
+            state = "done"
+
+        if state == "done":
+            self._finish_close()
+            return
+
+        if state == "legacy":
+            # An older web/ build: it has no status to report, but its flush
+            # has now been started. Give that a fixed moment instead of
+            # closing instantly, which is what used to lose the work.
+            self._close_state = "saving"
+            if self._close_timer is not None:
+                self._close_timer.stop()
+            QTimer.singleShot(self._LEGACY_GRACE_MS, self._finish_close)
+            return
+
+        # Still working. Remember what for, so the dialog can say so.
+        self._close_state = state
+
+    def _prompt_still_busy(self):
+        """Several seconds in and still not finished — hand the choice over."""
+        if self._closing_done:
+            return
+
+        from aqt.qt import QMessageBox
+
+        what = (
+            "writing cards to Anki"
+            if self._close_state == "generating"
+            else "saving your document"
         )
         try:
-            self.webview.page().runJavaScript(js, lambda _res: finish())
-        except Exception:
-            finish()
+            accept_role = QMessageBox.ButtonRole.AcceptRole
+            destructive_role = QMessageBox.ButtonRole.DestructiveRole
+            warning_icon = QMessageBox.Icon.Warning
+        except AttributeError:
+            accept_role = QMessageBox.AcceptRole
+            destructive_role = QMessageBox.DestructiveRole
+            warning_icon = QMessageBox.Warning
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Anki Papers")
+        box.setIcon(warning_icon)
+        box.setText(f"Anki Papers is still {what}.")
+        box.setInformativeText(
+            "This normally finishes in well under a second, so something is "
+            "holding it up.\n\nClosing now would lose the most recent changes."
+        )
+        keep_waiting = box.addButton("Keep waiting", accept_role)
+        close_anyway = box.addButton("Close anyway", destructive_role)
+        box.setDefaultButton(keep_waiting)
+
+        # Held on the window so that if the page finishes while this dialog is
+        # open, _finish_close() can dismiss it rather than deadlock behind it.
+        self._close_box = box
+        try:
+            box.exec()
+        except AttributeError:
+            box.exec_()
+        self._close_box = None
+
+        if self._closing_done:
+            return  # it finished while the dialog was up; the close is handled
+        if box.clickedButton() is close_anyway:
+            self._finish_close()
             return
-        # Never let a wedged page block the window from closing.
-        QTimer.singleShot(2000, finish)
+        # Keep waiting, and ask again if it is still going in a few seconds.
+        if self._close_prompt_timer is not None:
+            self._close_prompt_timer.start(self._CLOSE_PROMPT_MS)
+
+    def _finish_close(self):
+        """Everything the page had to write is written; close for real."""
+        if self._closing_done:
+            return
+        self._closing_done = True
+        self._stop_close_timers()
+
+        if self._close_box is not None:
+            # A "still busy" dialog is open and running a nested event loop.
+            # Dismiss it and let that unwind before the window goes away.
+            box, self._close_box = self._close_box, None
+            try:
+                box.reject()
+            except Exception:
+                pass
+            QTimer.singleShot(0, self.close)
+            return
+
+        self.close()  # re-enters closeEvent with _shutting_down = True
+
+    def _stop_close_timers(self):
+        for attr in ("_close_timer", "_close_prompt_timer"):
+            timer = getattr(self, attr, None)
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+            setattr(self, attr, None)
 
     def _teardown_webview(self):
         """Stop the page for good so nothing keeps running in the background."""
