@@ -807,6 +807,10 @@ class AnkiPapersBridge(QObject):
 
         from aqt.qt import QUrl
 
+        # Embed the images before the page ever loads, so nothing has to be
+        # fetched from disk while printing.
+        html = self._inline_images_as_data_uris(html, self._media_dir())
+
         temp_page = QWebEnginePage(parent.webview)
         self._pdf_path = file_path
         self._temp_page = temp_page
@@ -840,6 +844,116 @@ class AnkiPapersBridge(QObject):
     # default A4 — while the CSS margin beside it is discarded.
 
     PDF_MARGIN_INCHES = 0.5
+
+    # ─── Images in the printed page ──────────────────
+    #
+    # Every <img> is read off disk here and embedded as a data: URI before the
+    # HTML is handed to the print page.
+    #
+    # Loading them as file:/// URLs instead would depend on the temporary print
+    # page being allowed local file access, which is a different page object
+    # from the main webview and not something this add-on can check from the
+    # outside. Reading the bytes ourselves removes the question: by the time
+    # Chromium sees the page there are no external references left to resolve,
+    # and the printed PDF is self-contained.
+    #
+    # Anything that cannot be read is left exactly as it was, so a missing file
+    # degrades to the same broken-image icon as before rather than failing the
+    # export.
+
+    _IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]*)(")', re.IGNORECASE)
+
+    _IMAGE_MIME = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+        ".bmp": "image/bmp", ".avif": "image/avif", ".ico": "image/x-icon",
+        ".tif": "image/tiff", ".tiff": "image/tiff",
+    }
+
+    MAX_INLINE_IMAGE_BYTES = 16 * 1024 * 1024   # per image
+    MAX_INLINE_TOTAL_BYTES = 64 * 1024 * 1024   # per document
+
+    def _local_path_for_src(self, src, media_dir):
+        """The file an <img src> refers to, or None if it is not a local file."""
+        if not src:
+            return None
+
+        # The src as it appears in the HTML is entity-escaped, so a file called
+        # "figure & scan.png" arrives here as "figure &amp; scan.png". A browser
+        # decodes that when parsing the attribute; reading the attribute text
+        # directly, we have to do it ourselves or the file is never found.
+        from html import unescape as _unescape
+        src = _unescape(src)
+
+        low = src.lower()
+        if low.startswith(("data:", "http://", "https://", "qrc:", "about:")):
+            return None
+
+        from urllib.parse import unquote, urlparse
+
+        if low.startswith("file://"):
+            path = unquote(urlparse(src).path)
+            # "file:///x" and the "file:////x" form the editor builds both mean
+            # the same absolute path.
+            if os.name == "nt":
+                path = path.lstrip("/")
+            else:
+                path = "/" + path.lstrip("/")
+            return path
+
+        path = unquote(src)
+        if not os.path.isabs(path) and media_dir:
+            # A bare filename in a document means a file in collection.media.
+            path = os.path.join(media_dir, path)
+        return path
+
+    def _inline_images_as_data_uris(self, html, media_dir=""):
+        """Replace local <img> sources with data: URIs. Returns the new HTML."""
+        import base64
+
+        budget = {"left": self.MAX_INLINE_TOTAL_BYTES}
+        stats = {"inlined": 0, "skipped": 0}
+
+        def replace(match):
+            head, src, tail = match.group(1), match.group(2), match.group(3)
+            try:
+                path = self._local_path_for_src(src, media_dir)
+                if not path or not os.path.isfile(path):
+                    stats["skipped"] += 1
+                    return match.group(0)
+
+                size = os.path.getsize(path)
+                if size > self.MAX_INLINE_IMAGE_BYTES or size > budget["left"]:
+                    stats["skipped"] += 1
+                    return match.group(0)
+
+                mime = self._IMAGE_MIME.get(os.path.splitext(path)[1].lower())
+                if not mime:
+                    stats["skipped"] += 1
+                    return match.group(0)
+
+                with open(path, "rb") as fh:
+                    data = base64.b64encode(fh.read()).decode("ascii")
+                budget["left"] -= size
+                stats["inlined"] += 1
+                return f"{head}data:{mime};base64,{data}{tail}"
+            except Exception:
+                stats["skipped"] += 1
+                return match.group(0)
+
+        result = self._IMG_SRC_RE.sub(replace, html or "")
+        if stats["inlined"] or stats["skipped"]:
+            print(f"[Anki Papers] PDF images: {stats['inlined']} embedded, "
+                  f"{stats['skipped']} left as-is")
+        return result
+
+    def _media_dir(self):
+        try:
+            if mw and mw.col:
+                return mw.col.media.dir().replace("\\", "/")
+        except Exception:
+            pass
+        return ""
 
     def _pdf_page_layout(self):
         """Letter portrait with PDF_MARGIN_INCHES margins, or None if the Qt
@@ -902,6 +1016,8 @@ class AnkiPapersBridge(QObject):
                     from PyQt6.QtWebEngineCore import QWebEnginePage
                 except ImportError:
                     from PyQt5.QtWebEngineCore import QWebEnginePage
+
+                html = self._inline_images_as_data_uris(html, media_dir)
 
                 temp_page = QWebEnginePage(parent.webview)
                 self._pdf_path = file_path

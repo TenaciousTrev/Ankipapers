@@ -49,6 +49,25 @@ export function isTableSeparatorRow(line) {
   return cells.every((c) => /^:?-{3,}:?$/.test(c))
 }
 
+/**
+ * An image's markdown source turned into a URL the webview can load.
+ *
+ * A bare filename in a document means "a file in Anki's collection.media
+ * folder"; anything already carrying a scheme is passed through untouched.
+ *
+ * This lives here, exported, because the same four lines used to be written
+ * out three times — in the editor's block-image branch, in formatInlineRaw
+ * below, and in the PDF exporter. The exporter's copy was the one that was
+ * missing, so an image on its own line printed as a broken-image icon while
+ * the identical image inside a sentence printed fine. One definition now.
+ */
+export function resolveMediaSrc(src, mediaDir) {
+  const s = String(src ?? '')
+  if (!mediaDir) return s
+  if (s.startsWith('http') || s.startsWith('file://') || s.startsWith('data:')) return s
+  return `file:///${mediaDir}/${s}`
+}
+
 export function formatInlineRaw(text, mediaDir) {
   let r = text
     .replace(/&/g, '&amp;')
@@ -60,9 +79,7 @@ export function formatInlineRaw(text, mediaDir) {
       alt = wm[1]
       width = ` style="max-width:${wm[2]}px"`
     }
-    if (mediaDir && !src.startsWith('http') && !src.startsWith('file://') && !src.startsWith('data:')) {
-      src = `file:///${mediaDir}/${src}`
-    }
+    src = resolveMediaSrc(src, mediaDir)
     return `<img src="${src}" alt="${alt}" class="inline-img"${width} />`
   })
   // Math: $$block$$ and $inline$ — before HTML escaping

@@ -4,6 +4,7 @@ import { openInBrowser, pasteImage, getClipboardText } from '../bridge'
 import { buildCardRefIndex, resolveNoteIdFromIndex } from '../crossLink'
 import {
   formatInlineRaw,
+  resolveMediaSrc,
   getBlockType,
   parseTableRow,
   isTableSeparatorRow,
@@ -235,10 +236,7 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
         altText = widthMatch[1]
         width = parseInt(widthMatch[2])
       }
-      let src = m[2]
-      if (mediaDir && !src.startsWith('http') && !src.startsWith('file://') && !src.startsWith('data:')) {
-        src = `file:///${mediaDir}/${src}`
-      }
+      const src = resolveMediaSrc(m[2], mediaDir)
       const imgStyle = { maxWidth: width ? `${width}px` : '400px' }
       return (
         <div className="block-image">

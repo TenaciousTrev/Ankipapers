@@ -18,7 +18,9 @@
  *   - [[tags]] and hidden <!--ap:uuid--> anchors are removed, being editing
  *     metadata rather than content.
  */
-import { formatInlineRaw, getBlockType, parseTableRow, isTableSeparatorRow } from './blockFormat'
+import {
+  formatInlineRaw, getBlockType, parseTableRow, isTableSeparatorRow, resolveMediaSrc,
+} from './blockFormat'
 import { stripApBlockId } from './docLinks'
 
 /** Width of one indent level in the printed document, in px. */
@@ -50,9 +52,10 @@ const esc = (s) => String(s ?? '')
 
 /**
  * One line → one row of HTML. Returns '' for a line that prints nothing.
- * `fmt` is formatInlineRaw bound to the media directory.
+ * `fmt` is formatInlineRaw bound to the media directory; `mediaDir` is passed
+ * separately because the block-image branch needs to resolve paths itself.
  */
-function renderLine(line, fmt) {
+function renderLine(line, fmt, mediaDir) {
   const body = printableBody(line)
   const type = getBlockType(body)
   const indent = indentLevelOf(line)
@@ -77,7 +80,10 @@ function renderLine(line, fmt) {
       let alt = m[1], width = null
       const wm = alt.match(/^(.+?)\|(\d+)$/)
       if (wm) { alt = wm[1]; width = parseInt(wm[2], 10) }
-      const src = m[2]
+      // Via the shared resolver, not by hand: a bare filename means a file in
+      // Anki's collection.media folder, and getting that wrong here is what
+      // made images on their own line print as broken-image icons.
+      const src = resolveMediaSrc(m[2], mediaDir)
       const style = ` style="max-width:${width ? width + 'px' : '400px'}"`
       return row(
         `<figure class="figure"><img src="${esc(src)}" alt="${esc(alt)}"${style}/>` +
@@ -156,7 +162,7 @@ export function renderBody(content, mediaDir = '') {
       out.push(renderTable(lines.slice(start, i + 1), fmt, indentLevelOf(lines[start])))
       continue
     }
-    out.push(renderLine(lines[i], fmt))
+    out.push(renderLine(lines[i], fmt, mediaDir))
   }
   return out.join('\n')
 }
