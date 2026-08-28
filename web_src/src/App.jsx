@@ -14,6 +14,7 @@ import BlockEditor from './components/BlockEditor'
 import BottomToolbar from './components/BottomToolbar'
 import WelcomeScreen from './components/WelcomeScreen'
 import { resolveApTarget, parseApTarget, ensureApBlockId } from './docLinks'
+import { renderPrintHtml } from './printDocument'
 import LinkPicker from './components/LinkPicker'
 import LinksPanel from './components/LinksPanel'
 import GraphView from './components/GraphView'
@@ -503,14 +504,24 @@ export default function App() {
     setBusy(true)
     try {
       await savePaper(paper)
-      const result = await exportPdf(paper.id)
+      // Build the printable document here rather than in Python, so the PDF
+      // and the document view share one renderer and cannot drift apart.
+      let html = ''
+      try {
+        html = renderPrintHtml(paper, { mediaDir })
+      } catch (e) {
+        // Never block the export on a rendering fault; Python's older
+        // converter still produces something.
+        console.error('[Anki Papers] print rendering failed', e)
+      }
+      const result = await exportPdf(paper.id, html)
       if (result.cancelled) return
       if (result.ok) showToast('PDF exported successfully', 'success')
       else if (result.error) showToast(`Export failed: ${result.error}`, 'error')
     } finally {
       setBusy(false)
     }
-  }, [paper, setBusy])
+  }, [paper, mediaDir, setBusy])
 
   // ─── Markdown Import/Export ─────────────────────
   const handleImportMarkdown = useCallback(async () => {

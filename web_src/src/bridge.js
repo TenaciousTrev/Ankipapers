@@ -189,8 +189,21 @@ export async function exportMarkdown(id) {
 }
 
 // PDF Export
-export async function exportPdf(id) {
+//
+// `html` is the printable document built by printDocument.js, using the same
+// parsing and inline formatting the editor uses. Python receives it through
+// export_pdf_html() and only runs the save dialog and printToPdf().
+//
+// The older export_pdf() slot — where Python rendered the markdown itself with
+// a separate, long-since-drifted converter — stays as a fallback, so a new web/
+// build still exports on an install whose gui/ has not been replaced yet. The
+// two halves are copied into the add-on by hand and can lag each other.
+export async function exportPdf(id, html = '') {
   const b = await getBridge();
+  if (html && b.export_pdf_html) {
+    return new Promise(r => b.export_pdf_html(id, html, v => r(JSON.parse(v))));
+  }
+  if (!b.export_pdf) return { error: 'PDF export is not available in this version' };
   return new Promise(r => b.export_pdf(id, v => r(JSON.parse(v))));
 }
 

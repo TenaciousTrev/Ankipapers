@@ -755,10 +755,130 @@ class AnkiPapersBridge(QObject):
             traceback.print_exc()
             return json.dumps({"error": str(e)})
     # ─── PDF Export ──────────────────────────────────
+    #
+    # The page builds the printable HTML (web_src/src/printDocument.js) using
+    # the same parsing and inline formatting the editor uses, and hands it to
+    # export_pdf_html() below. Python's job is only the save dialog and
+    # printToPdf().
+    #
+    # It used to render the markdown itself, in _markdown_to_html() further
+    # down. That was a second, independent implementation of the document
+    # format, and it had drifted a long way from the editor: it discarded all
+    # indentation, printed "term::hint" instead of "term [hint]", printed
+    # ap:// links as raw markdown complete with UUID, printed [[NH]] and &&
+    # literally, printed the title twice — and, because it never escaped HTML,
+    # silently dropped the rest of any line containing a "<" followed by a
+    # letter, so "Ferritin <normal range suggests iron deficiency" printed as
+    # "Ferritin". Those methods are kept only as a fallback for an install
+    # whose web/ folder has not been updated yet.
+
+    @pyqtSlot(str, str, result=str)
+    def export_pdf_html(self, paper_id, html):
+        """Export a paper to PDF from HTML the page has already rendered."""
+        try:
+            if not html:
+                return self.export_pdf(paper_id)
+
+            paper = load_paper(paper_id)
+            title = paper.title if paper else "Untitled"
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                None, "Export to PDF", f"{title}.pdf",
+                "PDF Files (*.pdf);;All Files (*)",
+            )
+            if not file_path:
+                return json.dumps({"cancelled": True})
+
+            return self._print_html_to_pdf(html, file_path)
+        except Exception as e:
+            traceback.print_exc()
+            return json.dumps({"error": str(e)})
+
+    def _print_html_to_pdf(self, html, file_path):
+        """Load HTML into an off-screen page and print it to `file_path`."""
+        parent = self.parent()
+        if not (parent and hasattr(parent, "webview")):
+            return json.dumps({"error": "Webview not available"})
+
+        try:
+            from PyQt6.QtWebEngineCore import QWebEnginePage
+        except ImportError:
+            from PyQt5.QtWebEngineCore import QWebEnginePage
+
+        from aqt.qt import QUrl
+
+        temp_page = QWebEnginePage(parent.webview)
+        self._pdf_path = file_path
+        self._temp_page = temp_page
+
+        def on_load_finished(ok):
+            if ok:
+                self._print_page_to_pdf(self._temp_page, self._pdf_path)
+
+        temp_page.loadFinished.connect(on_load_finished)
+        # A real directory as the base URL, not about:blank, so that any
+        # file:/// image sources in the page are allowed to load.
+        base = QUrl.fromLocalFile(os.path.dirname(file_path) + os.sep)
+        temp_page.setHtml(html, base)
+
+        return json.dumps({"ok": True, "path": file_path})
+
+    # ─── Page setup for printing ─────────────────────
+    #
+    # Half an inch on every side, given to printToPdf() explicitly.
+    #
+    # This has to be explicit. printToPdf()'s default page layout is
+    # QPageLayout(QPageSize(A4), Portrait, QMarginsF()) — and QMarginsF()
+    # default-constructs to zero on all four sides. QtWebEngine hands those to
+    # Chromium as explicit custom margins, and custom margins from the embedder
+    # take precedence over the stylesheet's "@page { margin }". So the printed
+    # page ignored the margin printDocument.js asks for and ran text right to
+    # the paper edge.
+    #
+    # Note the asymmetry that hid this: the CSS page SIZE *is* honoured —
+    # exports come out 612x792pt (Letter, from the stylesheet) rather than Qt's
+    # default A4 — while the CSS margin beside it is discarded.
+
+    PDF_MARGIN_INCHES = 0.5
+
+    def _pdf_page_layout(self):
+        """Letter portrait with PDF_MARGIN_INCHES margins, or None if the Qt
+        bindings do not expose the page-layout classes."""
+        try:
+            from PyQt6.QtGui import QPageLayout, QPageSize
+            from PyQt6.QtCore import QMarginsF
+            page_size = QPageSize(QPageSize.PageSizeId.Letter)
+            orientation = QPageLayout.Orientation.Portrait
+            unit = QPageLayout.Unit.Inch
+        except ImportError:
+            try:
+                from PyQt5.QtGui import QPageLayout, QPageSize
+                from PyQt5.QtCore import QMarginsF
+                page_size = QPageSize(QPageSize.Letter)
+                orientation = QPageLayout.Portrait
+                unit = QPageLayout.Inch
+            except ImportError:
+                return None
+
+        m = self.PDF_MARGIN_INCHES
+        return QPageLayout(page_size, orientation, QMarginsF(m, m, m, m), unit)
+
+    def _print_page_to_pdf(self, page, file_path):
+        """printToPdf() with our page layout, falling back to Qt's default if
+        the layout cannot be built — never let margins stop an export."""
+        layout = None
+        try:
+            layout = self._pdf_page_layout()
+        except Exception:
+            traceback.print_exc()
+        if layout is None:
+            page.printToPdf(file_path)
+        else:
+            page.printToPdf(file_path, layout)
 
     @pyqtSlot(str, result=str)
     def export_pdf(self, paper_id):
-        """Export a paper to a clean PDF document."""
+        """Fallback export, used only when the page supplied no HTML."""
         try:
             paper = load_paper(paper_id)
             if not paper:
@@ -789,7 +909,7 @@ class AnkiPapersBridge(QObject):
 
                 def on_load_finished(ok):
                     if ok:
-                        self._temp_page.printToPdf(self._pdf_path)
+                        self._print_page_to_pdf(self._temp_page, self._pdf_path)
 
                 temp_page.loadFinished.connect(on_load_finished)
                 temp_page.setHtml(html, QUrl("about:blank"))
