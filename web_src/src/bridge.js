@@ -207,6 +207,13 @@ export async function exportPdf(id, html = '') {
   return new Promise(r => b.export_pdf(id, v => r(JSON.parse(v))));
 }
 
+// Papers on disk (phase 1: write only — the collection stays authoritative)
+export async function exportPapersToDisk(mode = 'preview') {
+  const b = await getBridge();
+  if (!b.export_papers_to_disk) return { error: 'not available in this version' };
+  return new Promise(r => b.export_papers_to_disk(mode, v => r(JSON.parse(v))));
+}
+
 // Settings
 export async function getSettings() {
   const b = await getBridge();

@@ -1363,6 +1363,20 @@ textarea.block-input.block-input-textarea {
   text-transform: uppercase; letter-spacing: 0.04em;
   margin: 0 0 10px 0;
 }
+/* The "papers are files" notice at the top of the lower section. Reads as a
+   standing explanation rather than a warning, so it borrows the accent colour
+   rather than a red or amber alert tone. */
+.welcome-card-notice {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 24px -12px var(--accent-glow);
+}
+.welcome-card-notice .welcome-card-hint { color: var(--text-secondary); }
+.welcome-card-notice .welcome-card-hint b {
+  color: var(--text-primary); font-weight: 600;
+}
+.welcome-card-notice .welcome-actions-row { margin-top: 4px; }
+.welcome-card-notice .welcome-btn-primary { flex: 0 0 auto; }
+
 .welcome-card-title-center {
   justify-content: center;
   text-align: center;

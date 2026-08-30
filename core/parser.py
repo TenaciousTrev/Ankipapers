@@ -93,15 +93,39 @@ def split_stable_block_id(text: str) -> Tuple[str, Optional[str]]:
 
 
 def inject_stable_block_id(content: str, line_index: int, block_id: str) -> str:
-    """Append <!--ap:uuid--> to a line if not already present."""
+    """Append <!--ap:uuid--> to a line if not already present.
+
+    The anchor is written flush against the text, with no separating space.
+    This matches ensureApBlockId() in web_src/src/docLinks.js, and it is not
+    cosmetic: the editor's AP_BLOCK_ID_TAIL regex deliberately does not
+    swallow whitespace in front of the anchor (a space typed at the end of a
+    line is the last character at the moment it is pressed, so stripping it
+    made the space bar appear dead on any anchored line). An anchor written
+    as "text <!--ap:...-->" would therefore leave a trailing space visible in
+    the editor on every card line. Write it the way the editor writes it.
+    """
     lines = content.split("\n")
     if line_index < 0 or line_index >= len(lines):
         return content
     line = lines[line_index]
     if BLOCK_ID_SUFFIX.search(line):
         return content
-    lines[line_index] = line.rstrip() + f" <!--ap:{block_id}-->"
+    lines[line_index] = line.rstrip() + f"<!--ap:{block_id}-->"
     return "\n".join(lines)
+
+
+def inject_stable_block_ids(content: str, assignments) -> str:
+    """Apply inject_stable_block_id for many (line_index, block_id) pairs.
+
+    Injection never changes the number of lines, so line indices stay valid
+    across the whole batch. Lines that already carry an anchor are left
+    untouched, so this is idempotent.
+    """
+    for line_index, block_id in assignments:
+        if not block_id:
+            continue
+        content = inject_stable_block_id(content, line_index, block_id)
+    return content
 
 
 def compute_hash(text: str) -> str:

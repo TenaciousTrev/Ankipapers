@@ -775,8 +775,11 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
 // ── Expand All Shortcut ──────────────────────────────────────────
   useEffect(() => {
     const handleExpandAll = (e) => {
-      // Listens for Shift + Command (metaKey) + Down Arrow
-      if (e.shiftKey && e.metaKey && e.key === 'ArrowDown') {
+      // Ctrl+Shift+Down, and Shift+Cmd+Down on a Mac. Every other shortcut in
+      // the app uses Ctrl on macOS too, so accepting Ctrl here makes this one
+      // consistent with them and gives Windows and Linux the shortcut at all --
+      // it previously tested metaKey alone, which those platforms never set.
+      if (e.shiftKey && (e.ctrlKey || e.metaKey) && e.key === 'ArrowDown') {
         e.preventDefault()
         // Passing an empty Set clears all collapsed states globally
         setCollapsedKeys(new Set())

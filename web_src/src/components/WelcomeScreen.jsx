@@ -15,6 +15,7 @@ import {
   Share2,
   Hash,
   Keyboard,
+  HardDrive,
 } from 'lucide-react'
 
 function formatRelativeTime(modifiedAt) {
@@ -152,6 +153,39 @@ export default function WelcomeScreen({
         </div>
 
         <div className="welcome-lower">
+          <section className="welcome-card welcome-card-notice">
+            <h2 className="welcome-card-title">
+              <HardDrive size={16} /> Your papers are files on your computer
+            </h2>
+            <p className="welcome-card-hint">
+              Every paper is an ordinary markdown file kept in your Anki profile
+              folder, arranged in the same folders you see in the sidebar. You can
+              open them in any editor, put them in Dropbox, or track them with git.
+              The editor reads those files directly, so what is on your disk is what
+              you see here. A copy still goes into your Anki collection and travels
+              to AnkiWeb with the rest of your sync, as a backup.
+            </p>
+            <p className="welcome-card-hint">
+              <b>Already been using Anki Papers?</b> Papers you wrote before this
+              version live only in the collection until you copy them out, and it is
+              a one-time job. Open <b>Settings → Papers on disk</b> and press{' '}
+              <b>Preview</b>: it tells you how many papers would be written, how many
+              card links they carry, and the exact folder they would go to, without
+              touching anything. When that looks right, press <b>Write</b>. It only
+              adds files — nothing in your collection is changed or removed, so there
+              is nothing to undo. From then on every save writes itself to disk.
+            </p>
+            <div className="welcome-actions-row">
+              <button
+                type="button"
+                className="welcome-btn welcome-btn-primary"
+                onClick={() => onOpenSettings?.()}
+              >
+                <Settings size={15} /> Open Settings
+              </button>
+            </div>
+          </section>
+
           <section className="welcome-card">
             <h2 className="welcome-card-title">
               <BookOpen size={16} /> A guide to Anki Papers
@@ -258,6 +292,14 @@ export default function WelcomeScreen({
                   you can reword it, move it, or rename the paper and the link still
                   finds it.
                 </Ref>
+                <Ref code="<!--ap:…-->" tone="muted">
+                  If you open a paper in a text editor you'll see these on some lines.
+                  They are the name that makes a line findable — links point at them,
+                  and card generation uses them to recognise a card you have reworded
+                  instead of replacing it. The editor hides them and keeps them out of
+                  your cards and PDFs. Leave them alone and they look after
+                  themselves; delete one and whatever pointed at that line loses it.
+                </Ref>
               </RefGroup>
 
               <RefGroup
@@ -298,11 +340,11 @@ export default function WelcomeScreen({
                 <Ref code="Ctrl+B / Ctrl+I" tone="key">Bold and italic.</Ref>
                 <Ref code="Ctrl+Z / Ctrl+Shift+Z" tone="key">Undo and redo.</Ref>
                 <Ref code="Ctrl+," tone="key">Open Settings.</Ref>
-                {IS_MAC ? (
-                  <Ref code="⇧⌘↓" tone="key">
-                    Unfold everything below where your cursor is, all at once.
-                  </Ref>
-                ) : null}
+                <Ref code={IS_MAC ? 'Ctrl+Shift+↓ or ⇧⌘↓' : 'Ctrl+Shift+↓'} tone="key">
+                  Unfold the whole document at once. Papers open with every nested
+                  section folded up so a long one reads as an outline, and this opens
+                  all of it in one press when you want the full text back.
+                </Ref>
                 <Ref code={PASTE_KEY} tone="key">
                   Paste copied lines in as their own separate lines, below whichever
                   one you have selected.

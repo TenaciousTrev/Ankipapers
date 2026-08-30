@@ -13,6 +13,7 @@ from .parser import (
     ParsedCard,
     extract_cards,
     get_context_heading,
+    inject_stable_block_ids,
 )
 
 
@@ -449,15 +450,41 @@ def _note_semantic_match(note, card: ParsedCard, paper: Paper) -> bool:
     )
 
 
+def _ref_is_claimed(ref: Optional[CardReference], claimed_note_ids) -> bool:
+    """True when this Anki note has already been taken by an earlier card."""
+    if ref is None or claimed_note_ids is None:
+        return False
+    return bool(ref.anki_note_id) and ref.anki_note_id in claimed_note_ids
+
+
 def _resolve_existing_ref_for_card(
     card: ParsedCard,
     refs_by_block_id: Dict[str, CardReference],
     existing_by_hash: Dict[str, CardReference],
+    claimed_note_ids=None,
 ) -> Optional[CardReference]:
-    if card.block_id and card.block_id in refs_by_block_id:
-        return refs_by_block_id[card.block_id]
-    if card.content_hash in existing_by_hash:
-        return existing_by_hash[card.content_hash]
+    """Find the stored reference this card corresponds to, if any.
+
+    Anchor first, then exact text. The hash fallback is what keeps papers
+    written before anchors existed working: their cards carry no anchor, so
+    identical text is the only handle available for the one generate that
+    adopts them.
+
+    claimed_note_ids, when given, is the set of Anki notes already taken by
+    an earlier card in this same pass. Two lines with identical text share a
+    content_hash and would otherwise both resolve to the same stored
+    reference — so both would claim the same note, and both would be stamped
+    with the same anchor, permanently fusing two separate cards into one
+    identity. Skipping a claimed note lets the second line be created as a
+    card of its own, which is what the document says it is.
+    """
+    if card.block_id:
+        ref = refs_by_block_id.get(card.block_id)
+        if ref is not None and not _ref_is_claimed(ref, claimed_note_ids):
+            return ref
+    ref = existing_by_hash.get(card.content_hash)
+    if ref is not None and not _ref_is_claimed(ref, claimed_note_ids):
+        return ref
     return None
 
 
@@ -1017,9 +1044,31 @@ def generate_cards(
 
     new_card_refs: List[CardReference] = []
 
+    # (line_index, block_id) pairs for card lines that carry no <!--ap:uuid-->
+    # anchor yet. Applied to paper.content at the end of this function, so a
+    # card's identity survives later edits to its text.
+    #
+    # Why this matters: _resolve_existing_ref_for_card() matches on the anchor
+    # first and falls back to content_hash. A card with no anchor is therefore
+    # recognised only by its text being byte-for-byte identical, so editing
+    # the line orphans its note — the old note is no longer claimed and a new
+    # one is created in its place. Anchoring the line makes the match survive
+    # any edit to the wording.
+    #
+    # Anchors do not disturb the hash: parse_line() calls
+    # split_stable_block_id() before compute_hash(), so content_hash is taken
+    # from text that already has the anchor removed. Stamping a line does not
+    # make it look "changed" on the next generate.
+    pending_anchors: List[Tuple[int, str]] = []
+
+    # Anki notes already taken by an earlier card in this pass, and block ids
+    # already spoken for. Both stop two lines from collapsing onto one card.
+    claimed_note_ids = set()
+    used_block_ids = set()
+
     for card in cards:
         existing_ref = _resolve_existing_ref_for_card(
-            card, refs_by_block_id, existing_by_hash
+            card, refs_by_block_id, existing_by_hash, claimed_note_ids
         )
 
         reused = False
@@ -1038,8 +1087,19 @@ def generate_cards(
                         if anki_edit_conflict == "overwrite":
                             if _update_note_from_card(col, note, card, paper, deck_id):
                                 updated += 1
-                if not bid:
+                if not bid or bid in used_block_ids:
                     bid = str(uuid.uuid4())
+                # Backfill. This card already exists in Anki and keeps its
+                # note — it is only being given a permanent name. When the
+                # stored reference already carried a block id (every paper
+                # migrated to disk has them in its .ap.json), that same id is
+                # written into the document, so the anchor and the sidecar
+                # agree and nothing is recreated. The hash is computed with
+                # the anchor stripped, so this does not count as an edit.
+                if not card.block_id:
+                    pending_anchors.append((card.line_index, bid))
+                used_block_ids.add(bid)
+                claimed_note_ids.add(existing_ref.anki_note_id)
                 new_card_refs.append(
                     CardReference(
                         line_index=card.line_index,
@@ -1057,6 +1117,12 @@ def generate_cards(
         note_id = _create_note(col, card, paper, deck_id)
         if note_id:
             bid = card.block_id or str(uuid.uuid4())
+            if bid in used_block_ids:
+                bid = str(uuid.uuid4())
+            if not card.block_id:
+                pending_anchors.append((card.line_index, bid))
+            used_block_ids.add(bid)
+            claimed_note_ids.add(note_id)
             new_card_refs.append(
                 CardReference(
                     line_index=card.line_index,
@@ -1077,6 +1143,13 @@ def generate_cards(
                 deleted += 1
             except Exception:
                 pass
+
+    # Stamp anchors last, so a failure anywhere above leaves the document
+    # exactly as the user wrote it. The caller (bridge.generate_cards) saves
+    # the paper after this returns, and the web side reloads it, so the
+    # anchored content reaches disk and the editor together.
+    if pending_anchors:
+        paper.content = inject_stable_block_ids(paper.content, pending_anchors)
 
     paper.card_refs = new_card_refs
     return created, updated, deleted

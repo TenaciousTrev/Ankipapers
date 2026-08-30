@@ -15,7 +15,7 @@ import json
 import re
 from typing import List, Dict, Optional, Any
 
-from .paper import Paper
+from .paper import Paper, CardReference
 
 COLLECTION_PAPERS_KEY = "ankipapers.papers.v1"
 COLLECTION_FOLDERS_KEY = "ankipapers.folders.v1"
@@ -243,6 +243,10 @@ def save_paper(paper: Paper) -> str:
             col.set_config(COLLECTION_PAPERS_KEY, papers_map)
         except Exception as exc:
             raise StorageError(f"could not write to the Anki collection: {exc}") from exc
+        # Mirror a copy to disk. The collection above remains the source of
+        # truth; this writes files nothing reads yet, so a failure here must
+        # never turn a successful save into a failed one.
+        mirror_paper_to_disk_quietly(paper)
         return f"collection://{paper.id}"
 
     # No collection at all (e.g. Anki still starting) — fall back to disk.
@@ -254,8 +258,19 @@ def save_paper(paper: Paper) -> str:
 
 
 def load_paper(paper_id: str) -> Optional[Paper]:
-    """Load a paper by its ID."""
+    """Load a paper by its ID, from disk when it is there."""
     _migrate_to_collection_if_needed()
+
+    try:
+        root = get_storage_dir()
+        md_path = index_papers_on_disk(root).get((paper_id or "").lower())
+        if md_path:
+            paper = _read_paper_from_files(md_path, root)
+            if paper is not None:
+                return paper
+    except Exception:
+        pass   # fall through to the collection copy
+
     papers_map = _collection_get(COLLECTION_PAPERS_KEY, {})
     if isinstance(papers_map, dict):
         data = papers_map.get(paper_id)
@@ -288,6 +303,10 @@ def load_paper(paper_id: str) -> Optional[Paper]:
 def delete_paper(paper_id: str) -> bool:
     """Delete a paper."""
     _migrate_to_collection_if_needed()
+    # Move the files aside first. Deleting in the app must not leave a file
+    # behind that would reappear the next time the library is read from disk.
+    park_paper_files(paper_id)
+
     papers_map = _collection_get(COLLECTION_PAPERS_KEY, {})
     if isinstance(papers_map, dict) and paper_id in papers_map:
         papers_map.pop(paper_id, None)
@@ -305,9 +324,30 @@ def delete_paper(paper_id: str) -> bool:
 
 
 def list_papers() -> List[Paper]:
-    """List all saved papers."""
+    """List all saved papers.
+
+    Phase 2: the files on disk are what the app reads. The collection copy is
+    still written on every save and is used whenever disk has nothing to offer
+    — so an install that has never pressed "Write files" is unaffected, and a
+    single unreadable file costs only that paper, not the library.
+    """
     _migrate_to_collection_if_needed()
     papers = []
+
+    from_disk = _papers_from_disk()
+    if from_disk:
+        # Any paper the collection knows about but disk does not (an unreadable
+        # or not-yet-mirrored file) is filled in from the collection.
+        fallback = _collection_get(COLLECTION_PAPERS_KEY, {})
+        if isinstance(fallback, dict):
+            for pid, data in fallback.items():
+                if pid in from_disk or not isinstance(data, dict):
+                    continue
+                try:
+                    from_disk[pid] = Paper.from_dict(data)
+                except Exception:
+                    continue
+        return list(from_disk.values())
 
     papers_map = _collection_get(COLLECTION_PAPERS_KEY, {})
     if isinstance(papers_map, dict):
@@ -337,8 +377,17 @@ def list_papers() -> List[Paper]:
 
 
 def save_folder_structure(folders: Dict[str, Any]):
-    """Save the folder tree structure."""
+    """Save the folder tree structure, and give each folder a directory.
+
+    Only ever creates directories. Removing one is done explicitly by
+    delete_folder_structure(), and only when it is empty — so a folder
+    operation can never take a document with it.
+    """
     _migrate_to_collection_if_needed()
+    try:
+        materialize_folder_dirs(folders)
+    except Exception:
+        pass
     if _collection_set(COLLECTION_FOLDERS_KEY, folders):
         return
     # Fallback to disk
@@ -348,9 +397,24 @@ def save_folder_structure(folders: Dict[str, Any]):
 
 
 def load_folder_structure() -> Dict[str, Any]:
-    """Load the folder tree structure."""
+    """Load the folder tree structure.
+
+    Phase 3: what the sidebar shows is the shape of the papers/ directory. The
+    stored tree is materialised as directories first, so a folder that only
+    ever existed in the collection — an empty one, say — cannot disappear when
+    the display switches to disk.
+    """
     _migrate_to_collection_if_needed()
     folders = _collection_get(COLLECTION_FOLDERS_KEY, None)
+
+    if papers_are_on_disk():
+        try:
+            if isinstance(folders, dict):
+                materialize_folder_dirs(folders)
+            return folder_tree_from_disk()
+        except Exception:
+            pass   # fall back to the stored tree
+
     if isinstance(folders, dict):
         return folders
     # Fallback to disk
@@ -494,9 +558,10 @@ def move_folder_structure(
         np = _rewrite_paper_folder_path(fp, folder_path, new_path)
         if np != fp:
             paper.folder_path = np
-            save_paper(paper)
+            save_paper(paper)   # moves the paper's files into the new directory
 
-    save_folder_structure(folders)
+    save_folder_structure(folders)   # creates the directory in its new home
+    prune_folder_dir(folder_path)    # and clears the old one, if it is empty
     return None
 
 
@@ -544,9 +609,12 @@ def delete_folder_structure(folder_path: str) -> Optional[str]:
         np = _path_after_cascade_folder_delete(fp, folder_path, parent_path)
         if np != fp:
             paper.folder_path = np
-            save_paper(paper)
+            save_paper(paper)   # this moves the paper's files out of the folder
 
     save_folder_structure(folders)
+    # Now that nothing is left inside, remove the directory itself. If anything
+    # unexpected remains, the directory stays and the files stay with it.
+    prune_folder_dir(folder_path)
     return None
 
 
@@ -590,9 +658,10 @@ def rename_folder_structure(old_path: str, new_name: str) -> Optional[str]:
         np = _rewrite_paper_folder_path(fp, old_path, new_path)
         if np != fp:
             paper.folder_path = np
-            save_paper(paper)
+            save_paper(paper)   # moves the paper's files into the new directory
 
-    save_folder_structure(folders)
+    save_folder_structure(folders)   # creates the renamed directory
+    prune_folder_dir(old_path)       # and clears the old one, if it is empty
     return None
 
 
@@ -631,3 +700,493 @@ def load_source_link(paper_id: str, block_id: str) -> Optional[Dict[str, Any]]:
         return None
     v = m.get(_source_link_key(paper_id, block_id))
     return v if isinstance(v, dict) else None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  File mirror  (phase 1 — write only; nothing reads these yet)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Every paper is written as two files under the profile folder:
+#
+#   <profile>/ankipapers/papers/Medicine/GI/Gastroenterology.md
+#   <profile>/ankipapers/papers/Medicine/GI/Gastroenterology.ap.json
+#
+# The .md is the document and nothing else, so it stays pleasant to read, diff
+# and keep in git. Its first line is a hidden HTML comment naming the paper —
+# the same device the editor already uses for card anchors — which is what lets
+# a file be renamed or moved without breaking the ap:// links that point at it.
+#
+# The .ap.json beside it carries what markdown cannot: the deck, the tags, the
+# true (unsanitised) title and folder path, and the map from each line to its
+# Anki note. That map is what stops Generate from destroying cards, so it has
+# to be stored — just not in the middle of the prose.
+#
+# During this phase the Anki collection is still the only thing read back.
+# These files exist to be compared against it.
+
+PAPER_MD_HEADER_RE = re.compile(r"^<!--ap-paper:([0-9a-f-]{36})-->[ \t]*\r?\n?", re.IGNORECASE)
+
+_FILE_FORMAT_VERSION = 1
+_MAX_NAME_CHARS = 120
+_WINDOWS_RESERVED = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def sanitize_path_component(name: str, fallback: str = "Untitled") -> str:
+    """A single folder or file name that a filesystem will actually accept.
+
+    Characters a path cannot hold become "-". The true, unaltered title is
+    always kept in the .ap.json, so nothing typed is ever lost — only the
+    name on disk is adjusted.
+    """
+    s = (name or "").strip()
+    for ch in '/\\:*?"<>|':
+        s = s.replace(ch, "-")
+    s = "".join(c for c in s if ord(c) >= 32)   # drop control characters
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.rstrip(". ")                          # trailing dots/spaces are trouble
+    if not s or s in {".", ".."}:
+        s = fallback
+    if s.split(".")[0].upper() in _WINDOWS_RESERVED:
+        s = "_" + s
+    if len(s) > _MAX_NAME_CHARS:
+        s = s[:_MAX_NAME_CHARS].rstrip(". ")
+    return s or fallback
+
+
+def paper_relative_stem(paper) -> str:
+    """Where a paper belongs under papers/, without a file extension."""
+    parts = [
+        sanitize_path_component(p)
+        for p in (getattr(paper, "folder_path", "") or "").split("/")
+        if p and p.strip()
+    ]
+    stem = sanitize_path_component(
+        getattr(paper, "title", "") or "", fallback=(paper.id or "Untitled")[:8]
+    )
+    parts.append(stem)
+    return os.path.join(*parts)
+
+
+def _render_paper_markdown(paper) -> str:
+    content = paper.content or ""
+    if not content.endswith("\n"):
+        content += "\n"
+    return f"<!--ap-paper:{paper.id}-->\n{content}"
+
+
+def _render_paper_meta(paper) -> str:
+    refs = []
+    for ref in getattr(paper, "card_refs", []) or []:
+        try:
+            refs.append(ref.to_dict())
+        except Exception:
+            continue
+    meta = {
+        "ankipapers_format": _FILE_FORMAT_VERSION,
+        "id": paper.id,
+        "title": getattr(paper, "title", "") or "",
+        "deck_name": getattr(paper, "deck_name", "") or "",
+        "folder_path": getattr(paper, "folder_path", "") or "",
+        "tags": list(getattr(paper, "tags", []) or []),
+        "created_at": getattr(paper, "created_at", None),
+        "modified_at": getattr(paper, "modified_at", None),
+        "card_refs": refs,
+    }
+    return json.dumps(meta, indent=2, ensure_ascii=False) + "\n"
+
+
+def _atomic_write(path: str, text: str):
+    """Write via a temporary file and rename, so an interrupted save can never
+    leave a half-written document behind."""
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _paper_id_in_file(md_path: str):
+    """The id recorded in a .md file's first line, or None."""
+    try:
+        with open(md_path, "r", encoding="utf-8") as f:
+            match = PAPER_MD_HEADER_RE.match(f.readline())
+        return match.group(1).lower() if match else None
+    except Exception:
+        return None
+
+
+def index_papers_on_disk(root: str = None) -> Dict[str, str]:
+    """Map each paper id to the .md file currently holding it."""
+    root = root or get_storage_dir()
+    found: Dict[str, str] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != DELETED_DIR_NAME]
+        for name in filenames:
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(dirpath, name)
+            pid = _paper_id_in_file(path)
+            if pid:
+                found[pid] = path
+    return found
+
+
+def _resolve_target(paper, root: str, on_disk: Dict[str, str]):
+    """The .md path this paper should occupy, avoiding another paper's file."""
+    base = os.path.join(root, paper_relative_stem(paper))
+    candidate, suffix = base, 1
+    while True:
+        md = candidate + ".md"
+        existing = _paper_id_in_file(md) if os.path.exists(md) else None
+        if existing is None or existing == (paper.id or "").lower():
+            return md
+        suffix += 1
+        candidate = f"{base} ({suffix})"
+
+
+def write_paper_files(paper, root: str = None, on_disk: Dict[str, str] = None) -> Dict[str, Any]:
+    """Write one paper's .md and .ap.json. Returns what happened."""
+    root = root or get_storage_dir()
+    if on_disk is None:
+        on_disk = index_papers_on_disk(root)
+
+    target_md = _resolve_target(paper, root, on_disk)
+    target_meta = target_md[:-3] + ".ap.json"
+
+    moved_from = None
+    previous = on_disk.get((paper.id or "").lower())
+    if previous and os.path.abspath(previous) != os.path.abspath(target_md):
+        # The paper was renamed or moved: take its old pair with it rather
+        # than leaving a stale duplicate behind.
+        moved_from = previous
+        for stale in (previous, previous[:-3] + ".ap.json"):
+            try:
+                if os.path.exists(stale):
+                    os.remove(stale)
+            except Exception:
+                pass
+
+    _atomic_write(target_md, _render_paper_markdown(paper))
+    _atomic_write(target_meta, _render_paper_meta(paper))
+    on_disk[(paper.id or "").lower()] = target_md
+
+    return {
+        "id": paper.id,
+        "title": getattr(paper, "title", "") or "",
+        "md": target_md,
+        "meta": target_meta,
+        "moved_from": moved_from,
+        "renamed": os.path.basename(target_md)[:-3]
+                   != sanitize_path_component(getattr(paper, "title", "") or ""),
+        "sanitized": sanitize_path_component(getattr(paper, "title", "") or "")
+                     != (getattr(paper, "title", "") or "").strip(),
+    }
+
+
+def mirror_paper_to_disk_quietly(paper):
+    """Best-effort mirror used by save_paper(). Never raises."""
+    try:
+        write_paper_files(paper)
+    except Exception:
+        try:
+            import traceback
+            traceback.print_exc()
+        except Exception:
+            pass
+
+
+def mirror_all_papers(dry_run: bool = False) -> Dict[str, Any]:
+    """Write every paper to disk, or report what writing them would do.
+
+    This is what the "Write all papers to disk" button calls. It only ever
+    adds files; the collection is read and left exactly as it was.
+    """
+    root = get_storage_dir()
+    papers = list_papers()
+    on_disk = index_papers_on_disk(root)
+
+    report: Dict[str, Any] = {
+        "root": root,
+        "dry_run": bool(dry_run),
+        "paper_count": len(papers),
+        "card_ref_count": sum(len(getattr(p, "card_refs", []) or []) for p in papers),
+        "written": [],
+        "renamed": [],
+        "failed": [],
+    }
+
+    seen_targets: Dict[str, str] = {}
+    for paper in papers:
+        try:
+            desired = os.path.join(root, paper_relative_stem(paper)) + ".md"
+            clash = seen_targets.get(os.path.normcase(os.path.abspath(desired)))
+            if dry_run:
+                entry = {
+                    "id": paper.id,
+                    "title": getattr(paper, "title", "") or "",
+                    "md": desired,
+                    "cards": len(getattr(paper, "card_refs", []) or []),
+                    "clashes_with": clash,
+                }
+                seen_targets[os.path.normcase(os.path.abspath(desired))] = paper.id
+                report["written"].append(entry)
+                if entry["title"] != sanitize_path_component(entry["title"]) or clash:
+                    report["renamed"].append(entry)
+                continue
+
+            result = write_paper_files(paper, root=root, on_disk=on_disk)
+            result["cards"] = len(getattr(paper, "card_refs", []) or [])
+            seen_targets[os.path.normcase(os.path.abspath(result["md"]))] = paper.id
+            report["written"].append(result)
+            if result["sanitized"] or result["renamed"]:
+                report["renamed"].append(result)
+        except Exception as exc:
+            report["failed"].append({
+                "id": getattr(paper, "id", "?"),
+                "title": getattr(paper, "title", "") or "",
+                "error": str(exc),
+            })
+    return report
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Reading from disk  (phase 2)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The files written in phase 1 now become what the app reads. The collection
+# copy keeps being written alongside, so it stays a complete safety net and
+# reverting is a one-line change.
+#
+# Every read falls back to the collection if a file is unreadable, and the
+# whole disk path is skipped when no files exist yet — so an install that has
+# never pressed "Write files" behaves exactly as it did before.
+
+DELETED_DIR_NAME = "_deleted"
+
+
+def _read_paper_from_files(md_path: str, root: str = None) -> Optional[Paper]:
+    """Rebuild a Paper from its .md and .ap.json. None if it cannot be read.
+
+    Where the file sits is itself information: if the sidecar is missing or
+    damaged, the folder and title are recovered from the path rather than lost.
+    Without that, a corrupt sidecar would quietly move the paper to the root of
+    the tree the next time it was saved."""
+    try:
+        with open(md_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return None
+
+    match = PAPER_MD_HEADER_RE.match(text)
+    paper_id = match.group(1) if match else None
+    content = PAPER_MD_HEADER_RE.sub("", text, count=1) if match else text
+
+    meta: Dict[str, Any] = {}
+    meta_path = md_path[:-3] + ".ap.json"
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                meta = loaded
+        except Exception:
+            meta = {}   # a damaged sidecar must not cost you the document
+
+    paper_id = paper_id or str(meta.get("id") or "").strip()
+    if not paper_id:
+        return None
+
+    # Fall back to what the path itself tells us.
+    path_title = os.path.basename(md_path)[:-3]
+    path_folder = ""
+    try:
+        rel = os.path.relpath(os.path.dirname(md_path), root or get_storage_dir())
+        if rel not in (".", "", os.pardir):
+            path_folder = rel.replace(os.sep, "/")
+    except Exception:
+        path_folder = ""
+
+    paper = Paper(
+        title=meta.get("title") or path_title,
+        content=content,
+        deck_name=meta.get("deck_name") or "Default",
+        # Where the file actually sits wins over what the sidecar remembers:
+        # folders are directories now, so moving one in Finder must be seen.
+        folder_path=path_folder,
+        paper_id=paper_id,
+    )
+    paper.tags = list(meta.get("tags") or [])
+    if meta.get("created_at"):
+        paper.created_at = meta["created_at"]
+    if meta.get("modified_at"):
+        paper.modified_at = meta["modified_at"]
+    refs = []
+    for raw in meta.get("card_refs") or []:
+        try:
+            refs.append(CardReference.from_dict(raw))
+        except Exception:
+            continue
+    paper.card_refs = refs
+    return paper
+
+
+def _papers_from_disk() -> Dict[str, Paper]:
+    """Every paper currently on disk, keyed by id. Empty when none exist."""
+    out: Dict[str, Paper] = {}
+    try:
+        root = get_storage_dir()
+    except Exception:
+        return out
+    for pid, md_path in index_papers_on_disk(root).items():
+        paper = _read_paper_from_files(md_path, root)
+        if paper is not None:
+            out[paper.id] = paper
+    return out
+
+
+def papers_are_on_disk() -> bool:
+    """True once the file mirror holds at least one paper."""
+    try:
+        return bool(index_papers_on_disk(get_storage_dir()))
+    except Exception:
+        return False
+
+
+def park_paper_files(paper_id: str) -> Optional[str]:
+    """Move a deleted paper's files into papers/_deleted/ rather than removing
+    them. Deleting in the app should not be destructive on disk."""
+    try:
+        root = get_storage_dir()
+        md_path = index_papers_on_disk(root).get((paper_id or "").lower())
+        if not md_path or not os.path.exists(md_path):
+            return None
+        parked_dir = os.path.join(root, DELETED_DIR_NAME)
+        os.makedirs(parked_dir, exist_ok=True)
+
+        stem = os.path.basename(md_path)[:-3]
+        target = os.path.join(parked_dir, stem)
+        suffix = 1
+        while os.path.exists(target + ".md"):
+            suffix += 1
+            target = os.path.join(parked_dir, f"{stem} ({suffix})")
+
+        os.replace(md_path, target + ".md")
+        meta = md_path[:-3] + ".ap.json"
+        if os.path.exists(meta):
+            os.replace(meta, target + ".ap.json")
+        return target + ".md"
+    except Exception:
+        try:
+            import traceback
+            traceback.print_exc()
+        except Exception:
+            pass
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Folders as real directories  (phase 3)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The folder tree stops being a separate stored thing and becomes the shape of
+# the papers/ directory itself. A folder you make in the app is a directory you
+# can see in Finder, and a directory you make in Finder is a folder in the app.
+#
+# The collection copy of the tree keeps being written, so nothing is given up
+# yet — but what the app displays now comes from disk.
+
+def folder_dir_path(folder_path: str, root: str = None) -> str:
+    """The directory on disk that a folder path refers to."""
+    root = root or get_storage_dir()
+    parts = [sanitize_path_component(p) for p in (folder_path or "").split("/") if p.strip()]
+    return os.path.join(root, *parts) if parts else root
+
+
+def ensure_folder_dir(folder_path: str, root: str = None) -> str:
+    """Create the directory for a folder. Safe to call repeatedly."""
+    path = folder_dir_path(folder_path, root)
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception:
+        pass
+    return path
+
+
+def prune_folder_dir(folder_path: str, root: str = None) -> bool:
+    """Remove a folder's directory, and any now-empty parents, but only when
+    nothing is left inside. A directory that still holds files is never
+    touched — deleting a folder must not take documents with it."""
+    root = os.path.abspath(root or get_storage_dir())
+    path = os.path.abspath(folder_dir_path(folder_path, root))
+    if path == root or not path.startswith(root + os.sep):
+        return False
+    removed = False
+    while path != root and path.startswith(root + os.sep):
+        try:
+            if not os.path.isdir(path) or os.listdir(path):
+                break
+            os.rmdir(path)
+            removed = True
+            path = os.path.dirname(path)
+        except Exception:
+            break
+    return removed
+
+
+def _collect_tree_folder_paths(node: Dict[str, Any], out: List[str] = None) -> List[str]:
+    out = [] if out is None else out
+    for child in (node or {}).get("children", []) or []:
+        if isinstance(child, dict) and child.get("type") == "folder":
+            path = child.get("path") or child.get("name")
+            if path:
+                out.append(path)
+            _collect_tree_folder_paths(child, out)
+    return out
+
+
+def materialize_folder_dirs(tree: Dict[str, Any], root: str = None) -> int:
+    """Give every folder in a stored tree a real directory, so that switching
+    to a disk-derived tree cannot make an empty folder disappear."""
+    made = 0
+    for path in _collect_tree_folder_paths(tree or {}):
+        target = folder_dir_path(path, root)
+        if not os.path.isdir(target):
+            ensure_folder_dir(path, root)
+            made += 1
+    return made
+
+
+def folder_tree_from_disk(root: str = None) -> Dict[str, Any]:
+    """Build the folder tree the sidebar shows from the directories on disk."""
+    root = root or get_storage_dir()
+
+    def build(dir_path: str, rel: str, depth: int) -> List[Dict[str, Any]]:
+        children: List[Dict[str, Any]] = []
+        try:
+            names = sorted(os.listdir(dir_path), key=lambda s: s.lower())
+        except Exception:
+            return children
+        for name in names:
+            if name == DELETED_DIR_NAME or name.startswith("."):
+                continue
+            full = os.path.join(dir_path, name)
+            if not os.path.isdir(full):
+                continue
+            path = f"{rel}/{name}" if rel else name
+            children.append({
+                "type": "folder",
+                "name": name,
+                "path": path,
+                "children": build(full, path, depth + 1),
+            })
+        return children
+
+    return {"name": "Root", "children": build(root, "", 0), "expanded": True}
