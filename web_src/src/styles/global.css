@@ -77,12 +77,85 @@ body {
 /* ═══════════════════════════════════════════════════
    SIDEBAR
    ═══════════════════════════════════════════════════ */
+/* Width is set inline from App state and clamped there (180–480), so the old
+   min-width: 220px is gone — it would have fought both the drag and the
+   collapse. min-width: 0 keeps flexbox from quietly refusing to shrink it. */
 .sidebar {
-  width: 260px; min-width: 220px;
+  width: 260px; min-width: 0;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; flex-shrink: 0;
 }
+
+/* ── Collapsed: icon rail + hover peek ──────────────────────────────── */
+
+.sidebar-rail {
+  width: 48px; flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: 10px 0 12px;
+}
+.sidebar-rail-btn {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; transition: all var(--transition);
+}
+.sidebar-rail-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* The folder filter is invisible state once the tree is hidden, so the icon
+   carries a dot whenever one is active. */
+.sidebar-rail-btn.has-dot::after {
+  content: ''; position: absolute; top: 5px; right: 5px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-secondary);
+}
+.sidebar-rail-sep {
+  width: 22px; height: 1px; margin: 6px 0;
+  background: var(--border);
+}
+.sidebar-rail-spacer { flex: 1; }
+
+/* The peeked tree floats over the editor instead of pushing it, so hovering
+   never reflows the text you are reading. Fixed rather than absolute: .app is
+   a plain flex row with no positioning context, and the search popover is
+   already fixed, so this keeps them in the same coordinate space. */
+.sidebar--peek {
+  position: fixed;
+  top: 0; left: 48px;
+  height: 100vh;
+  z-index: 1200;
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 28px -10px rgba(0, 0, 0, 0.55);
+  animation: sidebar-peek-in 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+[data-theme="light"] .sidebar--peek {
+  box-shadow: 8px 0 28px -14px rgba(0, 0, 0, 0.28);
+}
+@keyframes sidebar-peek-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── The drag handle between sidebar and editor ─────────────────────── */
+
+.sidebar-resizer {
+  width: 5px; flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background var(--transition);
+}
+.sidebar-resizer:hover { background: var(--accent); }
+/* While dragging, keep the cursor and kill text selection everywhere — the
+   pointer leaves the 5px handle constantly during a drag. */
+body.is-resizing-sidebar { cursor: col-resize; user-select: none; }
+body.is-resizing-sidebar .sidebar-resizer { background: var(--accent); }
+/* Past the snap threshold the handle turns red-ish to say "let go and it
+   collapses" rather than silently doing something unexpected. */
+body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
 
 .sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
 

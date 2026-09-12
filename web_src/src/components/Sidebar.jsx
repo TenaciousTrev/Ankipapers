@@ -1,5 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
-import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search } from 'lucide-react'
+import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+
+// Hovering the rail slides the tree out; both numbers are deliberate. 260ms in
+// means crossing the rail on the way somewhere else does not open it, and
+// 200ms out means a diagonal flick from rail to panel does not close it.
+const PEEK_OPEN_MS = 260
+const PEEK_CLOSE_MS = 200
 
 const FOLDER_ICON_SIZE = 17
 const FOLDER_CHEVRON_SIZE = 16
@@ -27,7 +33,9 @@ function SearchMatchBadges({ result }) {
   )
 }
 
-export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder }) {
+export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, collapsed = false, width = 260, onToggleCollapse }) {
+  const [peeking, setPeeking] = useState(false)
+  const peekTimer = useRef(null)
   const [expandedFolders, setExpandedFolders] = useState(new Set())
   const [creatingIn, setCreatingIn] = useState(null)
   const [newName, setNewName] = useState('')
@@ -42,6 +50,20 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
   const searchTriggerRef = useRef(null)
   const searchPopoverRef = useRef(null)
   const searchInputRef = useRef(null)
+
+  const beginPeek = useCallback(() => {
+    clearTimeout(peekTimer.current)
+    peekTimer.current = setTimeout(() => setPeeking(true), PEEK_OPEN_MS)
+  }, [])
+  const endPeek = useCallback(() => {
+    clearTimeout(peekTimer.current)
+    peekTimer.current = setTimeout(() => setPeeking(false), PEEK_CLOSE_MS)
+  }, [])
+  // A sidebar that is expanded again must not keep a stale peek open behind it.
+  useEffect(() => {
+    if (!collapsed) { clearTimeout(peekTimer.current); setPeeking(false) }
+  }, [collapsed])
+  useEffect(() => () => clearTimeout(peekTimer.current), [])
 
   const handleSearchChange = useCallback((q) => {
     setSearchQuery(q)
@@ -325,8 +347,71 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
       })
   }
 
-  return (
-    <div className="sidebar" onDragEnd={endSidebarDrag}>
+  // The folder filter is what makes collapsing risky: with the tree hidden,
+  // "new paper goes into the selected folder" becomes invisible state. The
+  // rail carries a dot and says so in its tooltip rather than clearing the
+  // filter behind your back.
+  const filterTitle = selectedFolder
+    ? `Folder filter: ${selectedFolder} — new papers from the Home screen go here. Click to show the tree.`
+    : 'No folder filter. Click to show the tree.'
+
+  const rail = (
+    <div
+      className="sidebar-rail"
+      onMouseEnter={beginPeek}
+      onMouseLeave={endPeek}
+      aria-label="Sidebar, collapsed"
+    >
+      <button type="button" className="sidebar-rail-btn" onClick={onToggleCollapse}
+              title="Show sidebar (Ctrl+\)">
+        <PanelLeftOpen size={18} />
+      </button>
+      <div className="sidebar-rail-sep" />
+      <button type="button" className="sidebar-rail-btn" onClick={onGoHome} title="Home">
+        <Home size={18} />
+      </button>
+      <button
+        type="button"
+        className="sidebar-rail-btn"
+        onClick={() => { onToggleCollapse?.(); setSearchPopoverOpen(true) }}
+        title="Search papers"
+      >
+        <Search size={18} />
+      </button>
+      <button
+        type="button"
+        className={`sidebar-rail-btn${selectedFolder ? ' has-dot' : ''}`}
+        onClick={onToggleCollapse}
+        title={filterTitle}
+      >
+        {selectedFolder ? <FolderOpen size={18} /> : <Folder size={18} />}
+      </button>
+      <div className="sidebar-rail-sep" />
+      <button type="button" className="sidebar-rail-btn"
+              onClick={() => onCreatePaper('Untitled', '')} title="New paper">
+        <FilePlus size={18} />
+      </button>
+      <button type="button" className="sidebar-rail-btn"
+              onClick={() => { onToggleCollapse?.(); startCreating('folder', '') }}
+              title="New folder">
+        <FolderPlus size={18} />
+      </button>
+      <div className="sidebar-rail-spacer" />
+      <button type="button" className="sidebar-rail-btn" onClick={onOpenSettings}
+              title="Settings (Ctrl+,)">
+        <Settings size={18} />
+      </button>
+    </div>
+  )
+
+  const panel = (
+    <div
+      className={`sidebar${collapsed ? ' sidebar--peek' : ''}`}
+      style={{ width }}
+      onDragEnd={endSidebarDrag}
+      onMouseEnter={collapsed ? beginPeek : undefined}
+      onMouseLeave={collapsed ? endPeek : undefined}
+    >
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <span className="sidebar-brand-text">Anki Papers</span>
@@ -336,6 +421,10 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
             </button>
             <button type="button" className="sidebar-home-btn" onClick={onOpenSettings} title="Settings (Ctrl+,)">
               <Settings size={22} strokeWidth={1.75} />
+            </button>
+            <button type="button" className="sidebar-home-btn" onClick={onToggleCollapse}
+                    title="Hide sidebar (Ctrl+\)">
+              <PanelLeftClose size={22} strokeWidth={1.75} />
             </button>
           </div>
         </div>
@@ -576,5 +665,17 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
         </>
       )}
     </div>
+  )
+
+  if (!collapsed) return panel
+
+  // Collapsed: the rail holds the layout space, and the tree floats over the
+  // editor rather than pushing it, so peeking never reflows what you're
+  // reading.
+  return (
+    <>
+      {rail}
+      {peeking && panel}
+    </>
   )
 }

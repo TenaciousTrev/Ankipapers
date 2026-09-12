@@ -25,6 +25,17 @@ import GenerateConflictModal from './components/GenerateConflictModal'
 import TableDialog from './components/TableDialog'
 import SourcePanel from './components/SourcePanel'
 
+// Sidebar sizing. SNAP is the width below which a drag stops resizing and
+// collapses to the icon rail instead, so you can put the tree away with the
+// same gesture you use to narrow it.
+const SIDEBAR_DEFAULT_WIDTH = 260
+const SIDEBAR_MIN_WIDTH = 180
+const SIDEBAR_MAX_WIDTH = 480
+const SIDEBAR_SNAP_WIDTH = 120
+
+const clampSidebarWidth = (w) =>
+  Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(w)))
+
 const BLOCK_ID_RE = /\s*$/i
 const randomId = () => (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
 const withBlockId = (line) => BLOCK_ID_RE.test(line || '') ? line : `${line || ''} `
@@ -94,6 +105,10 @@ export default function App() {
   const [tableDialog, setTableDialog] = useState(null)
   const [showSourcePanel, setShowSourcePanel] = useState(false)
   const [sourcePanelWidth, setSourcePanelWidth] = useState(360)
+  // Sidebar width and collapsed state. Both are restored from settings once
+  // they load, so the layout you left behind is the one you come back to.
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sourceState, setSourceState] = useState({ type: 'pdf', path: '', url: '', page: 1, jumpQuote: null })
   
   // ─── UI Operation Lock ───────────────────────────
@@ -134,6 +149,8 @@ export default function App() {
       await refreshFolders()
       const s = await getSettings()
       setSettings(s)
+      if (Number.isFinite(s.sidebar_width)) setSidebarWidth(clampSidebarWidth(s.sidebar_width))
+      setSidebarCollapsed(!!s.sidebar_collapsed)
       // Apply theme
       document.documentElement.dataset.theme = s.editor_theme || 'dark'
       const md = await getMediaDir()
@@ -556,6 +573,61 @@ export default function App() {
     showToast('Settings saved', 'success')
   }, [])
 
+  // Sidebar preferences are written straight through rather than via
+  // handleSaveSettings, which raises a "Settings saved" toast — nobody wants a
+  // toast every time they drag a panel edge.
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const persistSidebarPrefs = useCallback((next) => {
+    const merged = { ...settingsRef.current, ...next }
+    setSettings(merged)
+    Promise.resolve(saveSettingsBridge(merged)).catch(() => {})
+  }, [])
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      persistSidebarPrefs({ sidebar_collapsed: !prev })
+      return !prev
+    })
+  }, [persistSidebarPrefs])
+
+  // Mirror of handleSourcePanelResizeStart, dragging the other way. Below
+  // SNAP the drag stops narrowing and collapses instead.
+  const handleSidebarResizeStart = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = sidebarWidth
+    let latest = startWidth
+    let collapse = false
+    const onMove = (ev) => {
+      const raw = startWidth + (ev.clientX - startX)
+      collapse = raw < SIDEBAR_SNAP_WIDTH
+      if (!collapse) {
+        latest = clampSidebarWidth(raw)
+        setSidebarWidth(latest)
+      }
+      document.body.classList.toggle('is-sidebar-snapping', collapse)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.classList.remove('is-resizing-sidebar', 'is-sidebar-snapping')
+      if (collapse) {
+        // Keep the width it had before the drag, not the squeezed-down value
+        // it passed through on the way to the threshold — dragging it away
+        // should not also resize it, so it comes back the size you left it.
+        setSidebarWidth(startWidth)
+        setSidebarCollapsed(true)
+        persistSidebarPrefs({ sidebar_collapsed: true, sidebar_width: startWidth })
+      } else {
+        persistSidebarPrefs({ sidebar_width: latest })
+      }
+    }
+    document.body.classList.add('is-resizing-sidebar')
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [sidebarWidth, persistSidebarPrefs])
+
   const handleCardCountChange = useCallback((counts) => { setCardCounts(counts) }, [])
 
   const showToast = (message, type = 'success') => {
@@ -797,10 +869,11 @@ export default function App() {
       else if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); handleUndo() }
       else if (e.ctrlKey && e.shiftKey && e.key === 'Z') { e.preventDefault(); handleRedo() }
       else if (e.ctrlKey && e.key === 'y') { e.preventDefault(); handleRedo() }
+      else if (e.ctrlKey && e.key === '\\') { e.preventDefault(); toggleSidebar() }
     }
     window.addEventListener('keydown', handle)
     return () => window.removeEventListener('keydown', handle)
-  }, [handleSave, handleGenerate, handleFormat, handleUndo, handleRedo])
+  }, [handleSave, handleGenerate, handleFormat, handleUndo, handleRedo, toggleSidebar])
 
   // ─── External API ───────────────────────────────
   useEffect(() => {
@@ -850,7 +923,21 @@ export default function App() {
         onDeleteFolder={handleDeleteFolder}
         onRenameFolder={handleRenameFolder}
         onMoveFolder={handleMoveFolder}
+        collapsed={sidebarCollapsed}
+        width={sidebarWidth}
+        onToggleCollapse={toggleSidebar}
       />
+
+      {!sidebarCollapsed && (
+        <div
+          className="sidebar-resizer"
+          onMouseDown={handleSidebarResizeStart}
+          onDoubleClick={toggleSidebar}
+          title="Drag to resize — drag left to collapse, double-click to hide"
+          role="separator"
+          aria-orientation="vertical"
+        />
+      )}
 
       <div className="main-content">
         {paper ? (
