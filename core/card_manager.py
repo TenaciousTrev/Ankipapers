@@ -14,6 +14,7 @@ from .parser import (
     extract_cards,
     get_context_heading,
     inject_stable_block_ids,
+    compute_hash,
 )
 
 
@@ -382,11 +383,31 @@ class AnkiEditConflictAbort(Exception):
         super().__init__(f"{len(conflicts)} anki_edit_conflicts")
 
 
+_IMG_TAG_RE = re.compile(
+    r"""<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>""",
+    re.IGNORECASE,
+)
+
+
 def _normalize_field_value(text: str) -> str:
-    """Compare Anki field HTML to plain paper text more reliably."""
+    """Compare Anki field HTML to plain paper text more reliably.
+
+    Images are reduced to a [img:filename] token BEFORE the general tag strip.
+    They carry their meaning in the src attribute rather than in text, so
+    stripping every tag turned <img src="brain.png"> into the empty string —
+    which made an image-only field compare equal to a blank one. Generate
+    could then never see an image added, swapped or removed, on any conflict
+    policy, and deleting the card was the only way to get the picture onto it.
+    """
     if not text:
         return ""
-    s = re.sub(r"<[^>]+>", " ", text)
+
+    def _img_token(m):
+        src = m.group(1) or m.group(2) or m.group(3) or ""
+        return f" [img:{src.strip()}] "
+
+    s = _IMG_TAG_RE.sub(_img_token, text)
+    s = re.sub(r"<[^>]+>", " ", s)
     return " ".join(s.split()).strip()
 
 
@@ -418,11 +439,17 @@ def _render_context(text: str) -> str:
     return _CONTEXT_CLOZE_RE.sub(cloze, text)
 
 
-def _paper_derived_field_values(card: ParsedCard, paper: Paper) -> List[str]:
-    """What the note fields would contain if generated right now."""
+def _paper_context_and_supplement(card: ParsedCard, paper: Paper) -> Tuple[str, str]:
+    """The two note fields that come from the paper but not from the card's line."""
     context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
     supp = _md_to_html(getattr(card, "supplement", ""))
-    
+    return context, supp
+
+
+def _paper_derived_field_values(card: ParsedCard, paper: Paper) -> List[str]:
+    """What the note fields would contain if generated right now."""
+    context, supp = _paper_context_and_supplement(card, paper)
+
     if card.card_type in ("basic", "reversible"):
         return [_md_to_html(card.front), _md_to_html(card.back), context, supp]
     if card.card_type == "cloze":
@@ -430,24 +457,80 @@ def _paper_derived_field_values(card: ParsedCard, paper: Paper) -> List[str]:
     return []
 
 
-def _note_semantic_match(note, card: ParsedCard, paper: Paper) -> bool:
-    """True if note fields match what the current paper line would produce (ignoring source field)."""
-    exp = _paper_derived_field_values(card, paper)
-    
+def derived_hash_for(card: ParsedCard, paper: Paper) -> str:
+    """Hash of the note parts the card's own line does not determine.
+
+    content_hash covers the card line and nothing else, so editing a "&&"
+    supplement or renaming a heading above the card leaves it identical. This
+    is the companion signal: stored on the CardReference when a note is
+    written, it says what the supplement and breadcrumb were at that moment.
+    """
+    context, supp = _paper_context_and_supplement(card, paper)
+    return compute_hash(f"{context}\x00{supp}")
+
+
+def _note_field_diff(note, card: ParsedCard, paper: Paper) -> set:
+    """Which parts of the note disagree with what the paper would generate now.
+
+    A subset of {"body", "context", "supplement"}. Knowing *which* part
+    differs is what lets generate_cards tell a paper-side change (the
+    supplement or the heading above the card moved) from an Anki-side one
+    (someone retyped the question in the Browser).
+    """
+    context, supp = _paper_context_and_supplement(card, paper)
+
     if card.card_type in ("basic", "reversible"):
-        # Expecting Front(0), Back(1), Context(2), Source(3), Supplement(4)
-        actual = [note.fields[0], note.fields[1], note.fields[2], note.fields[4] if len(note.fields) > 4 else ""]
+        # Front(0), Back(1), Context(2), Source(3), Supplement(4)
+        exp_body = [_md_to_html(card.front), _md_to_html(card.back)]
+        act_body = [note.fields[0], note.fields[1]]
+        act_context = note.fields[2] if len(note.fields) > 2 else ""
+        act_supp = note.fields[4] if len(note.fields) > 4 else ""
     elif card.card_type == "cloze":
-        # Expecting Text(0), Context(1), Source(2), Supplement(3)
-        actual = [note.fields[0], note.fields[1], note.fields[3] if len(note.fields) > 3 else ""]
+        # Text(0), Context(1), Source(2), Supplement(3)
+        exp_body = [_md_to_html(card.cloze_text)]
+        act_body = [note.fields[0]]
+        act_context = note.fields[1] if len(note.fields) > 1 else ""
+        act_supp = note.fields[3] if len(note.fields) > 3 else ""
     else:
-        return True
-        
-    if len(actual) != len(exp):
-        return False
-    return all(
-        _normalize_field_value(a) == _normalize_field_value(e) for a, e in zip(actual, exp)
-    )
+        return set()
+
+    diff = set()
+    if len(act_body) != len(exp_body) or any(
+        _normalize_field_value(a) != _normalize_field_value(e)
+        for a, e in zip(act_body, exp_body)
+    ):
+        diff.add("body")
+    if _normalize_field_value(act_context) != _normalize_field_value(context):
+        diff.add("context")
+    if _normalize_field_value(act_supp) != _normalize_field_value(supp):
+        diff.add("supplement")
+    return diff
+
+
+def _note_semantic_match(note, card: ParsedCard, paper: Paper) -> bool:
+    """True if note fields match what the current paper line would produce."""
+    return not _note_field_diff(note, card, paper)
+
+
+def _is_paper_side_change(existing_ref, derived: str, diff: set) -> bool:
+    """True when the note differs from the paper because the PAPER moved on.
+
+    Only called when the card's own line is unchanged, so the difference has
+    to come from the supplement or the breadcrumb \u2014 unless the note was edited
+    in Anki. derived_hash separates the two: it records what this note was
+    written with last time.
+    """
+    stored = getattr(existing_ref, "derived_hash", None)
+    if stored:
+        # We know what we last wrote. Still matching the paper means the note
+        # itself was edited; no longer matching means the paper changed.
+        return stored != derived
+    # Written before derived_hash existed, so there is nothing to compare.
+    # Fall back to what differs: no earlier version of Generate could push a
+    # supplement or breadcrumb change, so the paper is the only plausible
+    # source of one. A changed question or answer, on an unchanged line, is
+    # Anki's doing and stays subject to the conflict policy.
+    return "body" not in diff
 
 
 def _ref_is_claimed(ref: Optional[CardReference], claimed_note_ids) -> bool:
@@ -515,7 +598,14 @@ def list_anki_edit_conflicts(paper: Paper, col) -> List[Dict[str, Any]]:
             note = col.get_note(existing_ref.anki_note_id)
         except Exception:
             continue
-        if _note_semantic_match(note, card, paper):
+        diff = _note_field_diff(note, card, paper)
+        if not diff:
+            continue
+        # A supplement or breadcrumb the paper has moved on from is not a
+        # conflict — Generate applies those itself. Reporting them here would
+        # put the "edited in Anki" modal in front of edits the user just made
+        # in the paper.
+        if _is_paper_side_change(existing_ref, derived_hash_for(card, paper), diff):
             continue
         out.append(
             {
@@ -942,12 +1032,28 @@ def _ensure_reversible_type(col):
 
 
 def get_deck_id(col, deck_name: str) -> int:
-    """Get or create a deck and return its ID."""
-    deck = col.decks.by_name(deck_name)
+    """Get or create a deck and return its ID.
+
+    col.decks.id() is the call that CREATES a missing deck, along with any
+    missing parents in a "A::B::C" name. id_for_name() only looks one up and
+    returns None when it does not exist — so naming a deck that was not
+    already in the collection handed None to add_note(), and every card for
+    that paper landed in Default with no error and no warning.
+    """
+    name = (deck_name or "").strip() or "Default"
+
+    deck = col.decks.by_name(name)
     if deck:
         return deck["id"]
-    # id_for_name creates the deck if it doesn't exist
-    return col.decks.id_for_name(deck_name)
+
+    did = col.decks.id(name)
+    if did:
+        return did
+
+    # Never return None. Falling back to Default is the same place the bug
+    # used to put these cards, but as a decision rather than an accident.
+    fallback = col.decks.by_name("Default")
+    return fallback["id"] if fallback else 1
 
 
 def _update_note_from_card(col, note, card: ParsedCard, paper: Paper, deck_id: int) -> bool:
@@ -1079,14 +1185,22 @@ def generate_cards(
                 note = None
             if note is not None:
                 bid = card.block_id or existing_ref.block_id
+                derived = derived_hash_for(card, paper)
                 if existing_ref.content_hash != card.content_hash:
                     if _update_note_from_card(col, note, card, paper, deck_id):
                         updated += 1
                 else:
-                    if not _note_semantic_match(note, card, paper):
-                        if anki_edit_conflict == "overwrite":
-                            if _update_note_from_card(col, note, card, paper, deck_id):
-                                updated += 1
+                    diff = _note_field_diff(note, card, paper)
+                    # A paper-side change (the supplement or the heading above
+                    # this card moved) is just an edit waiting to be applied,
+                    # not a conflict — it needs no policy and no permission.
+                    # Only a genuine Anki-side edit consults the policy.
+                    if diff and (
+                        _is_paper_side_change(existing_ref, derived, diff)
+                        or anki_edit_conflict == "overwrite"
+                    ):
+                        if _update_note_from_card(col, note, card, paper, deck_id):
+                            updated += 1
                 if not bid or bid in used_block_ids:
                     bid = str(uuid.uuid4())
                 # Backfill. This card already exists in Anki and keeps its
@@ -1108,6 +1222,7 @@ def generate_cards(
                         content_hash=card.content_hash,
                         synced=True,
                         block_id=bid,
+                        derived_hash=derived,
                     )
                 )
                 reused = True
@@ -1131,6 +1246,7 @@ def generate_cards(
                     content_hash=card.content_hash,
                     synced=True,
                     block_id=bid,
+                    derived_hash=derived_hash_for(card, paper),
                 )
             )
             created += 1

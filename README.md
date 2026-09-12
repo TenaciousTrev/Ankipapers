@@ -35,6 +35,7 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 - [Building](#building)
 - [Project layout](#project-layout)
 - [Syntax quick reference](#syntax-quick-reference)
+- [Developers](#developers)
 
 ---
 
@@ -49,6 +50,8 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 **Closing the window can't lose work.** Anki Papers now waits for an in-flight save or generate to finish before the window closes, and offers to keep waiting if it is taking a while.
 
 **Paste as plain text.** `Ctrl+Shift+V` (`⇧⌘V` on a Mac) pastes the clipboard onto a single line, turning every line break into a space — for paragraphs lifted out of a textbook or PDF, where the breaks are just where the column ended. It rejoins hyphenated words split across a break and leaves real compound hyphens intact. `Ctrl+V` is unchanged and still pastes one block per line. Also on the right-click menu.
+
+**Pictures on cards.** An image indented under a card now rides along with it, with no `&&` prefix needed, and changes to it reach cards that already exist — adding, swapping or removing a picture updates the note in place instead of requiring you to delete and rebuild the card.
 
 **Expand-all works everywhere.** `Ctrl+Shift+↓` unfolds a whole document on Windows, Linux, and macOS. It was previously `⇧⌘↓` and macOS-only.
 
@@ -127,6 +130,25 @@ Drug of choice for Wolff-Parkinson-White with AF >> Procainamide
 ```
 
 This is the right home for the paragraph explaining *why* the answer is the answer — the part that makes a fact stick but would ruin the card if it were on the front.
+
+### Pictures on a card
+
+A picture indented under a card travels onto that card, arriving in the same place the `&&` notes do. **It needs no `&&` of its own** — a line holding nothing but an image can only mean "show this with the card above", so Anki Papers treats it that way.
+
+```markdown
+Normal velocity of sound in soft tissue >> ~1540 m/s
+    && Bone is nearer 3000 m/s and lung nearer 700, which is why
+       transitions between them reflect so strongly.
+    ![velocity by tissue](velocity-chart.png)
+```
+
+Mix images and `&&` lines freely and in whatever order reads best — they reach the card in the order you wrote them, joined by line breaks. Several pictures under one card all come along.
+
+Where the line sits is what decides its meaning. Indented under a card, it belongs to that card. On its own at any other level, it is simply part of the document — so illustrations that are not card material stay out of your reviews.
+
+The picture button on the toolbar inserts an image at the cursor, and pasting an image from the clipboard copies the file into your Anki media folder for you. An `![](…)` you type by hand has to point at a file already in that folder, or the card shows a broken image.
+
+Editing any of this on an existing card just works: add, swap or remove a picture, or reword a `&&` line, press Generate, and the card is updated in place with its review history intact.
 
 ### `[[tag]]` and `[[NH]]`
 
@@ -294,6 +316,8 @@ For each card line in the document:
 
 Cards are matched by their [hidden anchor](#the-hidden-anchors) first, falling back to exact text for papers written before anchors existed. Deletion is scoped to **the cards this paper created** — tracked individually, never by deck membership — so hand-made cards and other papers' cards sharing the same deck are never touched.
 
+Changes that do not touch the card's own line — a reworded `&&` supplement, a picture added or swapped, a renamed heading above the card — are applied too. Anki Papers records what each note's supplement and breadcrumb were when it last wrote them, which is how it tells a change you made in the paper from a change you made in Anki's Browser.
+
 ### When a card was edited in Anki instead
 
 If you edit a generated note in Anki's own browser and then Generate, Anki Papers notices the note no longer matches the paper. Settings decides what happens: **preserve** leaves Anki's version alone, **overwrite** pushes the paper's text back over it, and **abort** stops the whole Generate and lists the conflicts before anything changes.
@@ -460,12 +484,18 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | Suppress the heading breadcrumb | `[[NH]]` |
 | Heading | `# Topic`, `## Section`, … to six levels |
 | Image | `![caption](picture.jpg)` |
+| Picture on a card | the same line, indented under the card — no `&&` needed |
 | Maths | `$inline$`, `$$block$$` |
 | Link to a heading or paper | `[phrase](ap://…)` — via right-click → **Create link…** |
 | Quick paper link | `[[Paper title]]` |
 | Hidden line anchor | `<!--ap:uuid-->` — written for you; leave it be |
 
 ---
+
+## Developers
+
+- **Dr. Ahmed Benarab** — original author
+- **Dr. Trevor Thompson** — document links and the link graph, papers on disk, stable card identity, PDF export, plain-text paste, pictures on cards
 
 ## Contributing / issues
 

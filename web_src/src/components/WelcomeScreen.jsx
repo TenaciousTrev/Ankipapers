@@ -230,6 +230,14 @@ export default function WelcomeScreen({
                   never becomes a card of its own, so it's a good home for the
                   paragraph that explains why the answer is what it is.
                 </Ref>
+                <Ref code="![](scan.png) under a card" tone="muted">
+                  A picture indented under a card rides along with it, in the same
+                  place the <code>&&</code> notes appear. It needs no <code>&&</code>{' '}
+                  of its own — a line holding nothing but a picture can only mean
+                  “show this with the card above”. Put as many as you like, and mix
+                  them with <code>&&</code> lines in whatever order reads best; they
+                  arrive on the card in the order you wrote them.
+                </Ref>
                 <Ref code="[[tag]]" tone="muted">
                   Puts an Anki tag on that card, written as <code>AnkiPapers::tag</code>.
                   Anything you'd normally use tags for — searching, building a filtered
@@ -262,9 +270,12 @@ export default function WelcomeScreen({
                   the little arrow beside it to open it.
                 </Ref>
                 <Ref code="![caption](picture.jpg)" tone="muted">
-                  A picture from your Anki media folder, which appears on the card too.
-                  The picture button on the toolbar adds one wherever your cursor is,
-                  so you rarely need to type this out.
+                  A picture from your Anki media folder. The picture button on the
+                  toolbar adds one wherever your cursor is, and pasting an image
+                  copies it into the media folder for you, so you rarely type this
+                  out. Where you put the line decides what it does: on its own at
+                  any level it is just part of the document, and indented under a
+                  card it travels onto that card.
                 </Ref>
               </RefGroup>
 

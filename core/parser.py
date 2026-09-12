@@ -81,6 +81,17 @@ BLOCK_ID_SUFFIX = re.compile(
 # Inline tags: [[tag]]
 INLINE_TAG_PATTERN = re.compile(r"\[\[(.*?)\]\]")
 
+# Supplement marker at the start of a line: "&& background text".
+# The space after && is optional — "&&text" was previously matched by nothing
+# at all, so the line became neither a card nor a supplement and quietly
+# reached Anki by no route whatsoever.
+SUPPLEMENT_PREFIX = re.compile(r"^&&[ \t]*")
+
+# A line holding nothing but an image. Such a line cannot be a card and has no
+# other meaning in the format, so the only thing its author can have intended
+# is "show this picture with the card above".
+IMAGE_ONLY_LINE = re.compile(r"^!\[[^\]]*\]\([^)]+\)$")
+
 
 def split_stable_block_id(text: str) -> Tuple[str, Optional[str]]:
     """Remove trailing <!--ap:uuid--> from a line; return (body, uuid or None)."""
@@ -184,7 +195,7 @@ def parse_line(index: int, line: str) -> ParsedLine:
 
     # If the line is meant to be a Supplement (&&), treat it as plain text 
     # so it bypasses the card-creation regex below.
-    if card_content.startswith("&& "):
+    if SUPPLEMENT_PREFIX.match(card_content):
         return ParsedLine(
             index=index,
             raw_text=line,
@@ -327,6 +338,41 @@ def parse_document(content: str) -> List[ParsedLine]:
     return [parse_line(i, line) for i, line in enumerate(lines)]
 
 
+def supplement_text_from_child(child_content: str) -> Optional[str]:
+    """What a child line contributes to its parent card's Supplement, or None.
+
+    Two shapes qualify:
+
+      "&& background text"   the explicit marker (the space after && is
+                             optional)
+      "![alt](picture.png)"  a line that is nothing but an image
+
+    The second is here because such a line used to reach Anki through no path
+    at all: it is not a card, and without the "&&" it was not collected as a
+    supplement either, so a picture placed under a card rendered in the editor
+    and then silently failed to appear on the card. Bare *text* lines are
+    still ignored on purpose — those are notes the author deliberately kept
+    off the card.
+    """
+    text = (child_content or "").strip()
+    if not text:
+        return None
+
+    marker = SUPPLEMENT_PREFIX.match(text)
+    if marker:
+        return text[marker.end():].strip()
+
+    # An image line may carry a hidden <!--ap:uuid--> anchor if something links
+    # to it, so test (and store) the line with the anchor removed — otherwise
+    # the anchor both defeats the match and lands in the card's HTML.
+    body, _ = split_stable_block_id(text)
+    body = body.strip()
+    if IMAGE_ONLY_LINE.match(body):
+        return body
+
+    return None
+
+
 def extract_cards(content: str) -> List[ParsedCard]:
     """Extract all cards from a document."""
     parsed_lines = parse_document(content)
@@ -357,9 +403,9 @@ def extract_cards(content: str) -> List[ParsedCard]:
                     if bullet_match:
                         child_content = bullet_match.group(3)
                         
-                    # Check for the strict "&& " prefix
-                    if child_content.startswith("&& "):
-                        supplement_texts.append(child_content[3:].strip())
+                    supp = supplement_text_from_child(child_content)
+                    if supp:
+                        supplement_texts.append(supp)
             
             # Assign to the card and append
             line.card.supplement = "<br>".join(supplement_texts)
