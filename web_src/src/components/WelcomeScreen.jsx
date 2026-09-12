@@ -31,6 +31,7 @@ function formatRelativeTime(modifiedAt) {
 const IS_MAC = typeof navigator !== 'undefined' &&
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
 const PASTE_KEY = IS_MAC ? '⌘V' : 'Ctrl+V'
+const PLAIN_PASTE_KEY = IS_MAC ? '⇧⌘V' : 'Ctrl+Shift+V'
 
 /** One row of the guide: the thing you type, and what it does for you. */
 function Ref({ code, tone, children }) {
@@ -326,14 +327,14 @@ export default function WelcomeScreen({
                 icon={Keyboard}
                 title="Keys worth knowing"
                 blurb={IS_MAC
-                  ? 'These use Ctrl on a Mac too, not the Command key.'
+                  ? 'On a Mac these use Ctrl, not Command — except the two pasting keys, which follow the usual ⌘ you already use everywhere else.'
                   : 'The same keys work on Windows and Linux.'}
               >
                 <Ref code="Ctrl+S" tone="key">Save the paper you're in.</Ref>
                 <Ref code="Ctrl+G" tone="key">
                   Make the cards. It saves first, so nothing you've just typed is missed.
                 </Ref>
-                <Ref code="Ctrl+Shift+V" tone="key">
+                <Ref code="Ctrl+Shift+E" tone="key">
                   Switch between the normal editor and the plain text behind it. Handy
                   when you want to see exactly what you've written.
                 </Ref>
@@ -346,8 +347,17 @@ export default function WelcomeScreen({
                   all of it in one press when you want the full text back.
                 </Ref>
                 <Ref code={PASTE_KEY} tone="key">
-                  Paste copied lines in as their own separate lines, below whichever
-                  one you have selected.
+                  Paste as it was copied. Text that came with line breaks in it
+                  arrives as separate lines, one block each, below whichever block
+                  you have selected.
+                </Ref>
+                <Ref code={PLAIN_PASTE_KEY} tone="key">
+                  Paste as plain text, all on one line. Every line break in what you
+                  copied becomes a space. This is the one to use for a paragraph
+                  lifted out of a textbook or a PDF, where the breaks are just
+                  where the column happened to end — it also rejoins words split
+                  across a line, so <code>propa-</code> and <code>gation</code> come
+                  back as one word. It's in the right-click menu too.
                 </Ref>
               </RefGroup>
             </div>

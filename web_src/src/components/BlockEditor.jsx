@@ -113,6 +113,30 @@ function wrapLineSegment(line, selStart, selEnd, prefix, suffix, emptyPlaceholde
   }
 }
 
+/**
+ * Flatten clipboard text copied from a PDF or textbook into one line.
+ *
+ * Typeset text arrives with a hard line break at the end of every rendered
+ * line, plus hyphens where words were split across those lines. This undoes
+ * both so a pasted excerpt reads as the single paragraph it actually is.
+ */
+function normalizePastedText(raw) {
+  return String(raw || '')
+    .replace(/\r\n?/g, '\n')                    // normalize CRLF / CR
+    .replace(/\u00AD/g, '')                     // drop soft hyphens outright
+    // Word split across a line break: "propa-" + newline + "gation" -> "propagation".
+    // Lowercase on both sides only, so hyphenated abbreviations that wrap
+    // ("ST-" + newline + "elevation", "AV-" + newline + "nodal") keep their hyphen.
+    .replace(/([a-z])[-\u2010\u2011]\n\s*([a-z])/g, '$1$2')
+    // Any other hyphen sitting at a line end is a real compound hyphen that
+    // happened to wrap, so close the break without inserting a space:
+    // "ST-" + newline + "elevation" -> "ST-elevation", not "ST- elevation".
+    .replace(/([A-Za-z])([-\u2010\u2011])\n\s*([A-Za-z])/g, '$1$2$3')
+    .replace(/\s*\n\s*/g, ' ')                  // every remaining break -> one space
+    .replace(/[ \t\u00A0\u2000-\u200A]+/g, ' ') // collapse spaces/tabs/NBSP runs
+    .trim()
+}
+
 function scheduleRestoreSelection(inputRef, start, end) {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -361,6 +385,7 @@ function BlockContextMenu({
   onEdit,
   onCopy,
   onPasteBlocks,
+  onPastePlain,
   onDuplicate,
   onMerge,
   onDelete,
@@ -464,6 +489,16 @@ function BlockContextMenu({
       )}
       <button type="button" className="block-context-menu-item" role="menuitem" onClick={onPasteBlocks}>
         Press {PASTE_MOD} + V to Paste
+      </button>
+      <button
+        type="button"
+        className="block-context-menu-item has-key"
+        role="menuitem"
+        onClick={onPastePlain}
+        title="Paste the clipboard as one line, turning line breaks into spaces"
+      >
+        Paste as plain text
+        <span className="block-context-menu-key">⇧ {PASTE_MOD} V</span>
       </button>
       <button type="button" className="block-context-menu-item" role="menuitem" onClick={onCopy}>
         {multi ? 'Copy blocks' : 'Copy line'}
@@ -1442,6 +1477,124 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     return true
   }, [onChange])
 
+  /** Clipboard text via the Qt bridge, falling back to the web API. */
+  const readClipboardText = useCallback(async () => {
+    let text = ''
+    try {
+      const res = await getClipboardText()
+      text = (res && res.text) || ''
+    } catch { /* fall through */ }
+    if (!text) {
+      try { text = (await navigator.clipboard.readText()) || '' } catch { /* fall through */ }
+    }
+    return text
+  }, [])
+
+  /**
+   * Insert already-flattened text at a cursor position captured earlier.
+   *
+   * `target` is {index, selStart, selEnd} read synchronously at keydown time.
+   * It cannot be read here: this runs after an await, by which point focus and
+   * the selection may have moved. Content is read from contentRef for the same
+   * reason — the `content` prop closed over at render time may be stale.
+   */
+  const insertFlatTextAtCursor = useCallback((flat, target) => {
+    if (!flat || !target) return
+    const lines = contentRef.current.split('\n')
+    const i = target.index
+    if (i < 0 || i >= lines.length) return
+
+    const full = lines[i] ?? ''
+    const apSuf = extractApBlockSuffix(full)
+    const display = stripApBlockId(full)
+    const leadingSpaces = (display.match(/^[ \t]*/) || [''])[0]
+    // The block's textarea holds the line WITHOUT its indent (see the
+    // `value={actualText}` textarea below), so selStart/selEnd index this
+    // string, not the stored line.
+    const actualText = display.slice(leadingSpaces.length)
+
+    const before = actualText.slice(0, target.selStart)
+    const after = actualText.slice(target.selEnd)
+    const merged = leadingSpaces + before + flat + after
+    lines[i] = apSuf ? merged.replace(/\s+$/, '') + apSuf : merged
+    onChange(lines.join('\n'))
+
+    // Cursor offset is into the textarea's value, which has no indent — so the
+    // indent width is deliberately NOT added here.
+    const pos = before.length + flat.length
+    setFocusedIndex(i)
+    scheduleRestoreSelection(activeBlockInputRef, pos, pos)
+  }, [onChange])
+
+  /** Fetch the clipboard, flatten it, and put it where the keystroke pointed. */
+  const pastePlainText = useCallback(async (target, blocks) => {
+    const text = await readClipboardText()
+    if (!text) {
+      notifyRef.current?.("Couldn't read the clipboard", 'error')
+      return
+    }
+    const flat = normalizePastedText(text)
+    if (!flat) return
+    if (target) insertFlatTextAtCursor(flat, target)
+    else if (blocks && blocks.length) pasteLinesBelow(flat, blocks)
+  }, [readClipboardText, insertFlatTextAtCursor, pasteLinesBelow])
+
+  // ── Shift+Ctrl/Cmd+V — paste as plain text, flattened onto one line ──────
+  //
+  // This deliberately does NOT wait for a `paste` event. Only a chord the
+  // engine recognises as paste fires one, and on macOS that is Cmd+V alone:
+  // Cmd+Shift+V produces a keydown and nothing else. The previous approach
+  // armed a flag here and read it back inside the paste handler, which made
+  // the whole feature a silent no-op on macOS — the flag armed, no event ever
+  // arrived, and the safety timer cleared it a second later.
+  //
+  // Reading the clipboard through the Qt bridge instead removes the
+  // dependency on what the engine binds, so this behaves identically on
+  // macOS, Windows and Linux.
+  const plainPasteGuardRef = useRef(0)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!((e.key === 'V' || e.key === 'v') && e.shiftKey && (e.ctrlKey || e.metaKey))) return
+      e.preventDefault()
+      e.stopPropagation()
+
+      // On Windows and Linux this chord IS bound to paste, and preventDefault
+      // above already suppresses it. This timestamp is the belt to that
+      // braces: a paste event that still slips through within the window
+      // below is ignored rather than inserted a second time.
+      plainPasteGuardRef.current = Date.now()
+
+      // Captured now, synchronously. The clipboard read that follows is async.
+      const idx = focusedIndexRef.current
+      const input = activeBlockInputRef.current
+      const target = (idx !== null && input)
+        ? {
+            index: idx,
+            selStart: input.selectionStart ?? 0,
+            selEnd: input.selectionEnd ?? input.selectionStart ?? 0,
+          }
+        : null
+      const sel = selectedIndicesRef.current
+      const blocks = (!target && sel && sel.size) ? [...sel] : null
+      if (!target && !blocks) return
+
+      pastePlainText(target, blocks)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [pastePlainText])
+
+  /** True when a paste event is the tail of a Shift+V we already handled. */
+  const consumePlainPasteGuard = useCallback(() => {
+    if (!plainPasteGuardRef.current) return false
+    if (Date.now() - plainPasteGuardRef.current > 500) {
+      plainPasteGuardRef.current = 0
+      return false
+    }
+    plainPasteGuardRef.current = 0
+    return true
+  }, [])
+
   // ⌘V / Ctrl+V with whole blocks selected pastes them below the selection.
   //
   // This listens for the real paste EVENT on the window rather than reading
@@ -1457,6 +1610,11 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       if (!sel || sel.size === 0) return
       const active = document.activeElement
       if (active && active.classList && active.classList.contains('block-input')) return
+      // Tail of a Shift+Ctrl/Cmd+V we already served from the bridge.
+      if (consumePlainPasteGuard()) {
+        e.preventDefault()
+        return
+      }
       const text = e.clipboardData?.getData('text/plain') || ''
       if (!text) return
       e.preventDefault()
@@ -1464,7 +1622,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
     window.addEventListener('paste', onWindowPaste)
     return () => window.removeEventListener('paste', onWindowPaste)
-  }, [pasteLinesBelow])
+  }, [pasteLinesBelow, consumePlainPasteGuard])
 
   const pasteBlocksAtMenu = useCallback(async () => {
     const sel = blockMenu?.selection
@@ -1488,6 +1646,24 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
     pasteLinesBelow(text, sel)
   }, [blockMenu, closeBlockMenu, pasteLinesBelow])
+
+  // Same as Shift+Ctrl/Cmd+V, reached from the menu instead of the keyboard —
+  // so the behaviour stays available whatever a platform does with the chord.
+  const pastePlainAtMenu = useCallback(async () => {
+    const sel = blockMenu?.selection
+    const idx = focusedIndexRef.current
+    const input = activeBlockInputRef.current
+    const target = (idx !== null && input && sel?.includes?.(idx))
+      ? {
+          index: idx,
+          selStart: input.selectionStart ?? 0,
+          selEnd: input.selectionEnd ?? input.selectionStart ?? 0,
+        }
+      : null
+    closeBlockMenu()
+    if (!target && !sel?.length) return
+    await pastePlainText(target, target ? null : sel)
+  }, [blockMenu, closeBlockMenu, pastePlainText])
 
   const duplicateBlockAtMenu = useCallback(() => {
   const sel = blockMenu?.selection
@@ -1631,55 +1807,67 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         return
       }
     }
-    // ── Plain-text paste with newline splitting ──────────────────────────
+    // ── Plain text ───────────────────────────────────────────────────────
     // Only intercept when a block textarea is focused; otherwise let the
     // browser handle it so native undo inside a focused textarea is preserved.
     if (focusedIndex === null) return
-    const plainItem = Array.from(
-      (e.clipboardData || e.originalEvent?.clipboardData)?.items ?? []
-    ).find(it => it.type === 'text/plain')
-    if (!plainItem) return
-    plainItem.getAsString((pastedText) => {
-      if (!pastedText.includes('\n')) return // single-line: let browser handle it natively
+
+    // Shift+Ctrl/Cmd+V is served on keydown, straight from the Qt bridge. On
+    // Windows and Linux the chord is also a native paste, so an event can
+    // arrive here for a paste that has already been handled — drop it rather
+    // than insert the text twice.
+    if (consumePlainPasteGuard()) {
       e.preventDefault()
-      const lines = content.split('\n')
-      const input = activeBlockInputRef.current
-      const cursorPos = input ? input.selectionStart ?? 0 : 0
-      const cursorEnd = input ? input.selectionEnd ?? cursorPos : cursorPos
+      return
+    }
 
-      const full = lines[focusedIndex] ?? ''
-      const apSuf = extractApBlockSuffix(full)
-      const display = stripApBlockId(full)
-      const spacesMatch = display.match(/^[ \t]*/)
-      const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
-      const actualText = display.slice(leadingSpaces.length)
+    // Read synchronously. The old code used items.getAsString(), whose
+    // callback runs after the event has been dispatched, making the
+    // preventDefault() inside it a no-op and risking a double insert.
+    const cd = e.clipboardData || e.nativeEvent?.clipboardData
+    const pastedText = cd?.getData('text/plain') ?? ''
+    if (!pastedText) return
 
-      const beforeCursor = actualText.slice(0, cursorPos)
-      const afterCursor = actualText.slice(cursorEnd)
+    if (!pastedText.includes('\n')) return // single line: browser handles it
+    e.preventDefault()
 
-      const pastedLines = pastedText.split('\n')
-      // First pasted segment is appended to the current block's text before cursor
-      const firstSegment = leadingSpaces + beforeCursor + pastedLines[0]
-      // Last pasted segment gets the text that was after the cursor
-      const lastSegment = leadingSpaces + pastedLines[pastedLines.length - 1] + afterCursor
+    const lines = content.split('\n')
+    const input = activeBlockInputRef.current
+    const cursorPos = input ? input.selectionStart ?? 0 : 0
+    const cursorEnd = input ? input.selectionEnd ?? cursorPos : cursorPos
 
-      const newLines = [
-        apSuf ? firstSegment.replace(/\s+$/, '') + apSuf : firstSegment,
-        ...pastedLines.slice(1, -1).map(seg => leadingSpaces + seg),
-        lastSegment,
-      ]
+    const full = lines[focusedIndex] ?? ''
+    const apSuf = extractApBlockSuffix(full)
+    const display = stripApBlockId(full)
+    const spacesMatch = display.match(/^[ \t]*/)
+    const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+    const actualText = display.slice(leadingSpaces.length)
 
-      lines.splice(focusedIndex, 1, ...newLines)
-      onChange(lines.join('\n'))
-      // Move focus to the end of the last inserted segment
-      const newFocusIndex = focusedIndex + newLines.length - 1
-      const newCursorPos = leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
-      setTimeout(() => { 
-        setFocusedIndex(newFocusIndex)
-        scheduleRestoreSelection(activeBlockInputRef, newCursorPos, newCursorPos)
-      }, 10)
-    })
-  }, [content, onChange, focusedIndex])
+    const beforeCursor = actualText.slice(0, cursorPos)
+    const afterCursor = actualText.slice(cursorEnd)
+
+    const pastedLines = pastedText.split('\n')
+    // First pasted segment is appended to the current block's text before cursor
+    const firstSegment = leadingSpaces + beforeCursor + pastedLines[0]
+    // Last pasted segment gets the text that was after the cursor
+    const lastSegment = leadingSpaces + pastedLines[pastedLines.length - 1] + afterCursor
+
+    const newLines = [
+      apSuf ? firstSegment.replace(/\s+$/, '') + apSuf : firstSegment,
+      ...pastedLines.slice(1, -1).map(seg => leadingSpaces + seg),
+      lastSegment,
+    ]
+
+    lines.splice(focusedIndex, 1, ...newLines)
+    onChange(lines.join('\n'))
+    // Move focus to the end of the last inserted segment
+    const newFocusIndex = focusedIndex + newLines.length - 1
+    const newCursorPos = leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
+    setTimeout(() => {
+      setFocusedIndex(newFocusIndex)
+      scheduleRestoreSelection(activeBlockInputRef, newCursorPos, newCursorPos)
+    }, 10)
+  }, [content, onChange, focusedIndex, consumePlainPasteGuard])
 
   // Apply formatting to focused block
   const applyFormat = useCallback((action, extra) => {
@@ -2022,6 +2210,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
           onEdit={editBlockAtMenu}
           onCopy={copyBlockAtMenu}
           onPasteBlocks={pasteBlocksAtMenu}
+          onPastePlain={pastePlainAtMenu}
           onDuplicate={duplicateBlockAtMenu}
           onMerge={mergeBlocksAtMenu}
           onDelete={deleteBlockAtMenu}

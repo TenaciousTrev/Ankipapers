@@ -790,7 +790,7 @@ export default function App() {
 
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); handleSave() }
       else if (e.ctrlKey && e.key === 'g') { e.preventDefault(); handleGenerate() }
-      else if (e.ctrlKey && e.shiftKey && e.key === 'V') { e.preventDefault(); setViewMode(v => v === 'blocks' ? 'source' : 'blocks') }
+      else if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) { e.preventDefault(); setViewMode(v => v === 'blocks' ? 'source' : 'blocks') }
       else if (e.ctrlKey && e.key === 'b') { e.preventDefault(); handleFormat('bold') }
       else if (e.ctrlKey && e.key === 'i') { e.preventDefault(); handleFormat('italic') }
       else if (e.ctrlKey && e.key === ',') { e.preventDefault(); setShowSettings(true) }

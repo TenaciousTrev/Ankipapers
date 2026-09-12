@@ -644,6 +644,20 @@ body {
   transition: background var(--transition);
 }
 .block-context-menu-item:hover { background: var(--bg-hover); }
+/* A menu row that also shows its keyboard shortcut. Only this variant becomes
+   a flex row -- every other item stays display:block as before. */
+.block-context-menu-item.has-key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.block-context-menu-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .block-context-menu-item:disabled {
   opacity: 0.45;
   cursor: not-allowed;

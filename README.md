@@ -48,6 +48,8 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **Closing the window can't lose work.** Anki Papers now waits for an in-flight save or generate to finish before the window closes, and offers to keep waiting if it is taking a while.
 
+**Paste as plain text.** `Ctrl+Shift+V` (`⇧⌘V` on a Mac) pastes the clipboard onto a single line, turning every line break into a space — for paragraphs lifted out of a textbook or PDF, where the breaks are just where the column ended. It rejoins hyphenated words split across a break and leaves real compound hyphens intact. `Ctrl+V` is unchanged and still pastes one block per line. Also on the right-click menu.
+
 **Expand-all works everywhere.** `Ctrl+Shift+↓` unfolds a whole document on Windows, Linux, and macOS. It was previously `⇧⌘↓` and macOS-only.
 
 ---
@@ -157,11 +159,12 @@ Headings and indentation do two jobs at once: they keep the document readable, a
 - Any line with more-indented lines beneath it is a **parent**, and papers open with parents folded, so a long document greets you as an outline. Click the chevron to open one section, or press **`Ctrl+Shift+↓`** to unfold the entire document at once.
 - **Drag a block by its handle** to move it and its children.
 - **Right-click a block** for edit, duplicate, merge, delete, and **Create link…**.
-- **Ctrl+V** — or **⌘V** on a Mac — pastes copied lines in as separate blocks below the selected one, rather than as one run-on line.
+- **Ctrl+V** (**⌘V** on a Mac) pastes as copied: text with line breaks in it arrives as separate blocks, one per line.
+- **Ctrl+Shift+V** (**⇧⌘V** on a Mac) pastes as plain text, flattened onto a single line — every line break becomes a space. Use it for a paragraph lifted out of a textbook or PDF, where the breaks are only where the column ended. It also rejoins words hyphenated across a break (`propa-` + break → `propagation`) while leaving real compound hyphens alone (`ST-` + break → `ST-elevation`), strips soft hyphens, and collapses runs of whitespace. Also on the right-click menu as **Paste as plain text**.
 
 Large papers are fine: a document of ~1,100 lines with several hundred cards stays responsive while typing and while inserting lines.
 
-The **Source** view (`Ctrl+Shift+V`) shows the whole document as plain text when you want to see exactly what you've written.
+The **Source** view (`Ctrl+Shift+E`) shows the whole document as plain text when you want to see exactly what you've written.
 
 ---
 
@@ -360,18 +363,19 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+Shift+P` | Open Anki Papers (from Anki's main window) |
 | `Ctrl+S` | Save the open paper |
 | `Ctrl+G` | Generate cards |
-| `Ctrl+Shift+V` | Toggle Editor / Source view |
+| `Ctrl+Shift+E` | Toggle Editor / Source view |
 | `Ctrl+Shift+↓` | Unfold every collapsed section in the document |
 | `Tab` / `Shift+Tab` | Indent / outdent the line and its children |
 | `Enter` | Split the line at the cursor |
 | `Backspace` at line start | Outdent, then merge into the line above |
 | `Ctrl+B` / `Ctrl+I` | Bold / italic |
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
-| `Ctrl+V` / `⌘V` on a Mac | Paste copied lines as separate blocks |
+| `Ctrl+V` / `⌘V` on a Mac | Paste as copied — one block per line |
+| `Ctrl+Shift+V` / `⇧⌘V` on a Mac | Paste as plain text — flattened onto one line |
 | `Ctrl+,` | Settings |
 | `[[` | Autocomplete a link to another paper by title |
 
-> The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included — pasting blocks is the one exception, which follows the system paste key. On a Mac, `Ctrl+Shift+↓` also accepts `⇧⌘↓`.
+> The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included. The two pasting shortcuts are the exception: they follow the system paste key, so on a Mac they are `⌘V` and `⇧⌘V`. `Ctrl+Shift+↓` also accepts `⇧⌘↓` there.
 
 ---
 
