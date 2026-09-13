@@ -352,6 +352,15 @@ export default function WelcomeScreen({
                 <Ref code="Ctrl+B / Ctrl+I" tone="key">Bold and italic.</Ref>
                 <Ref code="Ctrl+Z / Ctrl+Shift+Z" tone="key">Undo and redo.</Ref>
                 <Ref code="Ctrl+," tone="key">Open Settings.</Ref>
+                <Ref code={'Ctrl+\\'} tone="key">
+                  Fold the folder list away and give the whole window to what you're
+                  writing. It shrinks to a narrow strip of icons rather than
+                  vanishing, so New Paper and Search stay one click away — and
+                  resting your pointer on the strip slides the list back out over
+                  the page without moving your text. You can also drag the edge of
+                  the list to any width you like; drag it far enough left and it
+                  folds away on its own.
+                </Ref>
                 <Ref code={IS_MAC ? 'Ctrl+Shift+↓ or ⇧⌘↓' : 'Ctrl+Shift+↓'} tone="key">
                   Unfold the whole document at once. Papers open with every nested
                   section folded up so a long one reads as an outline, and this opens

@@ -53,6 +53,8 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **Pictures on cards.** An image indented under a card now rides along with it, with no `&&` prefix needed, and changes to it reach cards that already exist — adding, swapping or removing a picture updates the note in place instead of requiring you to delete and rebuild the card.
 
+**A collapsible sidebar.** `Ctrl+\` folds the folder tree down to an icon rail, or drag its edge to any width you like. Hovering the rail slides the tree out over the editor without reflowing your text, and both the width and the collapsed state persist.
+
 **Expand-all works everywhere.** `Ctrl+Shift+↓` unfolds a whole document on Windows, Linux, and macOS. It was previously `⇧⌘↓` and macOS-only.
 
 ---
@@ -187,6 +189,10 @@ Headings and indentation do two jobs at once: they keep the document readable, a
 Large papers are fine: a document of ~1,100 lines with several hundred cards stays responsive while typing and while inserting lines.
 
 The **Source** view (`Ctrl+Shift+E`) shows the whole document as plain text when you want to see exactly what you've written.
+
+**Collapsing the sidebar.** `Ctrl+\` folds the folder tree away and gives the width to the document. It collapses to a 48-pixel icon rail rather than disappearing, so Home, Search, New Paper, New Folder and Settings stay one click away, and a dot on the folder icon tells you when a folder filter is active. Rest the pointer on the rail and the tree slides out *over* the editor — your text never reflows just because the cursor crossed the edge.
+
+You can also drag the border between the sidebar and the editor to any width from 180 to 480 pixels; drag it far enough left and it snaps closed. The width and the collapsed state are remembered between sessions.
 
 ---
 
@@ -396,6 +402,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
 | `Ctrl+V` / `⌘V` on a Mac | Paste as copied — one block per line |
 | `Ctrl+Shift+V` / `⇧⌘V` on a Mac | Paste as plain text — flattened onto one line |
+| `Ctrl+\` | Collapse / expand the sidebar |
 | `Ctrl+,` | Settings |
 | `[[` | Autocomplete a link to another paper by title |
 
