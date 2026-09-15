@@ -16,7 +16,9 @@ import { AP_LINK_RE } from './docLinks'
 
 // ─── Block type detection ───────────────────────────
 export function getBlockType(line) {
-  const t = line.trim()
+  // The size marker lives past the header row's final pipe, so it has to come
+  // off before the table test — otherwise a sized table stops being a table.
+  const t = stripTableSize(String(line ?? '')).trim()
   if (!t) return 'empty'
   if (/^\|(?:[^|]*\|)+\s*$/.test(t) && /\|/.test(t.slice(1, -1))) {
     if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(t)) return 'table-separator'
@@ -37,8 +39,45 @@ export function getBlockType(line) {
   return 'text'
 }
 
+// ── Table size marker ──────────────────────────────────────────────────────
+//
+// A table's width setting rides on the end of its header row as
+// "<!--ap-table:m-->". It sits there rather than on a line of its own so that
+// it travels with the table when the table is moved, copied or re-indented.
+//
+// It goes BEFORE any <!--ap:uuid--> anchor, because the anchor is defined as
+// the last thing on a line and the editor's AP_BLOCK_ID_TAIL regex is
+// anchored to the end. Everything that reads a row therefore strips the
+// anchor first and the size marker second.
+
+export const TABLE_SIZES = ['s', 'm', 'l', 'full']
+export const TABLE_SIZE_DEFAULT = 'l'
+const TABLE_SIZE_TAIL = /<!--ap-table:(s|m|l|full)-->[ \t]*$/i
+
+/** The size recorded on a line, or null. Expects the ap anchor already gone. */
+export function tableSizeOf(line) {
+  const m = String(line ?? '').match(TABLE_SIZE_TAIL)
+  return m ? m[1].toLowerCase() : null
+}
+
+/** The line without its size marker. */
+export function stripTableSize(line) {
+  return String(line ?? '').replace(TABLE_SIZE_TAIL, '')
+}
+
+/**
+ * Put `size` on a line, replacing any marker already there. A null size
+ * removes it. The ap anchor is lifted off and put back last so it keeps its
+ * end-of-line position.
+ */
+export function withTableSize(line, size, apSuffix = '') {
+  const body = stripTableSize(String(line ?? '')).replace(/[ \t]+$/, '')
+  const tag = size && TABLE_SIZES.includes(size) ? `<!--ap-table:${size}-->` : ''
+  return `${body}${tag}${apSuffix}`
+}
+
 export function parseTableRow(line) {
-  const t = (line || '').trim()
+  const t = stripTableSize(String(line ?? '')).trim()
   if (!(t.startsWith('|') && t.endsWith('|'))) return null
   return t.slice(1, -1).split('|').map((c) => c.trim())
 }

@@ -211,11 +211,17 @@ img {
 
 /* ─── Markdown Table ────────────────────────────── */
 .ankipapers-md-table {
-  width: 100%;
+  width: max-content;      /* only as wide as the content needs… */
+  max-width: 80%;          /* …then cap it and let the cells wrap */
   border-collapse: collapse;
-  margin: 16px 0;
+  margin: 16px auto;       /* centred, like a picture */
   font-size: 16px;
+  table-layout: auto;
 }
+.ankipapers-md-table.is-s { max-width: 40%; }
+.ankipapers-md-table.is-m { max-width: 60%; }
+.ankipapers-md-table.is-l { max-width: 80%; }
+.ankipapers-md-table.is-full { max-width: 100%; }
 .ankipapers-md-table th {
   text-align: left;
   padding: 10px 12px;
@@ -300,8 +306,25 @@ def _md_inline_to_html(text: str) -> str:
     return r
 
 
+# A table's width setting rides on the end of its header row. Mirrors
+# TABLE_SIZE_TAIL in web_src/src/blockFormat.js — the two have to agree, or a
+# marker written in the editor shows up as text inside a card's last column.
+_TABLE_SIZE_RE = re.compile(r"<!--ap-table:(s|m|l|full)-->[ \t]*$", re.IGNORECASE)
+_TABLE_SIZES = ("s", "m", "l", "full")
+_TABLE_SIZE_DEFAULT = "l"
+
+
+def _table_size_of(line: str) -> str:
+    m = _TABLE_SIZE_RE.search((line or "").strip())
+    return m.group(1).lower() if m else _TABLE_SIZE_DEFAULT
+
+
+def _strip_table_size(line: str) -> str:
+    return _TABLE_SIZE_RE.sub("", line or "")
+
+
 def _split_md_table_row(line: str) -> List[str]:
-    raw = line.strip()
+    raw = _strip_table_size(line).strip()
     if raw.startswith("|"):
         raw = raw[1:]
     if raw.endswith("|"):
@@ -323,7 +346,7 @@ def _is_md_table_separator(line: str) -> bool:
 
 
 def _is_md_table_row(line: str) -> bool:
-    s = line.strip()
+    s = _strip_table_size(line).strip()
     return s.startswith("|") and s.endswith("|") and "|" in s[1:-1]
 
 
@@ -359,8 +382,9 @@ def _md_to_html(text: str) -> str:
                 + "</tr>"
                 for row in body_rows
             )
+            size = _table_size_of(lines[i])
             out.append(
-                '<table class="ankipapers-md-table"><thead><tr>'
+                f'<table class="ankipapers-md-table is-{size}"><thead><tr>'
                 + head_html
                 + "</tr></thead><tbody>"
                 + body_html

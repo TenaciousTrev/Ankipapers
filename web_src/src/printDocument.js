@@ -20,6 +20,7 @@
  */
 import {
   formatInlineRaw, getBlockType, parseTableRow, isTableSeparatorRow, resolveMediaSrc,
+  tableSizeOf, stripTableSize, TABLE_SIZE_DEFAULT,
 } from './blockFormat'
 import { stripApBlockId } from './docLinks'
 
@@ -134,6 +135,7 @@ function renderLine(line, fmt, mediaDir) {
 function renderTable(lines, fmt, indent) {
   const pad = indent ? ` style="margin-left:${indent * INDENT_PX}px"` : ''
   const rows = []
+  const size = tableSizeOf(stripApBlockId(lines[0] ?? '')) || TABLE_SIZE_DEFAULT
   let isHeader = lines.length > 1 && isTableSeparatorRow(lines[1])
   lines.forEach((ln, i) => {
     if (isTableSeparatorRow(ln)) return
@@ -141,7 +143,7 @@ function renderTable(lines, fmt, indent) {
     const tag = (isHeader && i === 0) ? 'th' : 'td'
     rows.push('<tr>' + cells.map((c) => `<${tag}>${fmt(c)}</${tag}>`).join('') + '</tr>')
   })
-  return `<div class="row"${pad}><table class="table">${rows.join('')}</table></div>`
+  return `<div class="row"${pad}><table class="table is-${size}">${rows.join('')}</table></div>`
 }
 
 /** The document body: every line, in order. Exported for testing. */
@@ -232,7 +234,10 @@ blockquote{
 .figure{ margin:8px 0; break-inside:avoid; page-break-inside:avoid; }
 .figure img{ max-width:100%; border-radius:5px; display:block; }
 figcaption{ font-size:11px; color:var(--text-muted); margin-top:3px; }
-.table{ border-collapse:collapse; margin:5px 0; break-inside:avoid; page-break-inside:avoid; }
+.table{ border-collapse:collapse; margin:5px auto; break-inside:avoid; page-break-inside:avoid;
+        width:max-content; max-width:80%; table-layout:auto; }
+.table.is-s{ max-width:40%; } .table.is-m{ max-width:60%; }
+.table.is-l{ max-width:80%; } .table.is-full{ max-width:100%; }
 .table th,.table td{ border:1px solid var(--border); padding:4px 9px;
                      text-align:left; color:var(--text-secondary); }
 .table th{ font-weight:600; color:var(--text-primary); background:#f5f5f8; }

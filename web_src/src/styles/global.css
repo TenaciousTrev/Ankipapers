@@ -1249,33 +1249,61 @@ textarea.block-input.block-input-textarea {
    it while reviewing. */
 .cloze-hint { color: var(--pink-hint); font-weight: 600; }
 
-.block-table-row {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(80px, 1fr);
+/* Tables shrink to fit their content and sit centred, capped at a width the
+   author picks. Real table layout (rather than one grid per row) is what
+   makes that possible: each row used to be its own grid, and columns only
+   lined up because every row split the same full width into equal 1fr
+   fractions. Size the columns by content and independent grids stop agreeing
+   — table-layout shares one set of column widths across every row. */
+.block-table-wrap { margin: 8px 0; position: relative; }
+.block-table {
+  display: table;
+  border-collapse: collapse;
+  table-layout: auto;
+  width: max-content;          /* as wide as the content needs… */
+  max-width: 80%;              /* …until it hits the cap, then cells wrap */
+  margin-inline: auto;         /* centred like an image */
   border: 1px solid var(--border);
-  border-bottom: none;
   border-radius: 0;
-  overflow: hidden;
-  margin: 0;
 }
-.block-table-row + .block-table-row {
-  border-top: none;
-}
+.block-table.is-s { max-width: 40%; }
+.block-table.is-m { max-width: 60%; }
+.block-table.is-l { max-width: 80%; }
+.block-table.is-full { max-width: 100%; }
+
+.block-table-row { display: table-row; }
 .block-table-cell {
+  display: table-cell;
   padding: 6px 10px;
   border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.5;
+  vertical-align: top;
 }
-.block-table-cell:last-child {
-  border-right: none;
+.block-table-cell:last-child { border-right: none; }
+.block-table-row:last-child .block-table-cell { border-bottom: none; }
+/* The header keeps the accent underline the separator row used to draw. */
+.block-table-row.is-head .block-table-cell {
+  color: var(--text-primary);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
 }
 .block-table-separator {
   height: 0;
   border-top: 2px solid var(--accent);
   margin: 0 0 2px;
+}
+
+/* S / M / L / Full, on hover, exactly like the image controls. */
+.block-table-resize {
+  display: flex; gap: 4px; justify-content: center; margin-top: 6px;
+  opacity: 0; transition: opacity var(--transition);
+}
+.block-table-wrap:hover .block-table-resize { opacity: 1; }
+.resize-btn.is-active {
+  border-color: var(--accent); color: var(--accent);
 }
 
 /* Image block */

@@ -8,7 +8,13 @@ import {
   getBlockType,
   parseTableRow,
   isTableSeparatorRow,
+  tableSizeOf,
+  withTableSize,
+  TABLE_SIZES,
+  TABLE_SIZE_DEFAULT,
 } from '../blockFormat'
+
+const TABLE_SIZE_LABELS = { s: '40%', m: '60%', l: '80%', full: 'full width' }
 import {
   AP_LINK_RE,
   stripApBlockId,
@@ -221,13 +227,14 @@ function LinkPreview({ url }) {
 }
 
 // ─── Rendered block ─────────────────────────────────
-function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
+function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId }) {
   const t = stripApBlockId(line).trim()
 
-  const parseTableCells = (rowLine) => {
-    const raw = rowLine.trim().replace(/^\|/, '').replace(/\|$/, '')
-    return raw.split('|').map((cell) => cell.trim())
-  }
+  // Cells come from the shared parseTableRow rather than a local copy. The
+  // copy that used to live here stripped a trailing "|" with /\|$/ — which
+  // stops matching the moment a size marker sits after it, leaving the
+  // marker visible inside the last column. One definition, in blockFormat.
+  const parseTableCells = (rowLine) => parseTableRow(rowLine) || []
 
   if (type === 'empty') return <div className="block-spacer" />
 
@@ -279,19 +286,40 @@ function RenderBlock({ line, type, mediaDir, onResize, noteId }) {
 
   if (type === 'table') {
     const rows = line.split('\n').map((row) => stripApBlockId(row))
+    // The width setting is recorded on the header row; default to L (80%).
+    const size = tableSizeOf(rows[0]) || TABLE_SIZE_DEFAULT
+    const hasHeader = rows.length > 1 && isTableSeparatorRow(rows[1])
     return (
-      <div>
-        {rows.map((row, rowIdx) => {
-          if (isTableSeparatorRow(row)) return <div key={rowIdx} className="block-table-separator" />
-          const cells = parseTableCells(row)
-          return (
-            <div key={rowIdx} className="block-table-row">
-              {cells.map((cell, idx) => (
-                <div key={idx} className="block-table-cell" dangerouslySetInnerHTML={formatInlineProp(cell, mediaDir)} />
-              ))}
-            </div>
-          )
-        })}
+      <div className="block-table-wrap">
+        <div className={`block-table is-${size}`}>
+          {rows.map((row, rowIdx) => {
+            if (isTableSeparatorRow(row)) return null
+            // parseTableRow already drops the size marker, so it can never
+            // show up as text inside the last header cell.
+            const cells = parseTableCells(row)
+            const head = hasHeader && rowIdx === 0
+            return (
+              <div key={rowIdx} className={`block-table-row${head ? ' is-head' : ''}`}>
+                {cells.map((cell, idx) => (
+                  <div key={idx} className="block-table-cell" dangerouslySetInnerHTML={formatInlineProp(cell, mediaDir)} />
+                ))}
+              </div>
+            )
+          })}
+        </div>
+        <div className="block-table-resize">
+          {TABLE_SIZES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`resize-btn${s === size ? ' is-active' : ''}`}
+              onClick={() => onTableResize?.(s)}
+              title={`Table width: ${TABLE_SIZE_LABELS[s]}`}
+            >
+              {s === 'full' ? 'Full' : s.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
     )
   }
@@ -543,6 +571,7 @@ const Block = React.memo(function Block({
   onKeyDown,
   mediaDir,
   onImageResize,
+  onTableResize,
   noteId,
   onDragStart,
   onDragOver,
@@ -683,7 +712,7 @@ const Block = React.memo(function Block({
             onKeyDown={e => onKeyDown(e, blockId)}
           />
         ) : (
-          <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(blockId, w)} noteId={noteId} />
+          <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(blockId, w)} onTableResize={(sz) => onTableResize?.(blockId, sz)} noteId={noteId} />
         )}
       </div>
     </div>
@@ -1063,6 +1092,21 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     onChange(lines.join('\n'))
   }, [onChange])
 
+  /** Write a table's width setting onto its header row. */
+  const handleTableResize = useCallback((blockId, size) => {
+    const index = idToIndexRef.current.get(blockId)
+    if (index === undefined) return
+    const lines = contentRef.current.split('\n')
+    const b = findTableBounds(lines, index)
+    if (!b) return
+    const header = lines[b.start]
+    // The ap anchor is defined as the last thing on a line, so lift it off,
+    // set the marker, and put it back.
+    const apSuf = extractApBlockSuffix(header)
+    lines[b.start] = withTableSize(stripApBlockId(header), size, apSuf)
+    onChange(lines.join('\n'))
+  }, [onChange])
+
   const handleKeyDown = useCallback((e, blockId) => {
     const index = idToIndexRef.current.get(blockId)
     if (index === undefined) return
@@ -1123,6 +1167,55 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         setZettelSearch(null)
         return
       }
+    }
+
+    // ── Tables: the textarea holds every row joined by newlines, while
+    // lines[index] is only the FIRST row. A caret offset taken from the
+    // textarea therefore means nothing when applied to lines[index], and the
+    // generic Enter below used it to splice a blank line in at index + 1 —
+    // which is between the header and the separator row. findTableBounds
+    // requires those two to be adjacent, so the table silently stopped being
+    // a table and its rows fell back to plain text. Handle both keys here,
+    // in the table's own coordinates, before the generic paths see them.
+    const tableBounds = findTableBounds(lines, index)
+    const inTable = !!tableBounds && tableBounds.start === index
+
+    if (inTable && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      const full = e.target.value ?? ''
+      const caret = e.target.selectionStart ?? full.length
+
+      if (caret >= full.length) {
+        // At the end of the table: step out of it and open a fresh line below.
+        lines.splice(tableBounds.end + 1, 0, '')
+        onChange(lines.join('\n'))
+        setTimeout(() => setFocusedIndex(tableBounds.end + 1), 10)
+        return
+      }
+
+      // Inside the table: add an empty row with the right number of columns,
+      // below the row the caret sits in. Never above the separator, or we
+      // would recreate the very break this function exists to prevent.
+      const caretRow = full.slice(0, caret).split('\n').length - 1
+      const cols = (parseTableRow(lines[tableBounds.start]) || []).length || 2
+      const blank = '|' + ' |'.repeat(cols)
+      const insertAt = Math.min(
+        tableBounds.start + Math.max(caretRow, 1) + 1,
+        tableBounds.end + 1,
+      )
+      lines.splice(insertAt, 0, blank)
+      onChange(lines.join('\n'))
+      setTimeout(() => setFocusedIndex(tableBounds.start), 10)
+      return
+    }
+
+    if (inTable && e.key === 'Backspace'
+        && e.target.selectionStart === 0 && e.target.selectionEnd === 0) {
+      // Caret at the very start of the table. The generic handler below would
+      // read this as "start of lines[index]" and merge the header row into
+      // whatever sits above, orphaning the rest of the table. Do nothing.
+      e.preventDefault()
+      return
     }
 
     if (e.key === 'Enter') {
@@ -2175,6 +2268,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
                 onKeyDown={handleKeyDown}
                 mediaDir={mediaDir}
                 onImageResize={handleImageResize}
+                onTableResize={handleTableResize}
                 noteId={(displayType === 'basic' || displayType === 'reversible' || displayType === 'cloze') ? b.noteId : null}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
