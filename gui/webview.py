@@ -1,8 +1,9 @@
 """
 WebView window for Anki Papers.
 
-Opens a QWebEngineView that loads the React frontend and connects
-it to the Python backend via QWebChannel.
+Opens an aqt.webview.AnkiWebView that loads the React frontend over Anki's
+media server (http://127.0.0.1:<port>/_addons/<pkg>/web/index.html) and
+connects it to the Python backend via AnkiWebView's own pycmd() bridge.
 """
 
 import os
@@ -13,27 +14,29 @@ from aqt.qt import (
     QVBoxLayout,
     Qt,
     QTimer,
+    QWebEngineSettings,
 )
 from aqt import mw
-
-try:
-    from PyQt6.QtWebEngineWidgets import QWebEngineView
-    from PyQt6.QtWebChannel import QWebChannel
-    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
-except ImportError:
-    try:
-        from PyQt5.QtWebEngineWidgets import QWebEngineView
-        from PyQt5.QtWebChannel import QWebChannel
-        from PyQt5.QtWebEngineCore import QWebEnginePage
-    except ImportError:
-        QWebEngineView = None
-        QWebChannel = None
+from aqt.webview import AnkiWebView
 
 from .bridge import AnkiPapersBridge
 
 
+class AnkiPapersWebView(AnkiWebView):
+    """AnkiWebView subclass that does not let Escape close this window.
+
+    AnkiWebView's default onEsc() walks up parents and closes the first
+    QDialog/QMainWindow it finds — inside Anki Papers, Escape is used to
+    dismiss pop-ups within the editor, so closing the whole window on Escape
+    would be a regression.
+    """
+
+    def onEsc(self):
+        pass
+
+
 class AnkiPapersWindow(QMainWindow):
-    """Main Anki Papers window using a QWebEngineView for the React UI."""
+    """Main Anki Papers window using an AnkiWebView for the React UI."""
 
     _instance = None
 
@@ -45,16 +48,6 @@ class AnkiPapersWindow(QMainWindow):
 
     @classmethod
     def show_window(cls):
-        if QWebEngineView is None:
-            from aqt.qt import QMessageBox
-            QMessageBox.critical(
-                mw,
-                "Anki Papers",
-                "QWebEngineView is not available.\n"
-                "Please update your Anki installation.",
-            )
-            return None
-
         win = cls.instance()
         win.show()
         win.raise_()
@@ -68,14 +61,12 @@ class AnkiPapersWindow(QMainWindow):
         self.resize(1200, 750)
 
         # Create the web view
-        self.webview = QWebEngineView(self)
+        self.webview = AnkiPapersWebView(self, title="Anki Papers")
         self.setCentralWidget(self.webview)
 
         # Setup the bridge
-        self.bridge = AnkiPapersBridge(self)
-        self.channel = QWebChannel(self)
-        self.channel.registerObject("bridge", self.bridge)
-        self.webview.page().setWebChannel(self.channel)
+        self.bridge = AnkiPapersBridge(window=self)
+        self.webview.set_bridge_command(self.bridge.handle, self)
 
         # Tell us when the page's render process dies. Without this a crashed
         # renderer just leaves a blank white window with no explanation and no
@@ -94,20 +85,33 @@ class AnkiPapersWindow(QMainWindow):
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
 
+        # Re-allow external navigation once our own page has finished loading
+        # (see the set_open_links_externally(False)/(True) dance in _load_ui).
+        self.webview.loadFinished.connect(self._on_page_load_finished)
+
         # Load the React app
         self._load_ui()
 
+    def _on_page_load_finished(self, ok):
+        self.webview.set_open_links_externally(True)
+
     def _load_ui(self):
-        """Load the React frontend from the web/ directory."""
+        """Load the React frontend, served by Anki's media server from web/."""
         addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         web_dir = os.path.join(addon_dir, "web")
         index_path = os.path.join(web_dir, "index.html")
 
         if os.path.exists(index_path):
-            url = QUrl.fromLocalFile(index_path)
-            self.webview.load(url)
+            package = mw.addonManager.addonFromModule(__name__)
+            url = QUrl(f"{mw.serverURL()}_addons/{package}/web/index.html")
+            # Without this, AnkiWebPage.acceptNavigationRequest pushes this
+            # very load_url() out to the system browser instead of navigating
+            # the webview (see fact 4 in the migration brief).
+            self.webview.set_open_links_externally(False)
+            self.webview.load_url(url)
         else:
-            # Fallback: show error message
+            # Fallback: show error message. AnkiWebView.setHtml() takes no
+            # base URL (unlike QWebEngineView.setHtml()).
             self.webview.setHtml(
                 f"""
                 <html>
@@ -127,8 +131,7 @@ class AnkiPapersWindow(QMainWindow):
                     </code>
                 </body>
                 </html>
-                """,
-                QUrl.fromLocalFile(web_dir + "/"),
+                """
             )
 
     # ─── Render process crashes ──────────────────────
@@ -407,12 +410,21 @@ class AnkiPapersWindow(QMainWindow):
     def _teardown_webview(self):
         """Stop the page for good so nothing keeps running in the background."""
         try:
-            self.webview.page().setWebChannel(None)
+            # Navigating away destroys the React app and every timer it owns,
+            # before AnkiWebView.cleanup() tears down the page itself.
+            #
+            # External-link handling was switched back on after our page
+            # loaded (see _on_page_load_finished). With it on, AnkiWebPage
+            # treats this about:blank navigation as an outside link and, since
+            # "about" is not an allowed URL scheme, pops Anki's "open this
+            # scheme?" warning on every close. Switch it off first so the
+            # navigation stays inside the webview.
+            self.webview.set_open_links_externally(False)
+            self.webview.setUrl(QUrl("about:blank"))
         except Exception:
             pass
         try:
-            # Navigating away destroys the React app and every timer it owns.
-            self.webview.setUrl(QUrl("about:blank"))
+            self.webview.cleanup()
         except Exception:
             pass
         try:

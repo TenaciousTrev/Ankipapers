@@ -102,9 +102,9 @@ export function isTableSeparatorRow(line) {
  */
 export function resolveMediaSrc(src, mediaDir) {
   const s = String(src ?? '')
+  if (s.startsWith('http') || s.startsWith('file://') || s.startsWith('data:') || s.startsWith('/')) return s
   if (!mediaDir) return s
-  if (s.startsWith('http') || s.startsWith('file://') || s.startsWith('data:')) return s
-  return `file:///${mediaDir}/${s}`
+  return mediaDir + encodeURIComponent(s)
 }
 
 export function formatInlineRaw(text, mediaDir) {

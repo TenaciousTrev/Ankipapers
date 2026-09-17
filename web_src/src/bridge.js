@@ -1,141 +1,150 @@
 /**
- * Bridge module — QWebChannel communication with Python backend.
+ * Bridge module — talks to the Python backend over AnkiWebView's pycmd()
+ * channel (aqt.webview.AnkiWebView injects window.pycmd(arg, cb) once its
+ * internal message channel is up; cb receives the handler's return value
+ * already JSON.parse()'d — see gui/bridge.py's handle()).
+ *
+ * Every command is sent as "ankipapers:" + JSON.stringify({cmd, args}); the
+ * prefix keeps our messages from being mistaken for another add-on's or for
+ * AnkiWebView's own "domDone"/"close" commands.
  */
 
 import { searchPapersAdvanced } from './searchQuery.js';
 
-let _bridge = null;
-let _ready = false;
-const _readyCallbacks = [];
+const CMD_PREFIX = 'ankipapers:';
+const PYCMD_POLL_MS = 25;
+const PYCMD_WARN_MS = 10000;
 
-export function initBridge() {
+let _mockBridge = null;
+let _readyPromise = null;
+let _warnedSlow = false;
+
+function _sendToPycmd(name, args) {
   return new Promise((resolve) => {
-    if (typeof qt !== 'undefined' && qt.webChannelTransport) {
-      new QWebChannel(qt.webChannelTransport, (channel) => {
-        _bridge = channel.objects.bridge;
-        _ready = true;
-        _readyCallbacks.forEach(cb => cb());
-        resolve(_bridge);
-      });
-    } else {
-      console.warn('[AnkiPapers] No QWebChannel, using mock bridge');
-      _bridge = createMockBridge();
-      _ready = true;
-      _readyCallbacks.forEach(cb => cb());
-      resolve(_bridge);
-    }
+    window.pycmd(CMD_PREFIX + JSON.stringify({ cmd: name, args }), resolve);
   });
 }
 
-export function getBridge() {
-  if (_ready) return Promise.resolve(_bridge);
-  return new Promise((resolve) => { _readyCallbacks.push(() => resolve(_bridge)); });
+/** Core transport: one call for every bridge command. */
+export function call(name, args = {}) {
+  if (typeof window.pycmd === 'function') {
+    return _sendToPycmd(name, args);
+  }
+
+  // Vite dev server with no Anki behind it: use the mock table so the UI is
+  // usable standalone. Never falls back to the mock in a production build —
+  // if pycmd hasn't shown up yet there, we just keep waiting for it.
+  if (import.meta.env.DEV) {
+    if (!_mockBridge) _mockBridge = createMockBridge();
+    const fn = _mockBridge[name];
+    if (!fn) return Promise.resolve({ error: `${name} not available (mock bridge)` });
+    return Promise.resolve(fn(args));
+  }
+
+  return new Promise((resolve) => {
+    let waited = 0;
+    const iv = setInterval(() => {
+      if (typeof window.pycmd === 'function') {
+        clearInterval(iv);
+        _sendToPycmd(name, args).then(resolve);
+        return;
+      }
+      waited += PYCMD_POLL_MS;
+      if (!_warnedSlow && waited >= PYCMD_WARN_MS) {
+        _warnedSlow = true;
+        console.error('[AnkiPapers] window.pycmd has not appeared after 10s; still waiting (cmd:', name, ')');
+      }
+    }, PYCMD_POLL_MS);
+  });
+}
+
+/** Resolves once the bridge (real pycmd, or the DEV mock) is usable. */
+export function initBridge() {
+  if (_readyPromise) return _readyPromise;
+  _readyPromise = new Promise((resolve) => {
+    if (typeof window.pycmd === 'function') {
+      resolve();
+      return;
+    }
+    if (import.meta.env.DEV) {
+      if (!_mockBridge) _mockBridge = createMockBridge();
+      resolve();
+      return;
+    }
+    const iv = setInterval(() => {
+      if (typeof window.pycmd === 'function') {
+        clearInterval(iv);
+        resolve();
+      }
+    }, PYCMD_POLL_MS);
+  });
+  return _readyPromise;
 }
 
 // Paper API
 export async function listPapers() {
-  const b = await getBridge();
-  return new Promise(r => b.list_papers(v => r(JSON.parse(v))));
+  return call('list_papers');
 }
 export async function loadPaper(id) {
-  const b = await getBridge();
-  return new Promise(r => b.load_paper(id, v => { const d = JSON.parse(v); r(d.error ? null : d); }));
+  const d = await call('load_paper', { paper_id: id });
+  return d && d.error ? null : d;
 }
 export async function savePaper(data) {
-  const b = await getBridge();
-  return new Promise(r => b.save_paper(JSON.stringify(data), v => r(JSON.parse(v))));
+  return call('save_paper', { paper: data });
 }
 export async function createPaper(title, folderPath = '') {
-  const b = await getBridge();
-  return new Promise(r => b.create_paper(title, folderPath, v => r(JSON.parse(v))));
+  return call('create_paper', { title, folder_path: folderPath });
 }
 export async function deletePaper(id) {
-  const b = await getBridge();
-  return new Promise(r => b.delete_paper(id, v => r(JSON.parse(v))));
+  return call('delete_paper', { paper_id: id });
 }
 export async function movePaperToFolder(id, folder) {
-  const b = await getBridge();
-  return new Promise(r => b.move_paper_to_folder(id, folder, v => r(JSON.parse(v))));
+  return call('move_paper_to_folder', { paper_id: id, folder_path: folder });
 }
 /** @param {string} ankiEditConflict preserve | overwrite | abort */
 export async function generateCards(id, ankiEditConflict = 'preserve') {
-  const b = await getBridge();
   const policy = ankiEditConflict || 'preserve';
-  return new Promise(r => b.generate_cards(id, policy, v => r(JSON.parse(v))));
+  return call('generate_cards', { paper_id: id, anki_edit_conflict: policy });
 }
 
 export async function checkAnkiEditConflicts(paperId) {
-  const b = await getBridge();
-  if (!b.check_anki_edit_conflicts) {
-    return { conflicts: [], error: 'check_anki_edit_conflicts not available' };
-  }
-  return new Promise((resolve) => {
-    b.check_anki_edit_conflicts(paperId, (v) => {
-      try {
-        resolve(JSON.parse(v));
-      } catch {
-        resolve({ error: 'invalid_json', raw: v });
-      }
-    });
-  });
+  return call('check_anki_edit_conflicts', { paper_id: paperId });
 }
 
 // Decks & Folders
 export async function getDecks() {
-  const b = await getBridge();
-  return new Promise(r => b.get_decks(v => r(JSON.parse(v))));
+  return call('get_decks');
 }
 export async function getFolders() {
-  const b = await getBridge();
-  return new Promise(r => b.get_folders(v => r(JSON.parse(v))));
+  return call('get_folders');
 }
 export async function createFolder(name, parentPath = '') {
-  const b = await getBridge();
-  return new Promise(r => b.create_folder(name, parentPath, v => r(JSON.parse(v))));
+  return call('create_folder', { name, parent_path: parentPath });
 }
 export async function deleteFolder(folderPath) {
-  const b = await getBridge();
-  if (!b.delete_folder) return { error: 'delete_folder not available' };
-  return new Promise(r => b.delete_folder(folderPath || '', v => r(JSON.parse(v))));
+  return call('delete_folder', { folder_path: folderPath || '' });
 }
 export async function renameFolder(oldPath, newName) {
-  const b = await getBridge();
-  if (!b.rename_folder) return { error: 'rename_folder not available' };
-  return new Promise(r => b.rename_folder(oldPath || '', (newName || '').trim(), v => r(JSON.parse(v))));
+  return call('rename_folder', { old_path: oldPath || '', new_name: (newName || '').trim() });
 }
 export async function moveFolder(folderPath, newParentPath) {
-  const b = await getBridge();
-  if (!b.move_folder) return { error: 'move_folder not available' };
-  return new Promise(r => b.move_folder(folderPath || '', newParentPath || '', v => r(JSON.parse(v))));
+  return call('move_folder', { folder_path: folderPath || '', new_parent_path: newParentPath || '' });
 }
 
 // Images
 export async function getMediaDir() {
-  const b = await getBridge();
-  return new Promise(r => b.get_media_dir(v => r(JSON.parse(v))));
+  return call('get_media_dir');
 }
 export async function pickImage() {
-  const b = await getBridge();
-  return new Promise(r => b.pick_image(v => r(JSON.parse(v))));
+  return call('pick_image');
 }
 /** Plain text from the system clipboard, for "Paste blocks". */
 export async function getClipboardText() {
-  const b = await getBridge()
-  if (!b.get_clipboard_text) {
-    // Older backend: fall back to the web API where the webview allows it.
-    try {
-      const text = await navigator.clipboard.readText()
-      return { text: text || '' }
-    } catch {
-      return { text: '', error: 'clipboard unavailable' }
-    }
-  }
-  return new Promise(r => b.get_clipboard_text(v => r(JSON.parse(v))))
+  return call('get_clipboard_text');
 }
 
 export async function pasteImage() {
-  const b = await getBridge();
-  return new Promise(r => b.paste_image(v => r(JSON.parse(v))));
+  return call('paste_image');
 }
 
 // Browser linking — Python runs Browser.search_for("nid:" + id), same as manual Anki search
@@ -145,47 +154,29 @@ export async function openInBrowser(noteId) {
     console.warn('[AnkiPapers] openInBrowser: invalid note id', noteId);
     return;
   }
-  const b = await getBridge();
-  b.open_in_browser(String(Math.trunc(n)));
+  await call('open_in_browser', { note_id: String(Math.trunc(n)) });
 }
 
 /** Parsed object: verify nid: search and Browser APIs (Settings debug). */
 export async function diagnoseCrosslink(noteId) {
-  const b = await getBridge();
-  if (!b.diagnose_crosslink) return { error: 'diagnose_crosslink not available' };
-  return new Promise((resolve) => {
-    b.diagnose_crosslink(String(noteId).trim(), (v) => {
-      try {
-        resolve(JSON.parse(v));
-      } catch {
-        resolve({ error: 'invalid_json', raw: v });
-      }
-    });
-  });
+  return call('diagnose_crosslink', { note_id: String(noteId).trim() });
 }
 
 export async function moveCardsToDeck(paperId, deckName) {
-  const b = await getBridge();
-  return new Promise(r => b.move_cards_to_deck(paperId, deckName, v => r(JSON.parse(v))));
+  return call('move_cards_to_deck', { paper_id: paperId, deck_name: deckName });
 }
 
 // Search
 export async function searchPapers(query) {
-  const b = await getBridge();
-  if (!b.search_papers) return [];
-  return new Promise(r => b.search_papers(query, v => r(JSON.parse(v))));
+  return call('search_papers', { query });
 }
 
 // Markdown Import/Export
 export async function importMarkdown() {
-  const b = await getBridge();
-  if (!b.import_markdown) return { error: 'not available' };
-  return new Promise(r => b.import_markdown(v => r(JSON.parse(v))));
+  return call('import_markdown');
 }
 export async function exportMarkdown(id) {
-  const b = await getBridge();
-  if (!b.export_markdown) return { error: 'not available' };
-  return new Promise(r => b.export_markdown(id, v => r(JSON.parse(v))));
+  return call('export_markdown', { paper_id: id });
 }
 
 // PDF Export
@@ -199,69 +190,58 @@ export async function exportMarkdown(id) {
 // build still exports on an install whose gui/ has not been replaced yet. The
 // two halves are copied into the add-on by hand and can lag each other.
 export async function exportPdf(id, html = '') {
-  const b = await getBridge();
-  if (html && b.export_pdf_html) {
-    return new Promise(r => b.export_pdf_html(id, html, v => r(JSON.parse(v))));
+  if (html) {
+    return call('export_pdf_html', { paper_id: id, html });
   }
-  if (!b.export_pdf) return { error: 'PDF export is not available in this version' };
-  return new Promise(r => b.export_pdf(id, v => r(JSON.parse(v))));
+  return call('export_pdf', { paper_id: id });
 }
 
 // Papers on disk (phase 1: write only — the collection stays authoritative)
 export async function exportPapersToDisk(mode = 'preview') {
-  const b = await getBridge();
-  if (!b.export_papers_to_disk) return { error: 'not available in this version' };
-  return new Promise(r => b.export_papers_to_disk(mode, v => r(JSON.parse(v))));
+  return call('export_papers_to_disk', { mode });
 }
 
 // Settings
 export async function getSettings() {
-  const b = await getBridge();
-  return new Promise(r => b.get_settings(v => r(JSON.parse(v))));
+  return call('get_settings');
 }
 export async function saveSettings(settings) {
-  const b = await getBridge();
-  return new Promise(r => b.save_settings(JSON.stringify(settings), v => r(JSON.parse(v))));
+  return call('save_settings', { settings });
 }
 
 export async function openUrl(url) {
-  const b = await getBridge();
-  b.open_url(url);
+  await call('open_url', { url });
 }
 
 // Source panel
 export async function pickPdfFile() {
-  const b = await getBridge();
-  if (!b.pick_pdf_file) return { error: 'not available' };
-  return new Promise(r => b.pick_pdf_file(v => r(JSON.parse(v))));
+  return call('pick_pdf_file');
+}
+export async function getPdfViewerUrl() {
+  return call('pdf_viewer_url');
+}
+export async function getPdfUrl(path) {
+  return call('pdf_url', { path });
 }
 export async function extractPdfText(path, page = 1) {
-  const b = await getBridge();
-  if (!b.extract_pdf_text) return { error: 'not available' };
-  return new Promise(r => b.extract_pdf_text(path, Number(page || 1), v => r(JSON.parse(v))));
+  return call('extract_pdf_text', { pdf_path: path, page: Number(page || 1) });
 }
 export async function extractWebText(url) {
-  const b = await getBridge();
-  if (!b.extract_web_text) return { error: 'not available' };
-  return new Promise(r => b.extract_web_text(url, v => r(JSON.parse(v))));
+  return call('extract_web_text', { url });
 }
 export async function saveSourceLink(paperId, blockId, linkData) {
-  const b = await getBridge();
-  if (!b.save_source_link) return { error: 'not available' };
-  return new Promise(r => b.save_source_link(paperId, blockId, JSON.stringify(linkData || {}), v => r(JSON.parse(v))));
+  return call('save_source_link', { paper_id: paperId, block_id: blockId, link: linkData || {} });
 }
 export async function loadSourceLink(paperId, blockId) {
-  const b = await getBridge();
-  if (!b.load_source_link) return { error: 'not available' };
-  return new Promise(r => b.load_source_link(paperId, blockId, v => r(JSON.parse(v))));
+  return call('load_source_link', { paper_id: paperId, block_id: blockId });
 }
 export async function openSourceAtLocation(linkData) {
-  const b = await getBridge();
-  if (!b.open_source_at_location) return { error: 'not available' };
-  return new Promise(r => b.open_source_at_location(JSON.stringify(linkData || {}), v => r(JSON.parse(v))));
+  return call('open_source_at_location', { source: linkData || {} });
 }
 
-// ─── Mock Bridge ────────────────────────────────────
+// ─── Mock Bridge (Vite dev server only; import.meta.env.DEV) ──────────────
+// Table shape: { [name]: (args) => value }, mirroring the real dispatch dict
+// in gui/bridge.py so `call(name, args)` can use either transparently.
 function createMockBridge() {
   const papers = [
     {
@@ -272,49 +252,93 @@ function createMockBridge() {
     },
   ];
   return {
-    list_papers: cb => cb(JSON.stringify(papers)),
-    load_paper: (id, cb) => { const p = papers.find(x => x.id === id); cb(JSON.stringify(p || { error: 'not found' })); },
-    save_paper: (json, cb) => { const d = JSON.parse(json); const i = papers.findIndex(x => x.id === d.id); if (i >= 0) Object.assign(papers[i], d); cb('{"ok":true}'); },
-    create_paper: (title, folder, cb) => { const p = { id: 'p-' + Date.now(), title, content: `# ${title}\n\n`, deck_name: 'Default', folder_path: folder, card_refs: [], tags: [], created_at: Date.now() / 1000, modified_at: Date.now() / 1000 }; papers.push(p); cb(JSON.stringify(p)); },
-    delete_paper: (id, cb) => { const i = papers.findIndex(x => x.id === id); if (i >= 0) papers.splice(i, 1); cb('{"ok":true}'); },
-    move_paper_to_folder: (id, f, cb) => { const p = papers.find(x => x.id === id); if (p) p.folder_path = f; cb('{"ok":true}'); },
-    generate_cards: (id, policy, cb) => cb(JSON.stringify({ created: 3, updated: 0, deleted: 0 })),
-    check_anki_edit_conflicts: (id, cb) => cb(JSON.stringify({ conflicts: [] })),
-    get_decks: cb => cb('["Default","Biology","Medicine"]'),
-    get_folders: cb => cb(JSON.stringify({ name: 'Root', children: [{ type: 'folder', name: 'Biology', path: 'Biology', children: [] }] })),
-    create_folder: (n, p, cb) => cb('{"ok":true}'),
-    delete_folder: (path, cb) => cb('{"ok":true}'),
-    rename_folder: (oldP, newN, cb) => cb('{"ok":true}'),
-    move_folder: (fp, np, cb) => cb('{"ok":true}'),
-    get_media_dir: cb => cb('{"path":""}'),
-    pick_image: cb => cb('{"cancelled":true}'),
-    paste_image: cb => cb('{"cancelled":true}'),
-    get_clipboard_text: cb => cb(JSON.stringify({
-      text: (typeof window !== 'undefined' && window.__clipboardText) || '',
-    })),
-    open_in_browser: id => console.log('Mock: Open in browser', id),
-    diagnose_crosslink: (id, cb) => cb(JSON.stringify({
-      note_id: Number(id) || 0,
-      query: `nid:${id}`,
+    list_papers: () => papers,
+    load_paper: ({ paper_id }) => papers.find(x => x.id === paper_id) || { error: 'not found' },
+    save_paper: ({ paper }) => {
+      const i = papers.findIndex(x => x.id === paper.id);
+      if (i >= 0) Object.assign(papers[i], paper);
+      return { ok: true };
+    },
+    create_paper: ({ title, folder_path }) => {
+      const p = {
+        id: 'p-' + Date.now(), title, content: `# ${title}\n\n`, deck_name: 'Default',
+        folder_path, card_refs: [], tags: [], created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
+      };
+      papers.push(p);
+      return p;
+    },
+    delete_paper: ({ paper_id }) => {
+      const i = papers.findIndex(x => x.id === paper_id);
+      if (i >= 0) papers.splice(i, 1);
+      return { ok: true };
+    },
+    move_paper_to_folder: ({ paper_id, folder_path }) => {
+      const p = papers.find(x => x.id === paper_id);
+      if (p) p.folder_path = folder_path;
+      return { ok: true };
+    },
+    generate_cards: () => ({ created: 3, updated: 0, deleted: 0 }),
+    check_anki_edit_conflicts: () => ({ conflicts: [] }),
+    get_decks: () => ['Default', 'Biology', 'Medicine'],
+    get_folders: () => ({ name: 'Root', children: [{ type: 'folder', name: 'Biology', path: 'Biology', children: [] }] }),
+    create_folder: () => ({ ok: true }),
+    delete_folder: () => ({ ok: true }),
+    rename_folder: () => ({ ok: true }),
+    move_folder: () => ({ ok: true }),
+    get_media_dir: () => ({ path: '', base_url: '' }),
+    pick_image: () => ({ cancelled: true }),
+    paste_image: () => ({ cancelled: true }),
+    get_clipboard_text: () => ({ text: (typeof window !== 'undefined' && window.__clipboardText) || '' }),
+    open_in_browser: ({ note_id }) => { console.log('Mock: Open in browser', note_id); return { ok: true }; },
+    diagnose_crosslink: ({ note_id }) => ({
+      note_id: Number(note_id) || 0,
+      query: `nid:${note_id}`,
       note_found: true,
       find_cards_count: 1,
       first_cid: 1,
       browser_open: false,
       has_select_single_card: true,
-    })),
-    move_cards_to_deck: (p, d, cb) => cb('{"ok":true}'),
-    search_papers: (q, cb) => { cb(JSON.stringify(searchPapersAdvanced(papers, q))); },
-    import_markdown: cb => cb('{"cancelled":true}'),
-    export_markdown: (id, cb) => cb('{"cancelled":true}'),
-    export_pdf: (id, cb) => cb('{"cancelled":true}'),
-    get_settings: cb => cb('{"default_deck":"Default","auto_save_interval_seconds":30,"font_size":14,"font_family":"JetBrains Mono","editor_theme":"dark","show_card_indicators":true,"anki_edit_conflict":"ask"}'),
-    save_settings: (j, cb) => cb('{"ok":true}'),
-    open_url: url => console.log('Mock: Open URL', url),
-    pick_pdf_file: cb => cb(JSON.stringify({ cancelled: true })),
-    extract_pdf_text: (path, page, cb) => cb(JSON.stringify({ ok: true, title: 'Demo PDF', text: `Extracted text from page ${page}`, path, page })),
-    extract_web_text: (url, cb) => cb(JSON.stringify({ ok: true, title: url, text: 'Extracted web content demo', url })),
-    save_source_link: (paperId, blockId, linkJson, cb) => cb(JSON.stringify({ ok: true })),
-    load_source_link: (paperId, blockId, cb) => cb(JSON.stringify({ error: 'Source link not found' })),
-    open_source_at_location: (meta, cb) => cb(JSON.stringify({ ok: true })),
+    }),
+    move_cards_to_deck: () => ({ ok: true }),
+    search_papers: ({ query }) => searchPapersAdvanced(papers, query),
+    import_markdown: () => ({ cancelled: true }),
+    export_markdown: () => ({ cancelled: true }),
+    export_pdf: () => ({ cancelled: true }),
+    export_pdf_html: () => ({ cancelled: true }),
+    export_papers_to_disk: () => ({ root: '', written: [] }),
+    get_settings: () => ({
+      default_deck: 'Default', auto_save_interval_seconds: 30, font_size: 14,
+      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true,
+      anki_edit_conflict: 'ask',
+    }),
+    save_settings: () => ({ ok: true }),
+    open_url: ({ url }) => { console.log('Mock: Open URL', url); return { ok: true }; },
+    pick_pdf_file: () => ({ cancelled: true }),
+    pdf_viewer_url: () => ({ error: 'not implemented' }),
+    pdf_url: () => ({ error: 'not implemented' }),
+    extract_pdf_text: ({ pdf_path, page }) => ({ ok: true, title: 'Demo PDF', text: `Extracted text from page ${page}`, path: pdf_path, page }),
+    extract_web_text: ({ url }) => ({ ok: true, title: url, text: 'Extracted web content demo', url }),
+    save_source_link: () => ({ ok: true }),
+    load_source_link: () => ({ error: 'Source link not found' }),
+    open_source_at_location: () => ({ ok: true }),
+  };
+}
+
+// Expose the wrapper module on window for the Stage 4 automated regression
+// driver (drives the UI purely through window.ankiPapersBridge via CDP).
+if (typeof window !== 'undefined') {
+  window.ankiPapersBridge = {
+    call,
+    initBridge,
+    listPapers, loadPaper, savePaper, createPaper, deletePaper, movePaperToFolder,
+    generateCards, checkAnkiEditConflicts,
+    getDecks, getFolders, createFolder, deleteFolder, renameFolder, moveFolder,
+    getMediaDir, pickImage, getClipboardText, pasteImage,
+    openInBrowser, diagnoseCrosslink, moveCardsToDeck,
+    searchPapers,
+    importMarkdown, exportMarkdown, exportPdf, exportPapersToDisk,
+    getSettings, saveSettings, openUrl,
+    pickPdfFile, getPdfViewerUrl, getPdfUrl, extractPdfText, extractWebText,
+    saveSourceLink, loadSourceLink, openSourceAtLocation,
   };
 }

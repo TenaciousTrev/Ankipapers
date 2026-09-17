@@ -154,7 +154,7 @@ export default function App() {
       // Apply theme
       document.documentElement.dataset.theme = s.editor_theme || 'dark'
       const md = await getMediaDir()
-      setMediaDir(md.path || '')
+      setMediaDir(md.base_url || '')
     })
   }, [])
 

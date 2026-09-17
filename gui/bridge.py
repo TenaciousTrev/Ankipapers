@@ -1,8 +1,11 @@
 """
-QWebChannel Bridge for Anki Papers.
+Bridge for Anki Papers.
 
-Exposes Python backend methods to the React frontend via QWebChannel.
-Each method takes/returns JSON strings for serialization.
+Exposes Python backend methods to the React frontend over AnkiWebView's
+pycmd() channel. Each JS -> Python message is the string
+"ankipapers:" + JSON.stringify({cmd, args}); handle() parses it, dispatches
+to the matching method below, and returns a plain JSON-serialisable value
+(Anki's own bridge script does the json.dumps()/JSON.parse() on both ends).
 """
 
 import os
@@ -16,7 +19,7 @@ import urllib.request
 from urllib.parse import urlparse
 import html
 
-from aqt.qt import QObject, pyqtSlot, pyqtSignal, QFileDialog, QApplication, QImage, QTimer
+from aqt.qt import QFileDialog, QApplication, QImage, QTimer
 from aqt import mw
 
 from ..core.paper import Paper
@@ -43,6 +46,27 @@ from ..core.card_manager import (
 
 MAX_FOLDER_DEPTH = 3  # Maximum nesting level for sub-folders
 
+
+# ─── D4 test seam ─────────────────────────────────────
+#
+# When ANKIPAPERS_TEST_DIALOG_PATH is set, every open/save file dialog in this
+# module returns that path instead of showing a real dialog (empty string
+# means "cancelled", same as a real dialog). Read at call time (not import
+# time) so Stage 4's automated driver can change the value while Anki is
+# running, between one pick and the next.
+
+def _ask_open_file(parent, caption, directory, filter):
+    test_path = os.environ.get("ANKIPAPERS_TEST_DIALOG_PATH")
+    if test_path is not None:
+        return test_path, filter
+    return QFileDialog.getOpenFileName(parent, caption, directory, filter)
+
+
+def _ask_save_file(parent, caption, directory, filter):
+    test_path = os.environ.get("ANKIPAPERS_TEST_DIALOG_PATH")
+    if test_path is not None:
+        return test_path, filter
+    return QFileDialog.getSaveFileName(parent, caption, directory, filter)
 
 
 def _select_note_card_in_browser_table(browser, note_id: int) -> dict:
@@ -83,40 +107,99 @@ def _select_note_card_in_browser_table(browser, note_id: int) -> dict:
     return out
 
 
-class AnkiPapersBridge(QObject):
-    """Bridge object exposed to JavaScript via QWebChannel."""
+class AnkiPapersBridge:
+    """Bridge object exposed to JavaScript via AnkiWebView's pycmd() channel."""
 
-    papers_changed = pyqtSignal(str)
+    def __init__(self, window=None):
+        # The window is used only by the PDF export helpers, which need the
+        # main webview to render a temporary print page (self.parent()-style
+        # access used to come from being a QObject child; now given explicitly).
+        self.window = window
+        self._dispatch = {
+            "list_papers": self.list_papers,
+            "load_paper": self.load_paper,
+            "save_paper": self.save_paper,
+            "create_paper": self.create_paper,
+            "delete_paper": self.delete_paper,
+            "move_paper_to_folder": self.move_paper_to_folder,
+            "check_anki_edit_conflicts": self.check_anki_edit_conflicts,
+            "generate_cards": self.generate_cards,
+            "get_decks": self.get_decks,
+            "get_folders": self.get_folders,
+            "create_folder": self.create_folder,
+            "delete_folder": self.delete_folder,
+            "rename_folder": self.rename_folder,
+            "move_folder": self.move_folder,
+            "get_media_dir": self.get_media_dir,
+            "pick_image": self.pick_image,
+            "paste_image": self.paste_image,
+            "get_clipboard_text": self.get_clipboard_text,
+            "open_in_browser": self.open_in_browser,
+            "diagnose_crosslink": self.diagnose_crosslink,
+            "open_url": self.open_url,
+            "pick_pdf_file": self.pick_pdf_file,
+            "save_source_link": self.save_source_link,
+            "load_source_link": self.load_source_link,
+            "extract_pdf_text": self.extract_pdf_text,
+            "extract_web_text": self.extract_web_text,
+            "open_source_at_location": self.open_source_at_location,
+            "move_cards_to_deck": self.move_cards_to_deck,
+            "export_pdf_html": self.export_pdf_html,
+            "export_pdf": self.export_pdf,
+            "export_papers_to_disk": self.export_papers_to_disk,
+            "search_papers": self.search_papers,
+            "import_markdown": self.import_markdown,
+            "export_markdown": self.export_markdown,
+            "get_settings": self.get_settings,
+            "save_settings": self.save_settings,
+            "pdf_viewer_url": self.pdf_viewer_url,
+            "pdf_url": self.pdf_url,
+        }
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def handle(self, cmd: str):
+        """Entry point wired to AnkiWebView.set_bridge_command().
+
+        Anything not addressed to us is left alone (returns None) so other
+        add-ons' pycmd messages and AnkiWebView's own "domDone"/"close" are
+        unaffected.
+        """
+        if not isinstance(cmd, str) or not cmd.startswith("ankipapers:"):
+            return None
+        try:
+            payload = json.loads(cmd[len("ankipapers:"):])
+            name = payload.get("cmd", "")
+            args = payload.get("args") or {}
+            method = self._dispatch.get(name)
+            if method is None:
+                return {"error": f"unknown command {name}"}
+            return method(args)
+        except Exception as e:
+            traceback.print_exc()
+            return {"error": str(e)}
 
     # ─── Paper CRUD ──────────────────────────────────
 
-    @pyqtSlot(result=str)
-    def list_papers(self):
+    def list_papers(self, args):
         try:
             papers = list_papers()
-            return json.dumps([p.to_dict() for p in papers], ensure_ascii=False)
+            return [p.to_dict() for p in papers]
         except Exception:
             traceback.print_exc()
-            return json.dumps([])
+            return []
 
-    @pyqtSlot(str, result=str)
-    def load_paper(self, paper_id):
+    def load_paper(self, args):
         try:
-            paper = load_paper(paper_id)
+            paper = load_paper(args.get("paper_id", ""))
             if paper:
-                return json.dumps(paper.to_dict(), ensure_ascii=False)
-            return json.dumps({"error": "Paper not found"})
+                return paper.to_dict()
+            return {"error": "Paper not found"}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, result=str)
-    def save_paper(self, paper_json):
+    def save_paper(self, args):
         try:
-            data = json.loads(paper_json)
+            data = args.get("paper") or {}
             paper = load_paper(data.get("id", ""))
             if paper:
                 paper.title = data.get("title", paper.title)
@@ -127,13 +210,12 @@ class AnkiPapersBridge(QObject):
             else:
                 paper = Paper.from_dict(data)
             save_paper(paper)
-            return json.dumps({"ok": True})
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(result=str)
-    def get_clipboard_text(self):
+    def get_clipboard_text(self, args):
         """Plain text from the system clipboard, for "Paste blocks".
 
         Reading the clipboard from JavaScript is unreliable inside Anki's
@@ -142,127 +224,122 @@ class AnkiPapersBridge(QObject):
         way image pasting already does.
         """
         try:
-            return json.dumps({"text": QApplication.clipboard().text() or ""})
+            return {"text": QApplication.clipboard().text() or ""}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, str, result=str)
-    def create_paper(self, title, folder_path):
+    def create_paper(self, args):
         try:
+            title = args.get("title", "")
+            folder_path = args.get("folder_path", "")
             paper = Paper(title=title, folder_path=folder_path)
             paper.content = f"# {title}\n\nStart writing your notes here...\n"
             save_paper(paper)
-            return json.dumps(paper.to_dict(), ensure_ascii=False)
+            return paper.to_dict()
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, result=str)
-    def delete_paper(self, paper_id):
+    def delete_paper(self, args):
         try:
+            paper_id = args.get("paper_id", "")
             paper = load_paper(paper_id)
             if paper and mw and mw.col:
                 remove_paper_cards(paper, mw.col)
                 mw.reset()
             delete_paper(paper_id)
-            return json.dumps({"ok": True})
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, str, result=str)
-    def move_paper_to_folder(self, paper_id, folder_path):
+    def move_paper_to_folder(self, args):
         try:
-            paper = load_paper(paper_id)
+            paper = load_paper(args.get("paper_id", ""))
             if paper:
-                paper.folder_path = folder_path
+                paper.folder_path = args.get("folder_path", "")
                 save_paper(paper)
-                return json.dumps({"ok": True})
-            return json.dumps({"error": "Paper not found"})
+                return {"ok": True}
+            return {"error": "Paper not found"}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
     # ─── Card Generation ─────────────────────────────
 
-    @pyqtSlot(str, result=str)
-    def check_anki_edit_conflicts(self, paper_id):
+    def check_anki_edit_conflicts(self, args):
         """List rows where the paper line is unchanged but the Anki note was edited."""
         try:
             if not mw or not mw.col:
-                return json.dumps({"error": "Anki collection not available"})
-            paper = load_paper(paper_id)
+                return {"error": "Anki collection not available"}
+            paper = load_paper(args.get("paper_id", ""))
             if not paper:
-                return json.dumps({"error": "Paper not found"})
+                return {"error": "Paper not found"}
             conflicts = list_anki_edit_conflicts(paper, mw.col)
-            return json.dumps({"conflicts": conflicts}, ensure_ascii=False)
+            return {"conflicts": conflicts}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, str, result=str)
-    def generate_cards(self, paper_id, anki_edit_conflict):
+    def generate_cards(self, args):
         """
         anki_edit_conflict: preserve | overwrite | abort
         abort returns error payload if conflicts exist (no collection changes).
         """
         try:
             if not mw or not mw.col:
-                return json.dumps({"error": "Anki collection not available"})
+                return {"error": "Anki collection not available"}
+            paper_id = args.get("paper_id", "")
             paper = load_paper(paper_id)
             if not paper:
-                return json.dumps({"error": "Paper not found"})
-            policy = (anki_edit_conflict or "preserve").strip().lower()
+                return {"error": "Paper not found"}
+            policy = (args.get("anki_edit_conflict") or "preserve").strip().lower()
             if policy not in ("preserve", "overwrite", "abort"):
                 policy = "preserve"
             try:
                 created, updated, deleted = run_generate_cards(paper, mw.col, policy)
             except AnkiEditConflictAbort as ex:
-                return json.dumps(
-                    {
-                        "error": "anki_edit_conflicts",
-                        "conflicts": ex.conflicts,
-                    },
-                    ensure_ascii=False,
-                )
+                return {
+                    "error": "anki_edit_conflicts",
+                    "conflicts": ex.conflicts,
+                }
             save_paper(paper)
             mw.reset()
-            return json.dumps({"created": created, "updated": updated, "deleted": deleted})
+            return {"created": created, "updated": updated, "deleted": deleted}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
     # ─── Decks & Folders ─────────────────────────────
 
-    @pyqtSlot(result=str)
-    def get_decks(self):
+    def get_decks(self, args):
         try:
             if mw and mw.col:
                 names = sorted([d.name for d in mw.col.decks.all_names_and_ids()])
-                return json.dumps(names)
-            return json.dumps(["Default"])
+                return names
+            return ["Default"]
         except Exception:
             traceback.print_exc()
-            return json.dumps(["Default"])
+            return ["Default"]
 
-    @pyqtSlot(result=str)
-    def get_folders(self):
+    def get_folders(self, args):
         try:
-            return json.dumps(load_folder_structure(), ensure_ascii=False)
+            return load_folder_structure()
         except Exception:
             traceback.print_exc()
-            return json.dumps({"name": "Root", "children": []})
+            return {"name": "Root", "children": []}
 
-    @pyqtSlot(str, str, result=str)
-    def create_folder(self, name, parent_path):
+    def create_folder(self, args):
         try:
+            name = args.get("name", "")
+            parent_path = args.get("parent_path", "")
             # Check depth limit
             current_depth = len(parent_path.split("/")) if parent_path else 0
             if current_depth >= MAX_FOLDER_DEPTH:
-                return json.dumps({
+                return {
                     "error": f"Maximum folder depth ({MAX_FOLDER_DEPTH}) reached"
-                })
+                }
 
             folders = load_folder_structure()
             full_path = f"{parent_path}/{name}" if parent_path else name
@@ -272,45 +349,46 @@ class AnkiPapersBridge(QObject):
             else:
                 self._add_child(folders, parent_path, new_folder)
             save_folder_structure(folders)
-            return json.dumps({"ok": True})
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, result=str)
-    def delete_folder(self, folder_path):
+    def delete_folder(self, args):
         try:
-            err = delete_folder_structure(folder_path or "")
+            err = delete_folder_structure(args.get("folder_path", "") or "")
             if err:
-                return json.dumps({"error": err}, ensure_ascii=False)
-            return json.dumps({"ok": True})
+                return {"error": err}
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, str, result=str)
-    def rename_folder(self, old_path, new_name):
+    def rename_folder(self, args):
         try:
-            err = rename_folder_structure(old_path or "", new_name or "")
-            if err:
-                return json.dumps({"error": err}, ensure_ascii=False)
-            return json.dumps({"ok": True})
-        except Exception as e:
-            traceback.print_exc()
-            return json.dumps({"error": str(e)})
-
-    @pyqtSlot(str, str, result=str)
-    def move_folder(self, folder_path, new_parent_path):
-        try:
-            err = move_folder_structure(
-                folder_path or "", new_parent_path or "", max_depth=MAX_FOLDER_DEPTH
+            err = rename_folder_structure(
+                args.get("old_path", "") or "", args.get("new_name", "") or ""
             )
             if err:
-                return json.dumps({"error": err}, ensure_ascii=False)
-            return json.dumps({"ok": True})
+                return {"error": err}
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
+
+    def move_folder(self, args):
+        try:
+            err = move_folder_structure(
+                args.get("folder_path", "") or "",
+                args.get("new_parent_path", "") or "",
+                max_depth=MAX_FOLDER_DEPTH,
+            )
+            if err:
+                return {"error": err}
+            return {"ok": True}
+        except Exception as e:
+            traceback.print_exc()
+            return {"error": str(e)}
 
     def _add_child(self, node, target_path, new_child):
         for child in node.get("children", []):
@@ -323,28 +401,29 @@ class AnkiPapersBridge(QObject):
 
     # ─── Images ──────────────────────────────────────
 
-    @pyqtSlot(result=str)
-    def get_media_dir(self):
-        """Get the Anki collection media folder path."""
+    def get_media_dir(self, args):
+        """Get the Anki collection media folder path and its http base URL."""
         try:
             if mw and mw.col:
                 media_dir = mw.col.media.dir()
-                return json.dumps({"path": media_dir.replace("\\", "/")})
-            return json.dumps({"path": ""})
+                return {
+                    "path": media_dir.replace("\\", "/"),
+                    "base_url": mw.serverURL(),
+                }
+            return {"path": "", "base_url": ""}
         except Exception:
             traceback.print_exc()
-            return json.dumps({"path": ""})
+            return {"path": "", "base_url": ""}
 
-    @pyqtSlot(result=str)
-    def pick_image(self):
+    def pick_image(self, args):
         """Open file picker and copy image to Anki media folder."""
         try:
-            file_path, _ = QFileDialog.getOpenFileName(
+            file_path, _ = _ask_open_file(
                 None, "Select Image", "",
                 "Images (*.png *.jpg *.jpeg *.gif *.svg *.webp *.bmp);;All Files (*)",
             )
             if not file_path:
-                return json.dumps({"cancelled": True})
+                return {"cancelled": True}
 
             # Copy to Anki media folder
             if mw and mw.col:
@@ -360,21 +439,21 @@ class AnkiPapersBridge(QObject):
             dest_path = os.path.join(media_dir, unique_name)
             shutil.copy2(file_path, dest_path)
 
-            return json.dumps({
+            return {
                 "filename": unique_name,
                 "markdown": f"![{name}]({unique_name})",
-            })
+            }
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
-    @pyqtSlot(result=str)
-    def paste_image(self):
+            return {"error": str(e)}
+
+    def paste_image(self, args):
         """Save image from clipboard and return markdown."""
         try:
             clipboard = QApplication.clipboard()
             image = clipboard.image()
             if image.isNull():
-                return json.dumps({"error": "No image in clipboard"})
+                return {"error": "No image in clipboard"}
 
             if mw and mw.col:
                 media_dir = mw.col.media.dir()
@@ -387,32 +466,32 @@ class AnkiPapersBridge(QObject):
             dest_path = os.path.join(media_dir, unique_name)
             image.save(dest_path, "PNG")
 
-            return json.dumps({
+            return {
                 "filename": unique_name,
                 "markdown": f"![pasted]({unique_name})",
-            })
+            }
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str)
-    def open_in_browser(self, note_id_str):
-        """Open the Anki browser and search for the note."""
+    def open_in_browser(self, args):
+        """Open the Anki browser and search for the note. Fire-and-forget."""
+        note_id_str = args.get("note_id", "")
         if not mw:
             print("[Anki Papers] open_in_browser: main window not available")
-            return
+            return {"ok": True}
         try:
             note_id = int(note_id_str)
         except (TypeError, ValueError):
             print(f"[Anki Papers] open_in_browser: invalid note id {note_id_str!r}")
-            return
+            return {"ok": True}
 
         query = f"nid:{note_id}"
 
         browser = self._get_or_open_browser()
         if not browser:
             print("[Anki Papers] open_in_browser: could not open browser")
-            return
+            return {"ok": True}
 
         def do_search_and_select():
             try:
@@ -439,6 +518,7 @@ class AnkiPapersBridge(QObject):
             QTimer.singleShot(100, select_card)
 
         QTimer.singleShot(100, do_search_and_select)
+        return {"ok": True}
 
     def _get_or_open_browser(self):
         """Open the Card Browser (or get existing) via aqt.dialogs."""
@@ -461,22 +541,22 @@ class AnkiPapersBridge(QObject):
             pass
         return None
 
-    @pyqtSlot(str, result=str)
-    def diagnose_crosslink(self, note_id_str):
+    def diagnose_crosslink(self, args):
         """
         Debug: verify nid resolution and Browser selection API (Settings → test field).
         """
+        note_id_str = args.get("note_id", "")
         try:
-            note_id = int(note_id_str.strip())
+            note_id = int(str(note_id_str).strip())
         except (TypeError, ValueError):
-            return json.dumps({"error": "invalid_note_id", "raw": note_id_str})
+            return {"error": "invalid_note_id", "raw": note_id_str}
 
         query = f"nid:{note_id}"
         out: dict = {"note_id": note_id, "query": query}
 
         if not mw or not mw.col:
             out["error"] = "no_collection"
-            return json.dumps(out, ensure_ascii=False)
+            return out
 
         try:
             mw.col.get_note(note_id)
@@ -520,72 +600,106 @@ class AnkiPapersBridge(QObject):
                 "Use Open Browse to open the window and apply search + row selection."
             )
 
-        return json.dumps(out, ensure_ascii=False)
+        return out
 
-    @pyqtSlot(str)
-    def open_url(self, url):
-        """Open a URL in the system browser."""
+    def open_url(self, args):
+        """Open a URL in the system browser. Fire-and-forget."""
         try:
             from aqt.utils import openLink
-            openLink(url)
+            openLink(args.get("url", ""))
         except Exception:
             traceback.print_exc()
+        return {"ok": True}
 
     # ─── Source Panel APIs ───────────────────────────
 
-    @pyqtSlot(result=str)
-    def pick_pdf_file(self):
+    def pick_pdf_file(self, args):
         try:
-            file_path, _ = QFileDialog.getOpenFileName(
+            file_path, _ = _ask_open_file(
                 None, "Select PDF", "", "PDF Files (*.pdf);;All Files (*)"
             )
             if not file_path:
-                return json.dumps({"cancelled": True})
-            return json.dumps(
-                {"ok": True, "path": file_path.replace("\\", "/"), "name": os.path.basename(file_path)},
-                ensure_ascii=False,
-            )
+                return {"cancelled": True}
+            path = file_path.replace("\\", "/")
+            result = {"ok": True, "path": path, "name": os.path.basename(file_path)}
+            url_result = self.pdf_url({"path": path})
+            result["url"] = url_result.get("url")
+            return result
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
+    def _pdf_server(self):
+        """Lazily import and start the add-on's own local PDF/viewer server.
 
-    @pyqtSlot(str, str, str, result=str)
-    def save_source_link(self, paper_id, block_id, link_json):
+        Imported inside the method (not at module import time) so gui/bridge.py
+        still imports cleanly even while gui/pdf_server.py is being worked on,
+        and so the server only starts on first actual use.
+        """
+        from .pdf_server import PdfServer
+
+        viewer_html_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "web", "pdf_viewer.html"
+        )
+        return PdfServer.instance(viewer_html_path)
+
+    def pdf_viewer_url(self, args):
         try:
-            data = json.loads(link_json or "{}")
+            server = self._pdf_server()
+            return {"url": server.viewer_url()}
+        except Exception as e:
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def pdf_url(self, args):
+        try:
+            path = args.get("path", "") or ""
+            if not path or not os.path.isfile(path):
+                return {"error": "PDF file not found"}
+            server = self._pdf_server()
+            url = server.register(path)
+            if not url:
+                return {"error": "PDF file not found"}
+            return {"url": url}
+        except Exception as e:
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def save_source_link(self, args):
+        try:
+            data = args.get("link") or {}
             ok = save_source_link(
-                paper_id=paper_id or "",
-                block_id=block_id or "",
+                paper_id=args.get("paper_id", "") or "",
+                block_id=args.get("block_id", "") or "",
                 source_type=data.get("source_type", ""),
                 source_uri=data.get("source_uri", ""),
                 locator=data.get("locator", {}) or {},
                 captured_text=data.get("captured_text", ""),
             )
-            return json.dumps({"ok": bool(ok)})
+            return {"ok": bool(ok)}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, str, result=str)
-    def load_source_link(self, paper_id, block_id):
+    def load_source_link(self, args):
         try:
-            data = load_source_link(paper_id or "", block_id or "")
+            data = load_source_link(args.get("paper_id", "") or "", args.get("block_id", "") or "")
             if not data:
-                return json.dumps({"error": "Source link not found"})
-            return json.dumps(data, ensure_ascii=False)
+                return {"error": "Source link not found"}
+            return data
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, int, result=str)
-    def extract_pdf_text(self, pdf_path, page):
+    def extract_pdf_text(self, args):
         try:
+            pdf_path = args.get("pdf_path", "")
+            page = args.get("page", 1)
             if not pdf_path:
-                return json.dumps({"error": "Missing PDF path"})
+                return {"error": "Missing PDF path"}
             path = os.path.normpath(pdf_path)
             if not os.path.isfile(path):
-                return json.dumps({"error": "PDF file not found"})
+                return {"error": "PDF file not found"}
             p = int(page or 1)
             if p < 1:
                 p = 1
@@ -651,21 +765,17 @@ class AnkiPapersBridge(QObject):
                     )
                 else:
                     hint = "Could not extract text (install: pip install pypdf)"
-                return json.dumps({"error": hint})
-            return json.dumps(
-                {"ok": True, "title": title, "text": text, "page": p, "path": path.replace("\\", "/")},
-                ensure_ascii=False,
-            )
+                return {"error": hint}
+            return {"ok": True, "title": title, "text": text, "page": p, "path": path.replace("\\", "/")}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, result=str)
-    def extract_web_text(self, url):
+    def extract_web_text(self, args):
         try:
-            raw = (url or "").strip()
+            raw = (args.get("url", "") or "").strip()
             if not raw:
-                return json.dumps({"error": "Invalid URL"})
+                return {"error": "Invalid URL"}
             if not raw.startswith(("http://", "https://", "//")):
                 raw = "https://" + raw
             if raw.startswith("//"):
@@ -673,10 +783,10 @@ class AnkiPapersBridge(QObject):
             try:
                 p = urlparse(raw)
                 if p.scheme not in ("http", "https") or not p.netloc:
-                    return json.dumps({"error": "Invalid URL"})
+                    return {"error": "Invalid URL"}
                 url = p.geturl()
             except Exception:
-                return json.dumps({"error": "Invalid URL"})
+                return {"error": "Invalid URL"}
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": "Mozilla/5.0 (AnkiPapers)"},
@@ -689,26 +799,27 @@ class AnkiPapersBridge(QObject):
             title = html.unescape(title_m.group(1).strip()) if title_m else url
             body = re.sub(r"(?is)<[^>]+>", " ", t)
             body = html.unescape(re.sub(r"\s+", " ", body)).strip()
-            return json.dumps({"ok": True, "title": title, "text": body, "url": url}, ensure_ascii=False)
+            return {"ok": True, "title": title, "text": body, "url": url}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, result=str)
-    def open_source_at_location(self, source_meta_json):
+    def open_source_at_location(self, args):
         try:
-            data = json.loads(source_meta_json or "{}")
+            data = args.get("source") or {}
             st = (data.get("source_type") or "").lower()
             uri = data.get("source_uri") or ""
             locator = data.get("locator") or {}
             if st == "pdf":
                 page = int(locator.get("page") or 1)
                 from aqt.utils import openLink
-                file_url = f"file:///{uri.replace('\\', '/')}"
+                # Allowed file:/// use (contract check allow-list): opening the
+                # PDF in the user's system viewer, not loading a webview page.
+                file_url = f"file:///{uri.replace(chr(92), '/')}"
                 if page > 1:
                     file_url = f"{file_url}#page={page}"
                 openLink(file_url)
-                return json.dumps({"ok": True, "opened": file_url})
+                return {"ok": True, "opened": file_url}
             if st == "web":
                 target = uri
                 anchor = locator.get("anchor")
@@ -716,23 +827,24 @@ class AnkiPapersBridge(QObject):
                     target = f"{target}#{anchor}"
                 from aqt.utils import openLink
                 openLink(target)
-                return json.dumps({"ok": True, "opened": target})
-            return json.dumps({"error": "Unknown source type"})
+                return {"ok": True, "opened": target}
+            return {"error": "Unknown source type"}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, str, result=str)
-    def move_cards_to_deck(self, paper_id, deck_name):
+    def move_cards_to_deck(self, args):
         """Move all cards of a paper to a new deck."""
         try:
+            paper_id = args.get("paper_id", "")
+            deck_name = args.get("deck_name", "")
             paper = load_paper(paper_id)
             if not paper or not mw or not mw.col:
-                return json.dumps({"error": "Paper or collection not found"})
-            
+                return {"error": "Paper or collection not found"}
+
             from ..core.card_manager import get_deck_id
             deck_id = get_deck_id(mw.col, deck_name)
-            
+
             card_ids = []
             for ref in paper.card_refs:
                 if ref.anki_note_id:
@@ -742,18 +854,18 @@ class AnkiPapersBridge(QObject):
                             card_ids.append(card.id)
                     except:
                         pass
-            
+
             if card_ids:
                 mw.col.set_deck(card_ids, deck_id)
                 # after_deck_selection_change() removed from Collection in Anki 25+
                 mw.reset()
-            
+
             paper.deck_name = deck_name
             save_paper(paper)
-            return json.dumps({"ok": True})
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
     # ─── PDF Export ──────────────────────────────────
     #
     # The page builds the printable HTML (web_src/src/printDocument.js) using
@@ -772,33 +884,34 @@ class AnkiPapersBridge(QObject):
     # "Ferritin". Those methods are kept only as a fallback for an install
     # whose web/ folder has not been updated yet.
 
-    @pyqtSlot(str, str, result=str)
-    def export_pdf_html(self, paper_id, html):
+    def export_pdf_html(self, args):
         """Export a paper to PDF from HTML the page has already rendered."""
         try:
+            paper_id = args.get("paper_id", "")
+            html = args.get("html", "")
             if not html:
-                return self.export_pdf(paper_id)
+                return self.export_pdf({"paper_id": paper_id})
 
             paper = load_paper(paper_id)
             title = paper.title if paper else "Untitled"
 
-            file_path, _ = QFileDialog.getSaveFileName(
+            file_path, _ = _ask_save_file(
                 None, "Export to PDF", f"{title}.pdf",
                 "PDF Files (*.pdf);;All Files (*)",
             )
             if not file_path:
-                return json.dumps({"cancelled": True})
+                return {"cancelled": True}
 
             return self._print_html_to_pdf(html, file_path)
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
     def _print_html_to_pdf(self, html, file_path):
         """Load HTML into an off-screen page and print it to `file_path`."""
-        parent = self.parent()
-        if not (parent and hasattr(parent, "webview")):
-            return json.dumps({"error": "Webview not available"})
+        window = self.window
+        if not (window and hasattr(window, "webview")):
+            return {"error": "Webview not available"}
 
         try:
             from PyQt6.QtWebEngineCore import QWebEnginePage
@@ -811,7 +924,7 @@ class AnkiPapersBridge(QObject):
         # fetched from disk while printing.
         html = self._inline_images_as_data_uris(html, self._media_dir())
 
-        temp_page = QWebEnginePage(parent.webview)
+        temp_page = QWebEnginePage(window.webview)
         self._pdf_path = file_path
         self._temp_page = temp_page
 
@@ -821,11 +934,11 @@ class AnkiPapersBridge(QObject):
 
         temp_page.loadFinished.connect(on_load_finished)
         # A real directory as the base URL, not about:blank, so that any
-        # file:/// image sources in the page are allowed to load.
+        # local file:// image sources in the page are allowed to load.
         base = QUrl.fromLocalFile(os.path.dirname(file_path) + os.sep)
         temp_page.setHtml(html, base)
 
-        return json.dumps({"ok": True, "path": file_path})
+        return {"ok": True, "path": file_path}
 
     # ─── Page setup for printing ─────────────────────
     #
@@ -850,7 +963,7 @@ class AnkiPapersBridge(QObject):
     # Every <img> is read off disk here and embedded as a data: URI before the
     # HTML is handed to the print page.
     #
-    # Loading them as file:/// URLs instead would depend on the temporary print
+    # Loading them as local file:// URLs instead would depend on the temporary print
     # page being allowed local file access, which is a different page object
     # from the main webview and not something this add-on can check from the
     # outside. Reading the bytes ourselves removes the question: by the time
@@ -885,11 +998,22 @@ class AnkiPapersBridge(QObject):
         from html import unescape as _unescape
         src = _unescape(src)
 
+        from urllib.parse import unquote, urlparse
+
+        # A src served back from Anki's own media server (http://127.0.0.1:<port>/<name>)
+        # is just a bare filename in collection.media, URL-encoded. Anything with a
+        # "/" after the host is not one of ours (e.g. the add-on's own _addons/... export
+        # or a sub-path we never generate), so leave that as "not a local file".
+        _host_match = re.match(r"^http://127\.0\.0\.1:\d+/([^/]*)$", src)
+        if _host_match:
+            remainder = _host_match.group(1)
+            if remainder and media_dir:
+                return os.path.join(media_dir, unquote(remainder))
+            return None
+
         low = src.lower()
         if low.startswith(("data:", "http://", "https://", "qrc:", "about:")):
             return None
-
-        from urllib.parse import unquote, urlparse
 
         if low.startswith("file://"):
             path = unquote(urlparse(src).path)
@@ -990,26 +1114,27 @@ class AnkiPapersBridge(QObject):
         else:
             page.printToPdf(file_path, layout)
 
-    @pyqtSlot(str, result=str)
-    def export_pdf(self, paper_id):
+    def export_pdf(self, args):
         """Fallback export, used only when the page supplied no HTML."""
         try:
+            paper_id = args.get("paper_id", "")
             paper = load_paper(paper_id)
             if not paper:
-                return json.dumps({"error": "Paper not found"})
+                return {"error": "Paper not found"}
 
-            file_path, _ = QFileDialog.getSaveFileName(
+            file_path, _ = _ask_save_file(
                 None, "Export to PDF", f"{paper.title}.pdf",
                 "PDF Files (*.pdf);;All Files (*)",
             )
             if not file_path:
-                return json.dumps({"cancelled": True})
+                return {"cancelled": True}
 
             # Convert markdown to HTML for clean PDF
             html = self._markdown_to_html(paper)
+            media_dir = self._media_dir()
 
-            parent = self.parent()
-            if parent and hasattr(parent, 'webview'):
+            window = self.window
+            if window and hasattr(window, 'webview'):
                 # Load clean HTML into a temporary page and print to PDF
                 from aqt.qt import QUrl
                 try:
@@ -1019,7 +1144,7 @@ class AnkiPapersBridge(QObject):
 
                 html = self._inline_images_as_data_uris(html, media_dir)
 
-                temp_page = QWebEnginePage(parent.webview)
+                temp_page = QWebEnginePage(window.webview)
                 self._pdf_path = file_path
                 self._temp_page = temp_page
 
@@ -1030,12 +1155,12 @@ class AnkiPapersBridge(QObject):
                 temp_page.loadFinished.connect(on_load_finished)
                 temp_page.setHtml(html, QUrl("about:blank"))
 
-                return json.dumps({"ok": True, "path": file_path})
+                return {"ok": True, "path": file_path}
             else:
-                return json.dumps({"error": "Webview not available"})
+                return {"error": "Webview not available"}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
     def _markdown_to_html(self, paper):
         """Convert paper content to clean HTML for PDF export."""
@@ -1162,8 +1287,7 @@ Generated by Anki Papers
 
     # ─── Papers on disk (phase 1: write only) ────────
 
-    @pyqtSlot(str, result=str)
-    def export_papers_to_disk(self, mode):
+    def export_papers_to_disk(self, args):
         """Write every paper to the profile folder as .md + .ap.json.
 
         mode "preview" reports what would be written without touching the
@@ -1171,6 +1295,7 @@ Generated by Anki Papers
         read — it stays the source of truth, and nothing is deleted.
         """
         try:
+            mode = args.get("mode", "preview")
             from ..core.storage import mirror_all_papers
             report = mirror_all_papers(dry_run=(mode != "write"))
             # Trim absolute paths down to what is useful in the UI.
@@ -1179,74 +1304,70 @@ Generated by Anki Papers
                 md = entry.get("md") or ""
                 if root and md.startswith(root):
                     entry["path"] = md[len(root):].lstrip("/\\")
-            return json.dumps(report, ensure_ascii=False)
+            return report
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
     # ─── Search ───────────────────────────────────────
 
-    @pyqtSlot(str, result=str)
-    def search_papers(self, query):
+    def search_papers(self, args):
         """
         Advanced search: field filters (title:, content:, folder:, deck:, tag:),
         quoted phrases, -negation, and OR branches. See core/search_query.py.
         """
         try:
             papers = list_papers()
-            results = search_papers_advanced(papers, query or "")
-            return json.dumps(results, ensure_ascii=False)
+            results = search_papers_advanced(papers, args.get("query", "") or "")
+            return results
         except Exception:
             traceback.print_exc()
-            return json.dumps([])
+            return []
 
     # ─── Markdown Import/Export ────────────────────────
 
-    @pyqtSlot(result=str)
-    def import_markdown(self):
+    def import_markdown(self, args):
         """Import a .md file as a new paper."""
         try:
-            file_path, _ = QFileDialog.getOpenFileName(
+            file_path, _ = _ask_open_file(
                 None, "Import Markdown", "",
                 "Markdown Files (*.md *.markdown *.txt);;All Files (*)",
             )
             if not file_path:
-                return json.dumps({"cancelled": True})
+                return {"cancelled": True}
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
             title = os.path.splitext(os.path.basename(file_path))[0]
             paper = Paper(title=title)
             paper.content = content
             save_paper(paper)
-            return json.dumps(paper.to_dict(), ensure_ascii=False)
+            return paper.to_dict()
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
-    @pyqtSlot(str, result=str)
-    def export_markdown(self, paper_id):
+    def export_markdown(self, args):
         """Export a paper as a .md file."""
         try:
-            paper = load_paper(paper_id)
+            paper = load_paper(args.get("paper_id", ""))
             if not paper:
-                return json.dumps({"error": "Paper not found"})
-            file_path, _ = QFileDialog.getSaveFileName(
+                return {"error": "Paper not found"}
+            file_path, _ = _ask_save_file(
                 None, "Export Markdown", f"{paper.title}.md",
                 "Markdown Files (*.md);;All Files (*)",
             )
             if not file_path:
-                return json.dumps({"cancelled": True})
+                return {"cancelled": True}
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(paper.content)
-            return json.dumps({"ok": True, "path": file_path})
+            return {"ok": True, "path": file_path}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
 
     # ─── Settings ────────────────────────────────────
 
-    @pyqtSlot(result=str)
-    def get_settings(self):
+    def get_settings(self, args):
         try:
             config = mw.addonManager.getConfig(__name__.split(".")[0]) or {}
             defaults = {
@@ -1260,17 +1381,16 @@ Generated by Anki Papers
             }
             for key, value in defaults.items():
                 config.setdefault(key, value)
-            return json.dumps(config, ensure_ascii=False)
+            return config
         except Exception:
             traceback.print_exc()
-            return json.dumps({})
+            return {}
 
-    @pyqtSlot(str, result=str)
-    def save_settings(self, settings_json):
+    def save_settings(self, args):
         try:
-            settings = json.loads(settings_json)
+            settings = args.get("settings") or {}
             mw.addonManager.writeConfig(__name__.split(".")[0], settings)
-            return json.dumps({"ok": True})
+            return {"ok": True}
         except Exception as e:
             traceback.print_exc()
-            return json.dumps({"error": str(e)})
+            return {"error": str(e)}
