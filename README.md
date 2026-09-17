@@ -53,6 +53,8 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **Pictures on cards.** An image indented under a card now rides along with it, with no `&&` prefix needed, and changes to it reach cards that already exist — adding, swapping or removing a picture updates the note in place instead of requiring you to delete and rebuild the card.
 
+**Tables shrink to fit and sit centred**, with S / M / L / Full width caps on hover (40 / 60 / 80 / 100%). Pressing Enter at the end of a table now steps out of it instead of quietly breaking it apart.
+
 **A collapsible sidebar.** `Ctrl+\` folds the folder tree down to an icon rail, or drag its edge to any width you like. Hovering the rail slides the tree out over the editor without reflowing your text, and both the width and the collapsed state persist.
 
 **Expand-all works everywhere.** `Ctrl+Shift+↓` unfolds a whole document on Windows, Linux, and macOS. It was previously `⇧⌘↓` and macOS-only.
@@ -152,6 +154,29 @@ The picture button on the toolbar inserts an image at the cursor, and pasting an
 
 Editing any of this on an existing card just works: add, swap or remove a picture, or reword a `&&` line, press Generate, and the card is updated in place with its review history intact.
 
+### Tables
+
+Ordinary markdown pipe tables, which means they also render properly on GitHub, in Obsidian, and in any other markdown viewer:
+
+```markdown
+| Ejection Fraction | Severity |
+| --- | --- |
+| > 50% | Normal |
+| 40 - 49% | Mildly Reduced |
+```
+
+A table **shrinks to fit its contents and sits centred**, rather than stretching across the whole column. Hover it for **S / M / L / Full** buttons that cap how wide it may grow — 40%, 60%, 80% and 100% of the text column. The default is L. A table only reaches its cap when the content needs the room; past that the cells wrap.
+
+The setting is recorded on the end of the header row:
+
+```markdown
+| Ejection Fraction | Severity |<!--ap-table:m-->
+```
+
+It is an HTML comment, so it stays invisible wherever the table is rendered, and Anki Papers hides it in the editor, on cards and in PDF export. It rides on the header row so that it travels with the table when the table is moved, copied or re-indented.
+
+**Pressing Enter inside a table** adds an empty row below the one your cursor is in. **At the very end of the table** it steps out instead, opening a fresh line below at the table's own indentation.
+
 ### `[[tag]]` and `[[NH]]`
 
 `[[tag]]` anywhere on a card line puts an Anki tag on that card, written as `AnkiPapers::tag`. Everything you'd normally use tags for — searching, building a filtered deck the week before an exam — works as usual.
@@ -170,7 +195,7 @@ Without `[[NH]]`, the card would helpfully announce the answer in its own header
 - `![caption](picture.jpg)` — a picture from your Anki media folder, which also appears on the card. The toolbar's picture button inserts one at the cursor, and pasting an image from the clipboard copies it into your media folder for you.
 - `**bold**`, `*italic*`, `~~strikethrough~~`, `` `code` `` all work inline, in the editor and on the card.
 - `$x^2$` and `$$\int_a^b f(x)\,dx$$` become Anki's MathJax on the generated note.
-- Tables, blockquotes, and `---` rules render in the editor and print.
+- Blockquotes and `---` rules render in the editor and print. Tables have [their own section](#tables).
 
 ---
 
@@ -179,7 +204,7 @@ Without `[[NH]]`, the card would helpfully announce the answer in its own header
 Headings and indentation do two jobs at once: they keep the document readable, and they tell each card where it came from.
 
 - `#` through `######` — six heading levels. One subject per `#`, its parts as `##`.
-- **Tab / Shift+Tab** indent and outdent a line **together with everything nested under it**.
+- **Tab / Shift+Tab** indent and outdent a line **together with everything nested under it**. A **blank line moves on its own** — it is not the parent of whatever happens to sit below it, so indenting one never drags that content along.
 - Any line with more-indented lines beneath it is a **parent**, and papers open with parents folded, so a long document greets you as an outline. Click the chevron to open one section, or press **`Ctrl+Shift+↓`** to unfold the entire document at once.
 - **Drag a block by its handle** to move it and its children.
 - **Right-click a block** for edit, duplicate, merge, delete, and **Create link…**.
@@ -492,6 +517,8 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | Heading | `# Topic`, `## Section`, … to six levels |
 | Image | `![caption](picture.jpg)` |
 | Picture on a card | the same line, indented under the card — no `&&` needed |
+| Table | `\| A \| B \|` rows with a `\| --- \| --- \|` separator |
+| Table width | `<!--ap-table:s\|m\|l\|full-->` on the header row — set it by hovering the table |
 | Maths | `$inline$`, `$$block$$` |
 | Link to a heading or paper | `[phrase](ap://…)` — via right-click → **Create link…** |
 | Quick paper link | `[[Paper title]]` |

@@ -1184,10 +1184,16 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       e.preventDefault()
       const full = e.target.value ?? ''
       const caret = e.target.selectionStart ?? full.length
+      // Everything added here inherits the table's own indentation. The
+      // generic Enter path below does this via `leadingSpaces + after`; a
+      // table has no single "current line" to take it from, so read it off
+      // the table's first row. Without this a new line after an indented
+      // table jumped out to the left margin, level with the H1s.
+      const tableIndent = (lines[tableBounds.start].match(/^[ \t]*/) || [''])[0]
 
       if (caret >= full.length) {
         // At the end of the table: step out of it and open a fresh line below.
-        lines.splice(tableBounds.end + 1, 0, '')
+        lines.splice(tableBounds.end + 1, 0, tableIndent)
         onChange(lines.join('\n'))
         setTimeout(() => setFocusedIndex(tableBounds.end + 1), 10)
         return
@@ -1198,7 +1204,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       // would recreate the very break this function exists to prevent.
       const caretRow = full.slice(0, caret).split('\n').length - 1
       const cols = (parseTableRow(lines[tableBounds.start]) || []).length || 2
-      const blank = '|' + ' |'.repeat(cols)
+      const blank = tableIndent + '|' + ' |'.repeat(cols)
       const insertAt = Math.min(
         tableBounds.start + Math.max(caretRow, 1) + 1,
         tableBounds.end + 1,
@@ -1292,12 +1298,28 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       const prevIndent = index > 0 ? Math.floor((lines[index - 1].match(/^[ \t]*/) || [''])[0].replace(/\t/g, '    ').length / 4) : -1
       const maxAllowed = prevIndent + 1
       
+      // A line with text carries its children: it and everything nested under
+      // it move together, which is what makes Tab useful for reorganising.
+      //
+      // A blank line has no children. It is not the parent of what follows —
+      // it just happens to sit above it, usually at indent 0, which made the
+      // sweep below collect the entire indented section beneath and drag text
+      // the user never touched. So a blank line moves alone.
+      //
+      // "Blank" is whitespace-only rather than strictly empty, which covers a
+      // line that was indented and then emptied, and the indented line Enter
+      // opens after a table. The anchor comes off first so a blank line that
+      // is someone's link target still reads as blank.
+      const isBlankLine = currentDisplay.trim() === ''
+
       const toIndent = [index]
-      for (let i = index + 1; i < lines.length; i++) {
-        const iSpaces = (lines[i].match(/^[ \t]*/) || [''])[0]
-        const iIndent = Math.floor(iSpaces.replace(/\t/g, '    ').length / 4)
-        if (iIndent > currentIndent) toIndent.push(i)
-        else break
+      if (!isBlankLine) {
+        for (let i = index + 1; i < lines.length; i++) {
+          const iSpaces = (lines[i].match(/^[ \t]*/) || [''])[0]
+          const iIndent = Math.floor(iSpaces.replace(/\t/g, '    ').length / 4)
+          if (iIndent > currentIndent) toIndent.push(i)
+          else break
+        }
       }
       
       if (e.shiftKey) {

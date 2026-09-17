@@ -266,8 +266,19 @@ export default function WelcomeScreen({
                 </Ref>
                 <Ref code="Tab / Shift+Tab" tone="key">
                   Moves a line in or out one level, so it sits underneath the line above.
-                  When a line has anything tucked under it, it starts folded up — click
-                  the little arrow beside it to open it.
+                  Anything tucked under that line comes with it. A blank line is the
+                  exception — it moves on its own, so nudging one never drags along
+                  whatever happens to sit below it. When a line has anything tucked
+                  under it, it starts folded up — click the little arrow beside it to
+                  open it.
+                </Ref>
+                <Ref code="| Column | Column |" tone="muted">
+                  A table. Write the rows with pipes between the cells and put a row
+                  of <code>| --- | --- |</code> under the first one to make it the
+                  header. Tables are only as wide as they need to be and sit centred;
+                  hover one for <b>S / M / L / Full</b> buttons that decide how wide
+                  it may grow before the cells start wrapping. Pressing Enter inside a
+                  table adds a row, and pressing it at the very end steps back out.
                 </Ref>
                 <Ref code="![caption](picture.jpg)" tone="muted">
                   A picture from your Anki media folder. The picture button on the
