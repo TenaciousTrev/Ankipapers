@@ -51,6 +51,22 @@ _ANKIPAPERS_CSS = """
   margin-bottom: 4px;
 }
 
+/* Per-level breadcrumb crumbs (see parser.get_context_heading). Weight,
+   uppercase, letter-spacing and color are inherited from .ap-meta-heading. */
+.ap-crumb-h1 {
+  font-size: 22px;
+  text-decoration: underline;
+}
+.ap-crumb-h2 {
+  font-size: 18px;
+}
+.ap-crumb-h3 {
+  font-size: 16px;
+}
+.ap-crumb-sep {
+  text-decoration: none;
+}
+
 .ap-meta-block {
   font-size: 16px;
   font-weight: 600;
@@ -193,15 +209,19 @@ _ANKIPAPERS_CSS = """
 }
 
 /* ─── Inline Elements ───────────────────────────── */
-b, strong { font-weight: 600; }
+b, strong { font-weight: 700; }
 i, em { font-style: italic; }
+/* Inline code chip: white surface, orange text — the same pairing as
+   .block-paragraph code in the document editor. The faint border keeps the
+   white chip visible on a white card. Deliberately left white in night mode. */
 code {
   font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
   font-size: 0.82em;
-  background: rgba(108, 92, 231, 0.07);
+  background: #ffffff;
   padding: 2px 6px;
   border-radius: 4px;
-  color: #6c5ce7;
+  border: 1px solid rgba(0,0,0,0.08);
+  color: #e17055;
 }
 img {
   max-width: 100%;
@@ -1219,7 +1239,20 @@ def generate_cards(
                     # this card moved) is just an edit waiting to be applied,
                     # not a conflict — it needs no policy and no permission.
                     # Only a genuine Anki-side edit consults the policy.
-                    if diff and (
+                    #
+                    # diff compares fields with their markup stripped, so a
+                    # change that is only markup — the breadcrumb gaining its
+                    # per-level spans, say — leaves it empty even though the
+                    # note is stale. derived_hash covers exactly that case: it
+                    # hashes the raw context and supplement, so it moves when
+                    # the markup does. A moved derived_hash opens the gate on
+                    # its own. A ref with no derived_hash at all was written
+                    # before the hash existed and has never had its context
+                    # refreshed, so it counts as moved once; the hash is
+                    # stored below and later runs go quiet.
+                    stored_derived = getattr(existing_ref, "derived_hash", None)
+                    derived_moved = stored_derived != derived
+                    if (diff or derived_moved) and (
                         _is_paper_side_change(existing_ref, derived, diff)
                         or anki_edit_conflict == "overwrite"
                     ):

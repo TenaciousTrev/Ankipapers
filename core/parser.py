@@ -546,11 +546,19 @@ def get_context_heading(content: str, line_index: int) -> str:
                 if level == 1:
                     break
 
-    # 1. Build the heading path
+    # 1. Build the heading path: one span per level so the card CSS can size
+    #    H1/H2/H3 differently (.ap-crumb-h1/2/3 in card_manager._ANKIPAPERS_CSS).
+    #    Levels stack one per line, as the card has always shown them; the
+    #    separator span carries the line break so the crumbs keep that layout
+    #    and the H1 underline cannot bleed into a separator.
     heading_path = ""
     if headings:
         sorted_levels = sorted(headings.keys())
-        heading_path = " > ".join(headings[l] for l in sorted_levels)
+        crumbs = [
+            f'<span class="ap-crumb ap-crumb-h{l}">{headings[l]}</span>'
+            for l in sorted_levels
+        ]
+        heading_path = '<span class="ap-crumb-sep"><br></span>'.join(crumbs)
 
     # 2. Get the block parent path
     block_path_list = get_block_breadcrumbs(content, line_index)
