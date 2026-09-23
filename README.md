@@ -41,6 +41,14 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Tabs.** Every paper you open gets a tab above the editor, so you can keep several papers at hand and switch between them with a click. Following a link to another paper opens it in a tab right next to the one you came from, and the paper you left stays open. Close a tab with its × or a middle-click; cycle with `Ctrl+Tab` and `Ctrl+Shift+Tab`. Tabs have a fixed width, so five fit across a full-screen window and the strip scrolls sideways beyond that. Open tabs are remembered between sessions.
+
+**Unsaved changes at a glance.** A dot on the active tab means the paper has edits that have not yet reached disk. It clears on `Ctrl+S`, on autosave, and whenever you switch papers, since switching always saves first.
+
+**Back and forward.** After following a chain of links, `Ctrl+Alt+←` and `Ctrl+Alt+→` (or the arrows at the left of the tab strip, or a mouse's back and forward buttons) retrace your steps, landing on the same line each time.
+
+**Renaming a heading keeps its links readable.** Links quote the heading they point at. When you rename a heading that other papers link to, saving (or leaving the paper) offers to update every link that still reads the old name. Links whose text you wrote yourself are left alone.
+
 **Papers are files on your disk.** Every paper is now written to `<profile>/ankipapers/papers/` as a `.md` file, in real folders mirroring the sidebar, with a small `.ap.json` beside it. The editor reads those files directly. A copy still goes into the Anki collection and rides along to AnkiWeb as a backup. See [Where your papers live](#where-your-papers-live) — and if you were using Anki Papers before this version, there is a **one-time step** to copy your existing papers out.
 
 **Cards keep their identity when you reword them.** Generate used to recognise a card only by its text being byte-for-byte identical, so editing a line destroyed the old card and built a new one — losing its review history, and in some cases leaving a duplicate behind. Every card line now carries a permanent hidden name, so Generate updates the card you edited instead of replacing it. Existing papers adopt this silently on their next Generate: nothing is created, updated, or deleted.
@@ -427,6 +435,8 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
 | `Ctrl+V` / `⌘V` on a Mac | Paste as copied — one block per line |
 | `Ctrl+Shift+V` / `⇧⌘V` on a Mac | Paste as plain text — flattened onto one line |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+Alt+←` / `Ctrl+Alt+→` | Back / forward through papers you have visited |
 | `Ctrl+\` | Collapse / expand the sidebar |
 | `Ctrl+,` | Settings |
 | `[[` | Autocomplete a link to another paper by title |

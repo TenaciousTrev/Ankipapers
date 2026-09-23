@@ -836,27 +836,41 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }, [lasso])
 
-// ── Expand All Shortcut ──────────────────────────────────────────
+// ── Expand All / Collapse All Shortcuts ──────────────────────────
   useEffect(() => {
-    const handleExpandAll = (e) => {
+    const handleFoldShortcut = (e) => {
+      if (!e.shiftKey || !(e.ctrlKey || e.metaKey)) return
+
       // Ctrl+Shift+Down, and Shift+Cmd+Down on a Mac. Every other shortcut in
       // the app uses Ctrl on macOS too, so accepting Ctrl here makes this one
       // consistent with them and gives Windows and Linux the shortcut at all --
       // it previously tested metaKey alone, which those platforms never set.
-      if (e.shiftKey && (e.ctrlKey || e.metaKey) && e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault()
         // Passing an empty Set clears all collapsed states globally
         setCollapsedKeys(new Set())
+        return
+      }
+
+      // Ctrl/Cmd+Shift+Up is the mirror image: collapse every block that has
+      // children, i.e. the same state a document opens in. Reading the content
+      // from a ref keeps this listener registered once rather than re-attaching
+      // on every keystroke.
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        // Focus would otherwise be stranded inside a row that just got hidden.
+        setFocusedIndex(null)
+        setCollapsedKeys(computeInitialCollapsed(contentRef.current))
       }
     }
 
     // Attach to the window to catch the command even if a specific block isn't focused
-    window.addEventListener('keydown', handleExpandAll)
-    
+    window.addEventListener('keydown', handleFoldShortcut)
+
     return () => {
-      window.removeEventListener('keydown', handleExpandAll)
+      window.removeEventListener('keydown', handleFoldShortcut)
     }
-  }, [])
+  }, [computeInitialCollapsed])
 
   const toggleCollapse = useCallback((e, key) => {
     e.stopPropagation()

@@ -462,3 +462,53 @@ export function buildGraph(papers, links, mode = 'documents') {
   }
   return { nodes: [...nodes.values()], edges: edgeList }
 }
+
+// ── Backlink-aware rename ────────────────────────────────────────────────
+// A link's visible phrase is plain text in the linking paper, so renaming a
+// heading leaves every link that quoted it reading the old name. These two
+// find such headings and rewrite those links.
+
+/**
+ * Anchored headings whose text differs between two versions of one paper:
+ * [{ blockId, oldText, newText }]. Only anchored headings can be linked to,
+ * so only they matter here.
+ */
+export function findHeaderRenames(before, after) {
+  const index = (content) => {
+    const out = new Map()
+    for (const raw of String(content || '').split('\n')) {
+      const id = getApBlockId(raw)
+      if (!id) continue
+      const m = stripApBlockId(raw).trim().match(HEADER_RE)
+      if (m) out.set(id, stripApLinkSyntax(m[2].trim()))
+    }
+    return out
+  }
+  const old = index(before)
+  const renames = []
+  for (const [blockId, newText] of index(after)) {
+    const oldText = old.get(blockId)
+    if (oldText && newText && oldText !== newText) renames.push({ blockId, oldText, newText })
+  }
+  return renames
+}
+
+/**
+ * Rewrite every link to `blockId` whose phrase is exactly `oldText` so it
+ * reads `newText` instead. Links with a phrase of their own are left alone.
+ * Returns only the papers that changed: [{ paperId, content, count }].
+ */
+export function retitleLinks(papers, blockId, oldText, newText) {
+  const wanted = String(blockId || '').toLowerCase()
+  const out = []
+  for (const p of papers || []) {
+    let count = 0
+    const content = String(p.content || '').replace(AP_LINK_RE, (m, text, target) => {
+      if (text !== oldText || parseApTarget(target).blockId !== wanted) return m
+      count++
+      return `[${newText}](ap://${target})`
+    })
+    if (count) out.push({ paperId: p.id, content, count })
+  }
+  return out
+}

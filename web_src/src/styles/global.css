@@ -2139,3 +2139,60 @@ textarea.block-input.block-input-textarea {
   font-style: italic;
   opacity: 0.85;
 }
+/* ─── Tab bar ────────────────────────────────────── */
+.tab-bar {
+  display: flex; align-items: stretch; flex-shrink: 0;
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+/* Only the tabs scroll; the back/forward arrows beside them stay pinned. */
+.tab-strip {
+  display: flex; align-items: stretch; flex: 1; min-width: 0;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+}
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  /* Fixed width: at most five tabs fit in a full-screen window on a 16"
+     MacBook Pro (1792px default scaling) with the sidebar at its default
+     width; the strip scrolls sideways beyond that. */
+  flex: 0 0 290px; width: 290px; box-sizing: border-box;
+  padding: 6px 8px 6px 12px;
+  border-right: 1px solid var(--border); border-top: 2px solid transparent;
+  color: var(--text-muted); font-size: 12px; font-family: var(--font-sans);
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color var(--transition), background var(--transition);
+}
+.tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.tab.active {
+  color: var(--text-primary); background: var(--bg-primary);
+  border-top-color: var(--accent);
+}
+.tab-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab-close {
+  display: flex; align-items: center; flex-shrink: 0;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  color: inherit; padding: 2px; cursor: pointer; opacity: 0;
+  transition: opacity var(--transition), background var(--transition);
+}
+.tab:hover .tab-close, .tab.active .tab-close { opacity: 0.7; }
+.tab-close:hover { opacity: 1; background: var(--bg-hover); color: var(--accent); }
+
+/* Unsaved dot: shown in place of the close button until the tab is hovered. */
+.tab-dirty {
+  display: none; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0; margin: 0 4px;
+}
+.tab.dirty:not(:hover) .tab-dirty { display: block; }
+.tab.dirty:not(:hover) .tab-close { display: none; }
+
+.tab-nav { display: flex; align-items: center; flex-shrink: 0; padding: 0 4px; border-right: 1px solid var(--border); }
+.tab-nav-btn {
+  display: flex; align-items: center; background: transparent; border: none;
+  color: var(--text-muted); padding: 4px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: color var(--transition), background var(--transition);
+}
+.tab-nav-btn:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
+.tab-nav-btn:disabled { opacity: 0.3; cursor: default; }
+[data-theme="light"] .tab-bar { background: #eeeef2; border-bottom-color: #d8d8e0; }
+[data-theme="light"] .tab, [data-theme="light"] .tab-nav { border-right-color: #d8d8e0; }
+[data-theme="light"] .tab.active { background: #ffffff; color: #1a1a2e; }

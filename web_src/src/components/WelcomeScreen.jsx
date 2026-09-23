@@ -16,6 +16,7 @@ import {
   Hash,
   Keyboard,
   HardDrive,
+  Layers,
 } from 'lucide-react'
 
 function formatRelativeTime(modifiedAt) {
@@ -315,6 +316,12 @@ export default function WelcomeScreen({
                   you can reword it, move it, or rename the paper and the link still
                   finds it.
                 </Ref>
+                <Ref code="Renaming a heading" tone="muted">
+                  Links quote the heading they point at. If you rename a heading that
+                  other papers link to, saving (or leaving the paper) offers to update
+                  every link that still reads the old name. Links whose words you chose
+                  yourself are left as you wrote them.
+                </Ref>
                 <Ref code="<!--ap:…-->" tone="muted">
                   If you open a paper in a text editor you'll see these on some lines.
                   They are the name that makes a line findable — links point at them,
@@ -346,6 +353,31 @@ export default function WelcomeScreen({
               </RefGroup>
 
               <RefGroup
+                icon={Layers}
+                title="Several papers at once"
+                blurb="Every paper you open gets a tab above the editor, so the ones you are working across stay one click apart."
+              >
+                <Ref code="Tabs" tone="key">
+                  Open a paper from the sidebar, a link, or the search and it joins the
+                  strip. Following a link puts the new paper right next to the one you
+                  came from, and the one you left stays open. Close a tab with its × or
+                  a middle-click. Five tabs fit across the window; beyond that the strip
+                  scrolls sideways. Your open tabs are remembered next time.
+                </Ref>
+                <Ref code="Back / forward" tone="key">
+                  The two arrows at the left of the tab strip retrace your steps through
+                  every paper you have visited, landing on the same line each time — so
+                  you can chase a chain of links and find your way back. A mouse's back
+                  and forward buttons do the same.
+                </Ref>
+                <Ref code="●" tone="key">
+                  A dot on the active tab means that paper has edits not yet saved to
+                  disk. It clears when you press Ctrl+S, when autosave runs, and whenever
+                  you switch papers, since switching always saves first.
+                </Ref>
+              </RefGroup>
+
+              <RefGroup
                 icon={Keyboard}
                 title="Keys worth knowing"
                 blurb={IS_MAC
@@ -363,6 +395,13 @@ export default function WelcomeScreen({
                 <Ref code="Ctrl+B / Ctrl+I" tone="key">Bold and italic.</Ref>
                 <Ref code="Ctrl+Z / Ctrl+Shift+Z" tone="key">Undo and redo.</Ref>
                 <Ref code="Ctrl+," tone="key">Open Settings.</Ref>
+                <Ref code="Ctrl+Tab / Ctrl+Shift+Tab" tone="key">
+                  Step to the next or previous tab.
+                </Ref>
+                <Ref code="Ctrl+Alt+← / Ctrl+Alt+→" tone="key">
+                  Back and forward through the papers you have visited, the same as the
+                  arrows on the tab strip.
+                </Ref>
                 <Ref code={'Ctrl+\\'} tone="key">
                   Fold the folder list away and give the whole window to what you're
                   writing. It shrinks to a narrow strip of icons rather than

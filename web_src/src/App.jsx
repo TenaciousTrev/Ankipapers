@@ -8,12 +8,13 @@ import {
 } from './bridge'
 import Sidebar from './components/Sidebar'
 import EditorHeader from './components/EditorHeader'
+import TabBar from './components/TabBar'
 import FormattingToolbar from './components/FormattingToolbar'
 import SourceEditor from './components/SourceEditor'
 import BlockEditor from './components/BlockEditor'
 import BottomToolbar from './components/BottomToolbar'
 import WelcomeScreen from './components/WelcomeScreen'
-import { resolveApTarget, parseApTarget, ensureApBlockId } from './docLinks'
+import { resolveApTarget, parseApTarget, ensureApBlockId, findHeaderRenames, retitleLinks } from './docLinks'
 import { renderPrintHtml } from './printDocument'
 import LinkPicker from './components/LinkPicker'
 import LinksPanel from './components/LinksPanel'
@@ -92,6 +93,22 @@ export default function App() {
   const [papers, setPapers] = useState([])
   const [folders, setFolders] = useState({ name: 'Root', children: [] })
   const [activePaperId, setActivePaperId] = useState(null)
+  // Open tabs: an ordered list of paper ids. Only one paper is ever loaded;
+  // a tab is just a shortcut back to a paper you had open.
+  const [openTabs, setOpenTabs] = useState([])
+  const openTabsRef = useRef(openTabs)
+  openTabsRef.current = openTabs
+  const tabsLoadedRef = useRef(false)
+  // What the open paper looked like when it was last saved, for the unsaved
+  // dot on its tab. The tick forces a re-render when a save happens without a
+  // state change (autosave).
+  const savedRef = useRef({ id: null, content: '', title: '' })
+  const [, setSavedTick] = useState(0)
+  // The open paper's text as of the last backlink check (reconcileBacklinks).
+  const linkBaselineRef = useRef({ id: null, content: '' })
+  // Back / forward: the papers (and lines) you have visited, in order.
+  const navRef = useRef({ stack: [], index: -1 })
+  const [navState, setNavState] = useState({ canBack: false, canForward: false })
   const [paper, setPaper] = useState(null)
   const [decks, setDecks] = useState([])
   const [viewMode, setViewMode] = useState('blocks') // 'blocks' or 'source'
@@ -135,6 +152,10 @@ export default function App() {
   const paperRef = useRef(null)
   paperRef.current = paper
 
+  // The papers list, readable from callbacks without depending on it.
+  const papersRef = useRef(papers)
+  papersRef.current = papers
+
   // Undo/Redo history
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
@@ -149,6 +170,11 @@ export default function App() {
       await refreshFolders()
       const s = await getSettings()
       setSettings(s)
+      // Restore open tabs, dropping ids for papers that no longer exist.
+      const known = new Set(papersRef.current.map((p) => p.id))
+      const stored = Array.isArray(s.open_tabs) ? s.open_tabs : []
+      setOpenTabs(stored.filter((id) => known.has(id)))
+      tabsLoadedRef.current = true
       if (Number.isFinite(s.sidebar_width)) setSidebarWidth(clampSidebarWidth(s.sidebar_width))
       setSidebarCollapsed(!!s.sidebar_collapsed)
       // Apply theme
@@ -158,39 +184,201 @@ export default function App() {
     })
   }, [])
 
-  const refreshPapers = useCallback(async () => { setPapers(await listPapers()) }, [])
+  const refreshPapers = useCallback(async () => {
+    const list = await listPapers()
+    papersRef.current = list
+    setPapers(list)
+  }, [])
   const refreshDecks = useCallback(async () => { setDecks(await getDecks()) }, [])
   const refreshFolders = useCallback(async () => { setFolders(await getFolders()) }, [])
 
   // ─── Paper Operations ────────────────────────────
-  const handleSelectPaper = useCallback(async (id) => {
-    const current = paperRef.current
-    if (current && current.id !== id) {
-      await savePaper(current)
+  const markSaved = useCallback((p) => {
+    if (!p) return
+    savedRef.current = { id: p.id, content: p.content, title: p.title }
+    setSavedTick((t) => t + 1)
+  }, [])
+
+  // Saves a paper and, when it is the open one, records the snapshot the
+  // unsaved indicator compares against. Same contract as savePaper.
+  const persistPaper = useCallback(async (p) => {
+    const res = await savePaper(p)
+    if (!(res && res.error) && p.id === paperRef.current?.id) markSaved(p)
+    return res
+  }, [markSaved])
+
+  // ─── Backlink-aware rename ───────────────────────
+  // Runs on an explicit save and whenever you leave a paper (not on autosave,
+  // which would interrupt mid-word). Compares the paper against its text at
+  // the last check; for each anchored heading whose text changed, offers to
+  // rewrite links elsewhere that still quote the old heading verbatim.
+  // Returns the paper to save — with its own links updated if it had any.
+  const reconcileBacklinks = useCallback(async (current) => {
+    if (!current) return current
+    const base = linkBaselineRef.current
+    const baseline = base.id === current.id ? base.content : null
+    linkBaselineRef.current = { id: current.id, content: current.content }
+    if (baseline == null || baseline === current.content) return current
+    const renames = findHeaderRenames(baseline, current.content)
+      .filter((r) => !/[\][]/.test(r.newText))
+    if (!renames.length) return current
+
+    // Read links from the papers list, with the open paper's live text in
+    // place of its (possibly stale) listing.
+    const live = new Map([[current.id, current.content]])
+    const corpus = () => papersRef.current.map((p) =>
+      live.has(p.id) ? { ...p, content: live.get(p.id) } : p)
+    const touched = new Set()
+    for (const r of renames) {
+      const hits = retitleLinks(corpus(), r.blockId, r.oldText, r.newText)
+      if (!hits.length) continue
+      const n = hits.reduce((sum, h) => sum + h.count, 0)
+      const ok = window.confirm(
+        `The heading "${r.oldText}" is now "${r.newText}".\n\n` +
+        `Update ${n} link${n === 1 ? '' : 's'} in ${hits.length} paper${hits.length === 1 ? '' : 's'} ` +
+        `that still read "${r.oldText}"?`
+      )
+      if (!ok) continue
+      for (const h of hits) { live.set(h.paperId, h.content); touched.add(h.paperId) }
+    }
+    if (!touched.size) return current
+
+    let result = current
+    for (const pid of touched) {
+      const content = live.get(pid)
+      if (pid === current.id) {
+        result = { ...current, content }
+        setPaper((prev) => (prev && prev.id === pid ? { ...prev, content } : prev))
+        linkBaselineRef.current = { id: pid, content }
+        historyRef.current = [content]
+        historyIndexRef.current = 0
+      } else {
+        const p = papersRef.current.find((x) => x.id === pid)
+        if (p) await savePaper({ ...p, content })
+      }
+    }
+    await refreshPapers()
+    showToast('Links updated', 'success')
+    return result
+  }, [refreshPapers])
+
+  // ─── Back / forward ──────────────────────────────
+  const syncNav = useCallback(() => {
+    const { stack, index } = navRef.current
+    setNavState({ canBack: index > 0, canForward: index < stack.length - 1 })
+  }, [])
+
+  const pushNav = useCallback((paperId, lineIndex = -1) => {
+    const nav = navRef.current
+    const top = nav.stack[nav.index]
+    if (top && top.paperId === paperId && top.lineIndex === lineIndex) return
+    nav.stack = nav.stack.slice(0, nav.index + 1)
+    nav.stack.push({ paperId, lineIndex })
+    if (nav.stack.length > 100) nav.stack.shift()
+    nav.index = nav.stack.length - 1
+    syncNav()
+  }, [syncNav])
+
+  // Adds `id` to the tab strip if it isn't there, right after `afterId` (the
+  // tab you came from) so papers reached by following links sit together.
+  const addTab = useCallback((id, afterId) => {
+    setOpenTabs((prev) => {
+      if (prev.includes(id)) return prev
+      const at = prev.indexOf(afterId)
+      if (at === -1) return [...prev, id]
+      return [...prev.slice(0, at + 1), id, ...prev.slice(at + 1)]
+    })
+  }, [])
+
+  // Options: skipSave — leave the current paper unsaved (it was deleted);
+  // fromHistory — a back/forward move, so don't record it; lineIndex — the
+  // line this visit lands on, remembered for back/forward.
+  const handleSelectPaper = useCallback(async (id, { skipSave = false, fromHistory = false, lineIndex = -1 } = {}) => {
+    let current = paperRef.current
+    if (current && current.id !== id && !skipSave) {
+      current = await reconcileBacklinks(current)
+      await persistPaper(current)
     }
     const loaded = await loadPaper(id)
     if (loaded) {
+      addTab(id, current?.id)
+      if (!fromHistory) pushNav(id, lineIndex)
       setPaper(loaded)
       setActivePaperId(id)
+      markSaved(loaded)
+      linkBaselineRef.current = { id, content: loaded.content }
       historyRef.current = [loaded.content]
       historyIndexRef.current = 0
     }
-  }, [])
+  }, [addTab, reconcileBacklinks, persistPaper, markSaved, pushNav])
+
+  const goHistory = useCallback(async (step) => {
+    const nav = navRef.current
+    const to = nav.index + step
+    if (to < 0 || to >= nav.stack.length) return
+    nav.index = to
+    syncNav()
+    const entry = nav.stack[to]
+    const alreadyOpen = paperRef.current?.id === entry.paperId
+    if (!alreadyOpen) await handleSelectPaper(entry.paperId, { fromHistory: true })
+    if (entry.lineIndex >= 0) {
+      setTimeout(() => blockEditorRef.current?.revealBlock?.(entry.lineIndex), alreadyOpen ? 30 : 320)
+    }
+  }, [handleSelectPaper, syncNav])
+
+  const cycleTab = useCallback((dir) => {
+    const tabs = openTabsRef.current
+    if (!tabs.length) return
+    const at = tabs.indexOf(paperRef.current?.id)
+    const next = at === -1 ? (dir > 0 ? 0 : tabs.length - 1) : (at + dir + tabs.length) % tabs.length
+    if (tabs[next] !== paperRef.current?.id) handleSelectPaper(tabs[next])
+  }, [handleSelectPaper])
 
   const handleCreatePaper = useCallback(async (title, folderPath = '') => {
+    // Save what's open first, as switching papers does — otherwise unsaved
+    // edits (and the title shown on its tab) would be lost.
+    const current = paperRef.current
+    if (current) await persistPaper(await reconcileBacklinks(current))
     const newPaper = await createPaper(title, folderPath)
     await refreshPapers()
+    addTab(newPaper.id, current?.id)
+    pushNav(newPaper.id)
     setPaper(newPaper)
     setActivePaperId(newPaper.id)
+    markSaved(newPaper)
+    linkBaselineRef.current = { id: newPaper.id, content: newPaper.content }
     showToast('Paper created', 'success')
-  }, [refreshPapers])
+  }, [refreshPapers, addTab, persistPaper, reconcileBacklinks, pushNav, markSaved])
+
+  // Removes a tab from the strip and returns the tab that should take its
+  // place when it was the active one (the right-hand neighbour, else the
+  // left), or null when it was the last tab.
+  const removeTab = useCallback((id) => {
+    const tabs = openTabsRef.current
+    const at = tabs.indexOf(id)
+    if (at === -1) return null
+    const next = tabs.filter((t) => t !== id)
+    openTabsRef.current = next
+    setOpenTabs(next)
+    return next[at] ?? next[at - 1] ?? null
+  }, [])
 
   const handleDeletePaper = useCallback(async (id) => {
     await deletePaper(id)
-    if (activePaperId === id) { setPaper(null); setActivePaperId(null) }
+    const neighbour = removeTab(id)
+    const nav = navRef.current
+    nav.stack = nav.stack.filter((e) => e.paperId !== id)
+    nav.index = Math.min(nav.index, nav.stack.length - 1)
+    syncNav()
+    if (activePaperId === id) {
+      setPaper(null); setActivePaperId(null)
+      // The deleted paper must not be saved on the way out — that would
+      // quietly recreate it.
+      if (neighbour) await handleSelectPaper(neighbour, { skipSave: true })
+    }
     await refreshPapers()
     showToast('Paper deleted', 'success')
-  }, [activePaperId, refreshPapers])
+  }, [activePaperId, refreshPapers, removeTab, handleSelectPaper, syncNav])
 
   const handleCreateFolder = useCallback(async (name, parentPath = '') => {
     await createFolder(name, parentPath)
@@ -277,7 +465,7 @@ export default function App() {
     if (!current || isBusyRef.current) return
     setBusy(true)
     try {
-      const res = await savePaper(current)
+      const res = await persistPaper(await reconcileBacklinks(current))
       if (res && res.error) {
         showToast(`Save failed: ${res.error}`, 'error')
         return
@@ -289,7 +477,7 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [refreshPapers, setBusy])
+  }, [refreshPapers, setBusy, persistPaper, reconcileBacklinks])
 
   // ─── Auto-save ───────────────────────────────────
   // Reads paperRef rather than closing over `paper`, for two reasons:
@@ -303,18 +491,16 @@ export default function App() {
       const current = paperRef.current
       // Respect the UI lock for autosaves too!
       if (current && !isBusyRef.current) {
-        try { await savePaper(current) } catch { /* keep the timer alive */ }
+        try { await persistPaper(current) } catch { /* keep the timer alive */ }
       }
     }, interval)
     return () => clearInterval(timer)
-  }, [settings.auto_save_interval_seconds])
+  }, [settings.auto_save_interval_seconds, persistPaper])
 
   // ─── Document links ──────────────────────────────
   // Resolve a link target and go there. Anchors are resolved against the
   // papers list (paperId is only a hint; a header moved to another document
   // still resolves). Dangling links are reported rather than failing silently.
-  const papersRef = useRef(papers)
-  papersRef.current = papers
   const handleOpenDocLink = useCallback(async (target) => {
     if (!target) return
     const resolved = resolveApTarget(target, papersRef.current)
@@ -327,14 +513,15 @@ export default function App() {
       return
     }
     const alreadyOpen = paperRef.current && paperRef.current.id === resolved.paperId
-    if (!alreadyOpen) await handleSelectPaper(resolved.paperId)
+    if (alreadyOpen) pushNav(resolved.paperId, resolved.lineIndex)
+    else await handleSelectPaper(resolved.paperId, { lineIndex: resolved.lineIndex })
     if (resolved.lineIndex >= 0) {
       // Give the editor a beat to mount the newly opened document.
       setTimeout(() => {
         blockEditorRef.current?.revealBlock?.(resolved.lineIndex)
       }, alreadyOpen ? 30 : 320)
     }
-  }, [])
+  }, [handleSelectPaper, pushNav])
 
   // ─── Creating a link ─────────────────────────────
   // BlockEditor hands us the highlighted phrase; we pick a target, make sure
@@ -348,11 +535,13 @@ export default function App() {
   const handleGoToLine = useCallback(async (paperId, lineIndex) => {
     if (!paperId) return
     const alreadyOpen = paperRef.current?.id === paperId
-    if (!alreadyOpen) await handleSelectPaper(paperId)
-    if (lineIndex != null && lineIndex >= 0) {
-      setTimeout(() => blockEditorRef.current?.revealBlock?.(lineIndex), alreadyOpen ? 30 : 320)
+    const line = lineIndex != null && lineIndex >= 0 ? lineIndex : -1
+    if (alreadyOpen) pushNav(paperId, line)
+    else await handleSelectPaper(paperId, { lineIndex: line })
+    if (line >= 0) {
+      setTimeout(() => blockEditorRef.current?.revealBlock?.(line), alreadyOpen ? 30 : 320)
     }
-  }, [handleSelectPaper])
+  }, [handleSelectPaper, pushNav])
 
   const handleRequestCreateLink = useCallback((req) => {
     if (req?.phrase) setLinkRequest(req)
@@ -510,17 +699,25 @@ export default function App() {
 
   // ─── Home ───────────────────────────────────────
   const handleGoHome = useCallback(async () => {
-    if (paper) await savePaper(paper)
+    if (paper) await persistPaper(await reconcileBacklinks(paper))
     setPaper(null)
     setActivePaperId(null)
-  }, [paper])
+  }, [paper, persistPaper, reconcileBacklinks])
+
+  // ─── Tabs ───────────────────────────────────────
+  const handleCloseTab = useCallback(async (id) => {
+    const neighbour = removeTab(id)
+    if (paperRef.current?.id !== id) return
+    if (neighbour) await handleSelectPaper(neighbour)
+    else await handleGoHome()
+  }, [removeTab, handleSelectPaper, handleGoHome])
 
   // ─── PDF Export ──────────────────────────────────
   const handleExportPdf = useCallback(async () => {
     if (!paper || isBusyRef.current) return
     setBusy(true)
     try {
-      await savePaper(paper)
+      await persistPaper(paper)
       // Build the printable document here rather than in Python, so the PDF
       // and the document view share one renderer and cannot drift apart.
       let html = ''
@@ -538,7 +735,7 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [paper, mediaDir, setBusy])
+  }, [paper, mediaDir, setBusy, persistPaper])
 
   // ─── Markdown Import/Export ─────────────────────
   const handleImportMarkdown = useCallback(async () => {
@@ -555,7 +752,7 @@ export default function App() {
     if (!paper || isBusyRef.current) return
     setBusy(true)
     try {
-      await savePaper(paper)
+      await persistPaper(paper)
       const result = await exportMarkdown(paper.id)
       if (result.cancelled) return
       if (result.ok) showToast('Markdown exported', 'success')
@@ -563,7 +760,7 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [paper, setBusy])
+  }, [paper, setBusy, persistPaper])
 
   // ─── Settings ────────────────────────────────────
   const handleSaveSettings = useCallback(async (newSettings) => {
@@ -583,6 +780,14 @@ export default function App() {
     setSettings(merged)
     Promise.resolve(saveSettingsBridge(merged)).catch(() => {})
   }, [])
+
+  // Remember which tabs are open across restarts. Skipped until the stored
+  // list has been restored, so an empty initial state never overwrites it.
+  useEffect(() => {
+    if (!tabsLoadedRef.current) return
+    if (JSON.stringify(settingsRef.current.open_tabs || []) === JSON.stringify(openTabs)) return
+    persistSidebarPrefs({ open_tabs: openTabs })
+  }, [openTabs, persistSidebarPrefs])
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -636,7 +841,7 @@ export default function App() {
   }
 
   const handleDeleteFolder = useCallback(async (folderPath) => {
-    if (paper) await savePaper(paper)
+    if (paper) await persistPaper(paper)
     const result = await deleteFolder(folderPath)
     if (result.error) {
       showToast(result.error, 'error')
@@ -650,10 +855,10 @@ export default function App() {
     await refreshFolders()
     await refreshPapers()
     showToast('Folder removed', 'success')
-  }, [paper, refreshFolders, refreshPapers])
+  }, [paper, refreshFolders, refreshPapers, persistPaper])
 
   const handleRenameFolder = useCallback(async (oldPath, newName) => {
-    if (paper) await savePaper(paper)
+    if (paper) await persistPaper(paper)
     const result = await renameFolder(oldPath, newName)
     if (result.error) {
       showToast(result.error, 'error')
@@ -668,10 +873,10 @@ export default function App() {
     await refreshFolders()
     await refreshPapers()
     showToast('Folder renamed', 'success')
-  }, [paper, refreshFolders, refreshPapers])
+  }, [paper, refreshFolders, refreshPapers, persistPaper])
 
   const handleMoveFolder = useCallback(async (folderPath, newParentPath) => {
-    if (paper) await savePaper(paper)
+    if (paper) await persistPaper(paper)
     const result = await moveFolder(folderPath, newParentPath)
     if (result.error) {
       showToast(result.error, 'error')
@@ -686,7 +891,7 @@ export default function App() {
     await refreshFolders()
     await refreshPapers()
     showToast('Folder moved', 'success')
-  }, [paper, refreshFolders, refreshPapers])
+  }, [paper, refreshFolders, refreshPapers, persistPaper])
 
   // Generate always saves first, then generates. The busy lock keeps the Save
   // button disabled for the whole operation.
@@ -695,7 +900,7 @@ export default function App() {
     if (!paper || isBusyRef.current) return
     setBusy(true, 'generating')
     try {
-      const saved = await savePaper(paper)
+      const saved = await persistPaper(await reconcileBacklinks(paper))
       if (saved && saved.error) {
         showToast(`Save failed, not generating: ${saved.error}`, 'error')
         return
@@ -714,7 +919,11 @@ export default function App() {
         return
       }
       const reloaded = await loadPaper(paper.id)
-      if (reloaded) setPaper(reloaded)
+      if (reloaded) {
+        setPaper(reloaded)
+        markSaved(reloaded)
+        linkBaselineRef.current = { id: reloaded.id, content: reloaded.content }
+      }
       const parts = [`${result.created} created`]
       if (result.updated) parts.push(`${result.updated} updated`)
       if (result.deleted) parts.push(`${result.deleted} removed`)
@@ -724,7 +933,7 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [refreshPapers, setBusy])
+  }, [refreshPapers, setBusy, persistPaper, reconcileBacklinks, markSaved])
 
   const handleGenerate = useCallback(async () => {
     const paper = paperRef.current
@@ -735,7 +944,7 @@ export default function App() {
       setBusy(true, 'generating')
       let hasConflict = false
       try {
-        await savePaper(paper)
+        await persistPaper(paper)
         const chk = await checkAnkiEditConflicts(paper.id)
         if (chk.error) {
           showToast(`Error: ${chk.error}`, 'error')
@@ -757,7 +966,7 @@ export default function App() {
     
     // If not 'ask', run policy directly (it has its own lock)
     await runGenerateWithPolicy(mode)
-  }, [settings.anki_edit_conflict, runGenerateWithPolicy, setBusy])
+  }, [settings.anki_edit_conflict, runGenerateWithPolicy, setBusy, persistPaper])
 
 
   const handleExtractFromSource = useCallback(async ({ mode, page, customText }) => {
@@ -870,10 +1079,22 @@ export default function App() {
       else if (e.ctrlKey && e.shiftKey && e.key === 'Z') { e.preventDefault(); handleRedo() }
       else if (e.ctrlKey && e.key === 'y') { e.preventDefault(); handleRedo() }
       else if (e.ctrlKey && e.key === '\\') { e.preventDefault(); toggleSidebar() }
+      else if (e.ctrlKey && e.key === 'Tab') { e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1) }
+      else if (e.ctrlKey && e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); goHistory(-1) }
+      else if (e.ctrlKey && e.altKey && e.key === 'ArrowRight') { e.preventDefault(); goHistory(1) }
+    }
+    // Mouse back / forward buttons, as in a browser.
+    const onMouse = (e) => {
+      if (e.button === 3) { e.preventDefault(); goHistory(-1) }
+      else if (e.button === 4) { e.preventDefault(); goHistory(1) }
     }
     window.addEventListener('keydown', handle)
-    return () => window.removeEventListener('keydown', handle)
-  }, [handleSave, handleGenerate, handleFormat, handleUndo, handleRedo, toggleSidebar])
+    window.addEventListener('mouseup', onMouse)
+    return () => {
+      window.removeEventListener('keydown', handle)
+      window.removeEventListener('mouseup', onMouse)
+    }
+  }, [handleSave, handleGenerate, handleFormat, handleUndo, handleRedo, toggleSidebar, cycleTab, goHistory])
 
   // ─── External API ───────────────────────────────
   useEffect(() => {
@@ -910,6 +1131,10 @@ export default function App() {
   }, [handleSelectPaper, papers])
 
   // ─── Render ──────────────────────────────────────
+  const saved = savedRef.current
+  const paperDirty = !!paper && saved.id === paper.id &&
+    (paper.content !== saved.content || paper.title !== saved.title)
+
   return (
     <div className="app">
       <Sidebar
@@ -940,6 +1165,19 @@ export default function App() {
       )}
 
       <div className="main-content">
+        <TabBar
+          tabs={openTabs}
+          papers={papers}
+          activePaperId={paper?.id ?? null}
+          activeTitle={paper?.title}
+          activeDirty={paperDirty}
+          canBack={navState.canBack}
+          canForward={navState.canForward}
+          onBack={() => goHistory(-1)}
+          onForward={() => goHistory(1)}
+          onSelect={handleSelectPaper}
+          onClose={handleCloseTab}
+        />
         {paper ? (
           <>
             <EditorHeader
