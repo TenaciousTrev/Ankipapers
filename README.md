@@ -65,7 +65,9 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **A collapsible sidebar.** `Ctrl+\` folds the folder tree down to an icon rail, or drag its edge to any width you like. Hovering the rail slides the tree out over the editor without reflowing your text, and both the width and the collapsed state persist.
 
-**Expand-all works everywhere.** `Ctrl+Shift+↓` unfolds a whole document on Windows, Linux, and macOS. It was previously `⇧⌘↓` and macOS-only.
+**Expand-all works everywhere, and now has a matching collapse-all.** `Ctrl+Shift+↓` unfolds a whole document on Windows, Linux, and macOS — it was previously `⇧⌘↓` and macOS-only. `Ctrl+Shift+↑` (`⇧⌘↑` on a Mac) is the mirror image: fold everything back to the outline the document opens with.
+
+**Two editing bugs fixed.** Inserting an image on an indented line no longer knocks that line back to the left margin — the image lands at the cursor and the line keeps its place, the same as every other formatting button. Pasting a long block of outside text no longer collapses unrelated sections elsewhere in the document; a paste is an edit, not a new document, so it now leaves your folded and unfolded sections exactly as you left them.
 
 ---
 
@@ -428,6 +430,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+G` | Generate cards |
 | `Ctrl+Shift+E` | Toggle Editor / Source view |
 | `Ctrl+Shift+↓` | Unfold every collapsed section in the document |
+| `Ctrl+Shift+↑` | Fold every section back up to the document's default outline |
 | `Tab` / `Shift+Tab` | Indent / outdent the line and its children |
 | `Enter` | Split the line at the cursor |
 | `Backspace` at line start | Outdent, then merge into the line above |
@@ -441,7 +444,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+,` | Settings |
 | `[[` | Autocomplete a link to another paper by title |
 
-> The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included. The two pasting shortcuts are the exception: they follow the system paste key, so on a Mac they are `⌘V` and `⇧⌘V`. `Ctrl+Shift+↓` also accepts `⇧⌘↓` there.
+> The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included. The two pasting shortcuts are the exception: they follow the system paste key, so on a Mac they are `⌘V` and `⇧⌘V`. `Ctrl+Shift+↓` and `Ctrl+Shift+↑` also accept `⇧⌘↓` and `⇧⌘↑` there.
 
 ---
 

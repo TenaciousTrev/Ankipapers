@@ -768,29 +768,20 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
 
   const [collapsedKeys, setCollapsedKeys] = useState(() => computeInitialCollapsed(content))
 
-  // When the document itself is swapped in (not just edited), reset collapse
-  // state so the new document also opens collapsed-by-default.
-  const prevContentRef = useRef(content)
-  useEffect(() => {
-    const prev = prevContentRef.current
-    // Heuristic: a "new document" swap produces a large diff.  Edits are
-    // character-level; a full document replacement typically changes ≥50 chars
-    // in the first 200 characters OR the line-count changes significantly.
-    const prevHead = prev.slice(0, 200)
-    const nextHead = content.slice(0, 200)
-    const prevLines = prev.split('\n').length
-    const nextLines = content.split('\n').length
-    // Ignore leading whitespace changes (like Tab indentation) to prevent false positives
-    const prevHeadTrimmed = prevHead.replace(/^[ \t]+/gm, '')
-    const nextHeadTrimmed = nextHead.replace(/^[ \t]+/gm, '')
-    
-    // Require a significant structural change (≥50 chars or ≥15 lines) to trigger a full collapse reset
-    const isDocumentSwap = (prevHeadTrimmed !== nextHeadTrimmed && Math.abs(prev.length - content.length) >= 50) || Math.abs(prevLines - nextLines) >= 15
-    if (isDocumentSwap) {
-      setCollapsedKeys(computeInitialCollapsed(content))
-    }
-    prevContentRef.current = content
-  }, [content, computeInitialCollapsed])
+  // Collapse-by-default is applied ONCE, by the useState initialiser above.
+  //
+  // There is deliberately no effect here that re-applies it when `content`
+  // changes. App renders this component with key={paper.id}, so opening a
+  // different paper unmounts and remounts it and the initialiser runs again
+  // against the new document -- which is the only moment collapse-by-default
+  // should ever be applied. Every change that keeps the same paper open is an
+  // edit (typing, undo/redo, pasting, the anchors Generate writes back), and an
+  // edit must never re-fold sections the reader has opened.
+  //
+  // An earlier version tried to spot a document swap by measuring how much
+  // `content` had changed, treating a jump of 15+ lines as a new document.
+  // Pasting anything long from outside -- anywhere in the paper, even the last
+  // line -- cleared that bar and folded the whole document up mid-edit.
 
   const [lasso, setLasso] = useState(null)
   const [zettelSearch, setZettelSearch] = useState(null)
@@ -2213,7 +2204,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
           const after = line.slice(selEnd)
           line = before + extra + after
           const pos = selStart + extra.length
-          lines[focusedIndex] = storeLine(line)
+          // `line` was de-indented at the top of applyFormat, so the leading
+          // whitespace has to go back on before it is stored -- otherwise the
+          // line snaps to the left margin. The clipboard-paste path in
+          // handlePaste does the same thing. `pos` is deliberately left alone:
+          // the block's textarea holds the de-indented text, so the caret
+          // offset is already correct against it.
+          lines[focusedIndex] = storeLine(tableHead ? line : leadingSpaces + line)
           onChange(lines.join('\n'))
           scheduleRestoreSelection(activeBlockInputRef, pos, pos)
         }
@@ -2221,8 +2218,12 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       default: break
     }
 
+    // Every case that reaches here edited the de-indented `line`, so the
+    // leading whitespace is restored once for all of them. The card actions
+    // replace the line wholesale and still keep their indentation, staying
+    // where the cursor was.
     if (tableHead) lines.splice(focusedTable.start, focusedTable.end - focusedTable.start + 1, ...line.split('\n'))
-    else lines[focusedIndex] = storeLine(line)
+    else lines[focusedIndex] = storeLine(leadingSpaces + line)
     onChange(lines.join('\n'))
     scheduleRestoreSelection(activeBlockInputRef, line.length, line.length)
   }, [content, onChange, focusedIndex])

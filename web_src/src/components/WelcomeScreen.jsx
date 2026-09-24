@@ -416,6 +416,11 @@ export default function WelcomeScreen({
                   section folded up so a long one reads as an outline, and this opens
                   all of it in one press when you want the full text back.
                 </Ref>
+                <Ref code={IS_MAC ? 'Ctrl+Shift+↑ or ⇧⌘↑' : 'Ctrl+Shift+↑'} tone="key">
+                  The mirror image: fold every section back up to the same outline
+                  the document opens with. Handy after unfolding everything to skim,
+                  when you want to collapse it again without reopening the paper.
+                </Ref>
                 <Ref code={PASTE_KEY} tone="key">
                   Paste as it was copied. Text that came with line breaks in it
                   arrives as separate lines, one block each, below whichever block
