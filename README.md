@@ -314,7 +314,7 @@ The panel's **Graph** button opens the link graph:
 - **Documents** mode draws one node per connected paper; several links between the same pair merge into one thicker edge.
 - **Headers** mode promotes each linked-to heading into its own node, tethered to its document, so you can see which section is actually being cited. Headings nobody links to stay out.
 
-Hover a node to dim everything unrelated, type in **Find…** to highlight matches, drag nodes to rearrange, scroll to zoom, drag the background to pan, and click a node to open it. A counter along the bottom tallies links whose destination no longer exists, so you can find and mend them.
+Hover a node to dim everything unrelated, type in **Find…** to highlight matches, drag nodes to rearrange, scroll to zoom, drag the background to pan, and double-click a node to open it. A counter along the bottom tallies links whose destination no longer exists, so you can find and mend them.
 
 Both views are derived from the markdown itself — there is no separate link database that can drift out of sync with your text.
 
