@@ -2,6 +2,9 @@ import React, { useState } from 'react'
 import { Settings as SettingsIcon, Save, Sun, Moon, HardDrive } from 'lucide-react'
 import { exportPapersToDisk } from '../bridge'
 
+const IS_MAC = typeof navigator !== 'undefined' &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
+
 export default function Settings({ settings, onSave, onClose }) {
   const [local, setLocal] = useState({ ...settings })
   const update = (key, value) => setLocal(prev => ({ ...prev, [key]: value }))
@@ -71,6 +74,22 @@ export default function Settings({ settings, onSave, onClose }) {
             <span className="toggle-slider" />
             <span className="toggle-text">{local.show_card_indicators !== false ? 'Enabled' : 'Disabled'}</span>
           </label>
+
+          {IS_MAC && (
+            <>
+              <label className="settings-label">macOS Text Replacements</label>
+              <p className="settings-field-hint">
+                Type a shortcut from System Settings → Keyboard → Text Replacements, then Space
+                or Return, and it becomes its phrase. Control+Z brings the shortcut back.
+              </p>
+              <label className="settings-toggle">
+                <input type="checkbox" checked={local.text_replacements_enabled !== false}
+                  onChange={e => update('text_replacements_enabled', e.target.checked)} />
+                <span className="toggle-slider" />
+                <span className="toggle-text">{local.text_replacements_enabled !== false ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </>
+          )}
 
           <label className="settings-label">When Anki note differs from paper</label>
           <p className="settings-field-hint">

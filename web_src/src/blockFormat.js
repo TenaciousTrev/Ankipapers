@@ -73,6 +73,59 @@ export function toggleTagSegment(line, selStart, selEnd, tag, emptyPlaceholder =
   }
 }
 
+// ─── macOS Text Replacements ────────────────────────
+// macOS applies Text Replacements only inside apps built on Apple's own text
+// views; Anki's web engine never asks for the list, so the editor does it.
+// The list arrives from the Python side (gui/text_replacements.py).
+
+/** Turn the bridge's [{shortcut, phrase}] list into a lookup Map. */
+export function buildReplacementMap(items) {
+  const m = new Map()
+  for (const it of items || []) {
+    if (it && it.shortcut && typeof it.phrase === 'string') m.set(it.shortcut, it.phrase)
+  }
+  return m
+}
+
+/**
+ * The replacement to apply when Space or Return is pressed at `caret`, or
+ * null. The shortcut is the run of non-space characters just before the
+ * caret, back to the previous space or the start of the line, and must equal
+ * a shortcut exactly -- so ",sig" fires but "word,sig" does not, and a
+ * shortcut that is the start of a longer one never fires early. Never fires
+ * inside inline code (`...`) or inline math ($...$, $$...$$).
+ * Returns { start, end, shortcut, phrase }, positions within `text`.
+ */
+export function findTextReplacement(text, caret, replacements) {
+  if (!replacements || !replacements.size || !(caret > 0)) return null
+  const m = String(text).slice(0, caret).match(/(?:^|\s)(\S+)$/)
+  if (!m) return null
+  const shortcut = m[1]
+  const phrase = replacements.get(shortcut)
+  if (phrase == null) return null
+  const start = caret - shortcut.length
+  // An odd number of delimiters before the shortcut means it sits inside an
+  // unclosed span: inline code, then block math, then inline math.
+  const pre = String(text).slice(0, start)
+  const odd = (re, str = pre) => ((str.match(re) || []).length % 2) === 1
+  if (odd(/`/g)) return null
+  if (odd(/\$\$/g)) return null
+  if (odd(/(?<!\\)\$/g, pre.replace(/\$\$/g, ''))) return null
+  return { start, end: caret, shortcut, phrase }
+}
+
+/** True when line `index` sits inside a ``` fenced code block (or is a fence). */
+export function isInsideCodeFence(lines, index) {
+  let open = false
+  for (let i = 0; i <= index && i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) {
+      if (i === index) return true
+      open = !open
+    }
+  }
+  return open
+}
+
 // ─── Block type detection ───────────────────────────
 export function getBlockType(line) {
   // The size marker lives past the header row's final pipe, so it has to come

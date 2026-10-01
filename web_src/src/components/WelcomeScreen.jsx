@@ -400,6 +400,14 @@ export default function WelcomeScreen({
                   strikethrough in the toolbar do the same.
                 </Ref>
                 <Ref code="Ctrl+Z / Ctrl+Shift+Z" tone="key">Undo and redo.</Ref>
+                {IS_MAC && (
+                  <Ref code="Shortcut + Space" tone="key">
+                    Your macOS Text Replacements work here too. Type a shortcut from
+                    System Settings → Keyboard → Text Replacements, then Space or
+                    Return, and it becomes its phrase. Ctrl+Z brings the shortcut
+                    back. Turn it off in Settings.
+                  </Ref>
+                )}
                 <Ref code="Ctrl+," tone="key">Open Settings.</Ref>
                 <Ref code="Ctrl+Tab / Ctrl+Shift+Tab" tone="key">
                   Step to the next or previous tab.

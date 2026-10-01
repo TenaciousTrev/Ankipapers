@@ -202,6 +202,10 @@ export async function exportPapersToDisk(mode = 'preview') {
 }
 
 // Settings
+/** The user's macOS Text Replacements: { items: [{ shortcut, phrase }] }. */
+export async function getTextReplacements() {
+  return call('get_text_replacements');
+}
 export async function getSettings() {
   return call('get_settings');
 }
@@ -312,6 +316,12 @@ function createMockBridge() {
       anki_edit_conflict: 'ask',
     }),
     save_settings: () => ({ ok: true }),
+    get_text_replacements: () => ({ items: [
+      { shortcut: ',sig', phrase: 'Signed, Trevor' },
+      { shortcut: ',ab', phrase: 'abbreviation' },
+      { shortcut: ',abc', phrase: 'alphabet' },
+      { shortcut: ',2l', phrase: 'line one\nline two' },
+    ] }),
     open_url: ({ url }) => { console.log('Mock: Open URL', url); return { ok: true }; },
     pick_pdf_file: () => ({ cancelled: true }),
     pdf_viewer_url: () => ({ error: 'not implemented' }),

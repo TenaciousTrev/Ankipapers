@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useImperativeHandle, forwardRef, useCallback,
 import { ExternalLink } from 'lucide-react'
 import { openInBrowser } from '../bridge'
 import { getLineIndexAtCursor, getLineTextAtIndex, resolveNoteIdForLine } from '../crossLink'
-import { BASIC_CARD_RE, toggleTagSegment } from '../blockFormat'
+import { BASIC_CARD_RE, toggleTagSegment, findTextReplacement, isInsideCodeFence } from '../blockFormat'
 
 // ─── Card Counting ──────────────────────────────────
 function countCards(text) {
@@ -284,7 +284,7 @@ function highlightMarkdown(text) {
 }
 
 // ─── Component ──────────────────────────────────────
-const SourceEditor = forwardRef(function SourceEditor({ content, onChange, onCardCountChange, settings, cardRefs }, ref) {
+const SourceEditor = forwardRef(function SourceEditor({ content, onChange, onCardCountChange, settings, cardRefs, textReplacements = null, onHistoryCheckpoint }, ref) {
   const textareaRef = useRef(null)
   const overlayRef = useRef(null)
   const countTimerRef = useRef(null)
@@ -348,6 +348,34 @@ const SourceEditor = forwardRef(function SourceEditor({ content, onChange, onCar
   useEffect(() => { bumpCursor() }, [content, cardRefs, bumpCursor])
 
   const handleKeyDown = useCallback((e) => {
+    // macOS Text Replacements: the same rules as the block editor (see
+    // findTextReplacement), applied to the line the cursor is on.
+    const isSpaceKey = e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey
+    const isReturnKey = e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+    const ta = textareaRef.current
+    if ((isSpaceKey || isReturnKey) && textReplacements && ta && !e.nativeEvent?.isComposing
+        && ta.selectionStart === ta.selectionEnd) {
+      const caret = ta.selectionStart
+      const value = ta.value
+      const lineStart = value.lastIndexOf('\n', caret - 1) + 1
+      const lineEnd = value.indexOf('\n', caret)
+      const lineText = value.slice(lineStart, lineEnd === -1 ? value.length : lineEnd)
+      const lineIndex = value.slice(0, lineStart).split('\n').length - 1
+      const hit = isInsideCodeFence(value.split('\n'), lineIndex)
+        ? null
+        : findTextReplacement(lineText, caret - lineStart, textReplacements)
+      if (hit) {
+        e.preventDefault()
+        onHistoryCheckpoint?.()   // first Ctrl+Z brings the shortcut back
+        const at = lineStart + hit.start
+        const insert = hit.phrase + (isSpaceKey ? ' ' : '\n')
+        ta.value = value.slice(0, at) + insert + value.slice(caret)
+        ta.selectionStart = ta.selectionEnd = at + insert.length
+        ta.dispatchEvent(new Event('input', { bubbles: true }))
+        bumpCursor()
+        return
+      }
+    }
     if (e.key === 'Tab') {
       e.preventDefault()
       const ta = textareaRef.current, start = ta.selectionStart, end = ta.selectionEnd
@@ -356,7 +384,7 @@ const SourceEditor = forwardRef(function SourceEditor({ content, onChange, onCar
       ta.dispatchEvent(new Event('input', { bubbles: true }))
       bumpCursor()
     }
-  }, [bumpCursor])
+  }, [bumpCursor, textReplacements, onHistoryCheckpoint])
 
   const fontSize = settings?.font_size || 14
   const fontFamily = settings?.font_family || "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace"

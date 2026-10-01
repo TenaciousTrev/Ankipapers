@@ -6,5 +6,6 @@
     "editor_theme": "dark",
     "show_card_indicators": true,
     "reversible_separator": "<>",
-    "basic_separator": ">>"
+    "basic_separator": ">>",
+    "text_replacements_enabled": true
 }

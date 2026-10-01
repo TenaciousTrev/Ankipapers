@@ -41,6 +41,8 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Your macOS Text Replacements work in the editor (Mac only).** The shortcuts you've set up in System Settings → Keyboard → Text Replacements now expand in Anki Papers: type a shortcut, then Space or Return, and it becomes its phrase. Control+Z brings the shortcut back. It needs a whole word, so `,sig` expands but `word,sig` doesn't, and it never fires inside code or math. Edits you make in System Settings are picked up when you return to the window. macOS doesn't do this on its own here, because Anki's web engine never asks macOS for the list. If you also use a text expander such as aText, keep each shortcut in only one of the two so they don't both fire. It's on by default, and Settings can turn it off.
+
 **Subscript and superscript.** Highlight text and press `Ctrl+5` for subscript or `Ctrl+6` for superscript (the Control key on a Mac too), or use the two new toolbar buttons beside strikethrough. They work like Word: press the same one again to remove it, or the other one to swap. With nothing highlighted, you get a placeholder to type over. They are saved as ordinary `<sub>` and `<sup>` tags, so they show up on your Anki cards, in the PDF, and in other markdown apps such as Obsidian. A card whose question ends right against the separator, like `CO<sub>2</sub>>> a gas`, now splits in the right place.
 
 **Tabs.** Every paper you open gets a tab above the editor, so you can keep several papers at hand and switch between them with a click. Following a link to another paper opens it in a tab right next to the one you came from, and the paper you left stays open. Close a tab with its × or a middle-click; cycle with `Ctrl+Tab` and `Ctrl+Shift+Tab`. Tabs have a fixed width, so five fit across a full-screen window and the strip scrolls sideways beyond that. Open tabs are remembered between sessions.
@@ -463,6 +465,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `editor_theme` | `dark`, `light`, or `auto` |
 | `show_card_indicators` | Card markers in the left margin |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
+| `text_replacements_enabled` | Mac only: apply your macOS Text Replacements as you type (on by default) |
 | Papers on disk | Preview / Write, for the one-time migration above |
 
 ---
@@ -516,6 +519,7 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | `web_src/src/components/GraphView.jsx` | Link graph |
 | `user_files/` | Local cache/fallback only (gitignored) |
 | `tests/` | Python tests — run `python3 -m unittest discover -s tests` |
+| `gui/text_replacements.py` | Reads your macOS Text Replacements for the editor |
 | `_build.ps1` / `build_ankiaddon.bat` | Pack `Ankipapers.ankiaddon` |
 
 ---

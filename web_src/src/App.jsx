@@ -4,7 +4,7 @@ import {
   generateCards, checkAnkiEditConflicts, getDecks, createFolder, getFolders, movePaperToFolder,
   deleteFolder, renameFolder, moveFolder,
   pickImage, pasteImage, exportPdf, exportMarkdown, importMarkdown, getSettings, saveSettings as saveSettingsBridge,
-  getMediaDir, openInBrowser, moveCardsToDeck, extractPdfText, extractWebText, saveSourceLink, loadSourceLink, openSourceAtLocation,
+  getMediaDir, getTextReplacements, openInBrowser, moveCardsToDeck, extractPdfText, extractWebText, saveSourceLink, loadSourceLink, openSourceAtLocation,
 } from './bridge'
 import Sidebar from './components/Sidebar'
 import EditorHeader from './components/EditorHeader'
@@ -16,6 +16,7 @@ import BottomToolbar from './components/BottomToolbar'
 import WelcomeScreen from './components/WelcomeScreen'
 import { resolveApTarget, parseApTarget, ensureApBlockId, findHeaderRenames, retitleLinks } from './docLinks'
 import { renderPrintHtml } from './printDocument'
+import { buildReplacementMap } from './blockFormat'
 import LinkPicker from './components/LinkPicker'
 import LinksPanel from './components/LinksPanel'
 import GraphView from './components/GraphView'
@@ -29,6 +30,9 @@ import SourcePanel from './components/SourcePanel'
 // Sidebar sizing. SNAP is the width below which a drag stops resizing and
 // collapses to the icon rail instead, so you can put the tree away with the
 // same gesture you use to narrow it.
+const IS_MAC = typeof navigator !== 'undefined' &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
+
 const SIDEBAR_DEFAULT_WIDTH = 260
 const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
@@ -402,6 +406,38 @@ export default function App() {
     if (historyRef.current.length > 100) historyRef.current.shift()
     historyIndexRef.current = historyRef.current.length - 1
   }, [])
+
+  // Called by an editor just before it swaps a text-replacement shortcut for
+  // its phrase, so the first Ctrl+Z brings the typed shortcut back -- the way
+  // macOS undoes a replacement. Records the current text right away instead of
+  // waiting for the 400ms typing debounce, which would otherwise fold the
+  // shortcut and its replacement into a single undo step.
+  const handleHistoryCheckpoint = useCallback(() => {
+    const current = paperRef.current?.content
+    if (current == null) return
+    clearTimeout(historyTimerRef.current)
+    if (historyRef.current[historyIndexRef.current] !== current) pushHistory(current)
+  }, [pushHistory])
+
+  // ─── macOS Text Replacements ─────────────────────
+  // On by default on a Mac (Settings can turn it off). Re-read whenever the
+  // window comes back to the front, so edits made in System Settings show up
+  // without restarting. See gui/text_replacements.py for why this is needed.
+  const textReplacementsOn = IS_MAC && settings.text_replacements_enabled !== false
+  const [textReplacements, setTextReplacements] = useState(null)
+  useEffect(() => {
+    if (!textReplacementsOn) { setTextReplacements(null); return }
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await getTextReplacements()
+        if (alive) setTextReplacements(buildReplacementMap(res?.items))
+      } catch { /* keep whatever list we already had */ }
+    }
+    load()
+    window.addEventListener('focus', load)
+    return () => { alive = false; window.removeEventListener('focus', load) }
+  }, [textReplacementsOn])
 
   // `paper` is replaced with a new object on every keystroke, so depending on
   // it here gave this callback a new identity every keystroke. That flowed
@@ -1214,6 +1250,8 @@ export default function App() {
                 <SourceEditor
                   key={paper.id}
                   ref={editorRef}
+                  textReplacements={textReplacements}
+                  onHistoryCheckpoint={handleHistoryCheckpoint}
                   content={paper.content}
                   onChange={handleContentChange}
                   onCardCountChange={handleCardCountChange}
@@ -1224,6 +1262,8 @@ export default function App() {
                 <BlockEditor
                   key={paper.id}
                   ref={blockEditorRef}
+                  textReplacements={textReplacements}
+                  onHistoryCheckpoint={handleHistoryCheckpoint}
                   content={paper.content}
                   onChange={handleContentChange}
                   onCardCountChange={handleCardCountChange}

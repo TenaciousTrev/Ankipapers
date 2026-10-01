@@ -8,3 +8,4 @@
 - **show_line_numbers**: Show line numbers in the editor.
 - **basic_card_separator**: The separator syntax for basic cards (default: ">>").
 - **cloze_syntax**: Cloze syntax style - "curly_braces" uses {{text}}.
+- **text_replacements_enabled**: macOS only. Apply your macOS Text Replacements (System Settings → Keyboard → Text Replacements) as you type in the editor — type a shortcut, then Space or Return. On by default; Anki's web engine doesn't do this on its own.

@@ -14,6 +14,8 @@ import {
   TABLE_SIZE_DEFAULT,
   BASIC_CARD_RE,
   toggleTagSegment,
+  findTextReplacement,
+  isInsideCodeFence,
 } from '../blockFormat'
 
 const TABLE_SIZE_LABELS = { s: '40%', m: '60%', l: '80%', full: 'full width' }
@@ -735,7 +737,7 @@ function getBlockRangeAndIndent(lines, idx) {
 }
 
 // ─── Block Editor ───────────────────────────────────
-const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [] }, ref) {
+const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [], textReplacements = null, onHistoryCheckpoint }, ref) {
   const [focusedIndex, setFocusedIndex] = useState(null)
   const [selectedIndices, setSelectedIndices] = useState(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState(null)
@@ -1014,6 +1016,10 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   focusedIndexRef.current = focusedIndex
   const selectionAnchorRef = useRef(selectionAnchor)
   selectionAnchorRef.current = selectionAnchor
+  const textReplacementsRef = useRef(textReplacements)
+  textReplacementsRef.current = textReplacements
+  const onHistoryCheckpointRef = useRef(onHistoryCheckpoint)
+  onHistoryCheckpointRef.current = onHistoryCheckpoint
 
   const handleZettelSearch = useCallback((blockId, query) => {
     const index = idToIndexRef.current.get(blockId)
@@ -1186,6 +1192,49 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     // in the table's own coordinates, before the generic paths see them.
     const tableBounds = findTableBounds(lines, index)
     const inTable = !!tableBounds && tableBounds.start === index
+
+    // ── macOS Text Replacements ──────────────────────
+    // Space or Return right after a shortcut swaps in its phrase, as macOS
+    // does in its own apps. Plain keys only (Shift is fine with Space), no
+    // input-method composition, nothing selected, and never in a table or a
+    // fenced code block. Rules for what counts as a shortcut: findTextReplacement.
+    const isSpaceKey = e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey
+    const isReturnKey = e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+    const replacements = textReplacementsRef.current
+    if ((isSpaceKey || isReturnKey) && replacements && !inTable && !e.nativeEvent?.isComposing
+        && e.target.selectionStart === e.target.selectionEnd && !isInsideCodeFence(lines, index)) {
+      const hit = findTextReplacement(actualText, e.target.selectionStart, replacements)
+      if (hit) {
+        e.preventDefault()
+        // Record the text with the shortcut still in it, so the first Ctrl+Z
+        // brings the shortcut back.
+        onHistoryCheckpointRef.current?.()
+        const before = actualText.slice(0, hit.start)
+        const after = actualText.slice(hit.end)
+        // A phrase with line breaks becomes several lines, like a paste, each
+        // at this line's indentation.
+        const phraseLines = hit.phrase.split('\n')
+        const last = phraseLines.length - 1
+        const out = phraseLines.map((pl, i) => leadingSpaces + (i === 0 ? before : '') + pl)
+        if (isSpaceKey) {
+          out[last] += ' ' + after
+          out[0] += currentApSuf   // the hidden anchor stays on the block's own line
+          lines.splice(index, 1, ...out)
+          onChange(lines.join('\n'))
+          const caret = (last === 0 ? before.length : 0) + phraseLines[last].length + 1
+          if (last === 0) scheduleRestoreSelection(activeBlockInputRef, caret, caret)
+          else setTimeout(() => { setFocusedIndex(index + last); scheduleRestoreSelection(activeBlockInputRef, caret, caret) }, 10)
+        } else {
+          // Return: the phrase, then the editor's usual split -- whatever
+          // followed the cursor moves onto a new line below.
+          out[0] = currentApSuf ? out[0].replace(/\s+$/, '') + currentApSuf : out[0]
+          lines.splice(index, 1, ...out, leadingSpaces + after)
+          onChange(lines.join('\n'))
+          setTimeout(() => setFocusedIndex(index + last + 1), 10)
+        }
+        return
+      }
+    }
 
     if (inTable && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
