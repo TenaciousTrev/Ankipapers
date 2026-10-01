@@ -1069,6 +1069,22 @@ export default function App() {
         return
       }
 
+      // Subscript / superscript: Control+5 and Control+6 -- the Control key on
+      // every platform, macOS included, like the rest of the app's shortcuts.
+      // (Shift+Cmd+- / Shift+Cmd+= were tried first and never reached the page
+      // inside Anki on macOS.) Matched on e.key like the shortcuts that do
+      // work, with e.code as a fallback for layouts where the digit row needs
+      // Shift.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const sub = e.key === '5' || e.code === 'Digit5'
+        const sup = e.key === '6' || e.code === 'Digit6'
+        if (sub || sup) {
+          e.preventDefault()
+          handleFormat(sub ? 'subscript' : 'superscript')
+          return
+        }
+      }
+
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); handleSave() }
       else if (e.ctrlKey && e.key === 'g') { e.preventDefault(); handleGenerate() }
       else if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) { e.preventDefault(); setViewMode(v => v === 'blocks' ? 'source' : 'blocks') }

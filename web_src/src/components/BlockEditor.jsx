@@ -12,6 +12,8 @@ import {
   withTableSize,
   TABLE_SIZES,
   TABLE_SIZE_DEFAULT,
+  BASIC_CARD_RE,
+  toggleTagSegment,
 } from '../blockFormat'
 
 const TABLE_SIZE_LABELS = { s: '40%', m: '60%', l: '80%', full: 'full width' }
@@ -326,7 +328,7 @@ function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId }) 
 
   if (type === 'basic') {
     const content = t.replace(/^\s*[-*]\s+/, '')
-    const m = content.match(/^(.+?)\s*>>\s*(.+)$/)
+    const m = content.match(BASIC_CARD_RE)
     if (m) return (
       <div className="block-card block-card-basic">
         <div className="block-card-type">
@@ -2052,6 +2054,20 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         return
       case 'math': {
         const r = wrapLineSegment(line, selStart, selEnd, '$', '$', 'x^2')
+        const newLine = tableHead ? r.line : leadingSpaces + r.line
+        if (tableHead) lines.splice(focusedTable.start, focusedTable.end - focusedTable.start + 1, ...newLine.split('\n'))
+        else lines[focusedIndex] = storeLine(newLine)
+        onChange(lines.join('\n'))
+        scheduleRestoreSelection(activeBlockInputRef, r.selStart, r.selEnd)
+        return
+      }
+      // Toggles like Word: wraps the selection, removes the tag if it is
+      // already there, and swaps sub <-> sup. Goes through the same
+      // leadingSpaces + storeLine path as math, so indentation and the hidden
+      // anchor survive.
+      case 'subscript':
+      case 'superscript': {
+        const r = toggleTagSegment(line, selStart, selEnd, action === 'subscript' ? 'sub' : 'sup')
         const newLine = tableHead ? r.line : leadingSpaces + r.line
         if (tableHead) lines.splice(focusedTable.start, focusedTable.end - focusedTable.start + 1, ...newLine.split('\n'))
         else lines[focusedIndex] = storeLine(newLine)

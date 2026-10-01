@@ -2196,3 +2196,6 @@ textarea.block-input.block-input-textarea {
 [data-theme="light"] .tab-bar { background: #eeeef2; border-bottom-color: #d8d8e0; }
 [data-theme="light"] .tab, [data-theme="light"] .tab-nav { border-right-color: #d8d8e0; }
 [data-theme="light"] .tab.active { background: #ffffff; color: #1a1a2e; }
+
+/* Subscript / superscript: line-height 0 stops them pushing the line apart. */
+sub, sup { line-height: 0; }

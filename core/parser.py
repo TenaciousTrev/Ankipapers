@@ -55,7 +55,11 @@ class ParsedLine:
 # ─── Regex Patterns ────────────────────────────────────────────
 
 # Basic card: "Question >> Answer"
-BASIC_CARD_PATTERN = re.compile(r"^(.*?)\s*>>\s*(.+)$")
+# The (?<!</su[bp]) guard: a subscript or superscript closing tag written flush
+# against the separator ("CO<sub>2</sub>>> gas") puts a ">" right before it, and
+# without the guard the split would land inside the tag. Mirrors BASIC_CARD_RE
+# in web_src/src/blockFormat.js -- the two have to agree.
+BASIC_CARD_PATTERN = re.compile(r"^(.*?)(?<!</su[bp])\s*>>\s*(.+)$")
 
 # Reversible card: "Front <> Back"
 REVERSIBLE_CARD_PATTERN = re.compile(r"^(.*?)\s*<>\s*(.+)$")
@@ -80,6 +84,42 @@ BLOCK_ID_SUFFIX = re.compile(
 
 # Inline tags: [[tag]]
 INLINE_TAG_PATTERN = re.compile(r"\[\[(.*?)\]\]")
+
+
+# ─── Inline markdown ────────────────────────────────────────────────────────
+#
+# These live here rather than in card_manager because breadcrumbs need them
+# too, and card_manager already imports from this module — the reverse would
+# be circular. card_manager imports them back out, so there is still exactly
+# one definition of what a bold or a code span turns into.
+
+IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+# Document links: [phrase](ap://paperId#blockId). Rendered as styled text —
+# they are not clickable inside Anki, but the phrase must never show up as raw
+# markdown on a card.
+AP_LINK_RE = re.compile(r"(?<!!)\[([^\]\[]+)\]\(ap://([^)\s]+)\)")
+BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+STRIKE_RE = re.compile(r"~~(.+?)~~")
+CODE_RE = re.compile(r"`([^`]+?)`")
+MATH_BLOCK_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
+MATH_INLINE_RE = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)")
+
+
+def md_inline_to_html(text: str) -> str:
+    """Convert lightweight inline markdown to HTML."""
+    if not text:
+        return text
+    r = text
+    r = MATH_BLOCK_RE.sub(r"\\[\1\\]", r)
+    r = MATH_INLINE_RE.sub(r"\\(\1\\)", r)
+    r = IMG_RE.sub(r'<img src="\2">', r)
+    r = AP_LINK_RE.sub(r'<span class="ap-link">\1</span>', r)
+    r = BOLD_RE.sub(r"<b>\1</b>", r)
+    r = ITALIC_RE.sub(r"<i>\1</i>", r)
+    r = STRIKE_RE.sub(r"<s>\1</s>", r)
+    r = CODE_RE.sub(r"<code>\1</code>", r)
+    return r
 
 # Supplement marker at the start of a line: "&& background text".
 # The space after && is optional — "&&text" was previously matched by nothing
@@ -413,6 +453,53 @@ def extract_cards(content: str) -> List[ParsedCard]:
             
     return cards
 
+# Card syntax that should read as an arrow inside a breadcrumb: a parent line
+# which is itself a card shows as "Question → Answer", the way the editor
+# draws it.
+_CRUMB_ARROWS = ((">>", "\u2192"), ("<>", "\u21D4"))
+_CODE_SPAN_SPLIT = re.compile(r"(`[^`]+`)")
+
+# What separates one block crumb from the next on a card. Emitted here rather
+# than joining with " > " and having card_manager rewrite that to <br>: any
+# crumb whose own text contained " > " (say "use when x > y") had that turned
+# into a line break too.
+BREADCRUMB_SEP = "<br>"
+
+
+def render_breadcrumb_crumb(text: str) -> str:
+    """One breadcrumb crumb, rendered the way the card should show it.
+
+    Two jobs, both of which used to be done badly somewhere else.
+
+    Card syntax becomes arrows. That was a chain of str.replace() applied to
+    the finished HTML in card_manager, so it rewrote every ">>", " > " and "<>"
+    it could find anywhere in the string — inside markup, inside attributes and
+    inside code.
+
+    Inline markdown becomes HTML. That was four regexes that threw the
+    formatting away — bold and italic markers were deleted and the text kept —
+    and backticks were not in the list at all, so `code` reached the card with
+    its backticks intact.
+
+    Code spans are held out of the arrow substitution: between backticks, ">>"
+    is a shift operator and "<>" is not-equal, neither of them a card.
+
+    Underscores are deliberately not treated as emphasis, here or on a card
+    body: "__init__" and "my_var" are far more common in these notes than
+    _emphasis_, and italicising them would corrupt the code they appear in.
+    """
+    if not text:
+        return text
+    parts = _CODE_SPAN_SPLIT.split(text)
+    for i, part in enumerate(parts):
+        if len(part) > 1 and part.startswith("`") and part.endswith("`"):
+            continue
+        for src, dst in _CRUMB_ARROWS:
+            part = part.replace(src, dst)
+        parts[i] = part
+    return md_inline_to_html("".join(parts))
+
+
 def _strip_breadcrumb_tags(text: str) -> str:
     """Remove [[tags]] from a line that is being shown as a breadcrumb.
 
@@ -507,11 +594,10 @@ def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
             # Clean up any remaining empty placeholder
             clean_text = re.sub(r'\[Image:\s*\]', '[Image]', clean_text)
 
-            # Strip other markdown formatting
-            clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
-            clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
-            clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
-            clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
+            # Render what the author wrote, rather than deleting the markers.
+            # Runs after the image handling above so the [Image: …] placeholders
+            # it produces are never re-matched as markdown.
+            clean_text = render_breadcrumb_crumb(clean_text)
 
             if clean_text:
                 breadcrumbs.insert(0, clean_text)
@@ -540,7 +626,7 @@ def get_context_heading(content: str, line_index: int) -> str:
             level = len(heading_match.group(1))
             # Restrict to H1-H3, and ONLY accept if it's a structural parent of what we already have
             if level <= 3 and level < current_min_level:
-                text = _strip_breadcrumb_tags(heading_match.group(2))
+                text = render_breadcrumb_crumb(_strip_breadcrumb_tags(heading_match.group(2)))
                 headings[level] = text
                 current_min_level = level
                 if level == 1:
@@ -568,7 +654,7 @@ def get_context_heading(content: str, line_index: int) -> str:
     if heading_path:
         context_html += f'<div class="ap-meta-heading">{heading_path}</div>'
     if block_path_list:
-        block_path_str = " > ".join(block_path_list)
+        block_path_str = BREADCRUMB_SEP.join(block_path_list)
         context_html += f'<div class="ap-meta-block">{block_path_str}</div>'
         
     return context_html

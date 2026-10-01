@@ -20,7 +20,7 @@
  */
 import {
   formatInlineRaw, getBlockType, parseTableRow, isTableSeparatorRow, resolveMediaSrc,
-  tableSizeOf, stripTableSize, TABLE_SIZE_DEFAULT,
+  tableSizeOf, stripTableSize, TABLE_SIZE_DEFAULT, BASIC_CARD_RE,
 } from './blockFormat'
 import { stripApBlockId } from './docLinks'
 
@@ -100,7 +100,7 @@ function renderLine(line, fmt, mediaDir) {
     const sep = type === 'reversible' ? '<>' : '>>'
     const content = body.replace(/^\s*[-*]\s+/, '')
     const m = content.match(
-      type === 'reversible' ? /^(.+?)\s*<>\s*(.+)$/ : /^(.+?)\s*>>\s*(.+)$/
+      type === 'reversible' ? /^(.+?)\s*<>\s*(.+)$/ : BASIC_CARD_RE
     )
     if (m) {
       return row(
@@ -173,6 +173,7 @@ export function renderBody(content, mediaDir = '') {
    than referenced because the printed page has no app stylesheet and always
    prints light, whatever theme the window is in. */
 const PRINT_CSS = `
+sub, sup { line-height: 0; }
 :root{
   --bg:#ffffff; --border:#d8d8e0;
   --text-primary:#1a1a2e; --text-secondary:#4a4a65; --text-muted:#8888a0;

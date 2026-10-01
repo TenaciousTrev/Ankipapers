@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useImperativeHandle, forwardRef, useCallback,
 import { ExternalLink } from 'lucide-react'
 import { openInBrowser } from '../bridge'
 import { getLineIndexAtCursor, getLineTextAtIndex, resolveNoteIdForLine } from '../crossLink'
+import { BASIC_CARD_RE, toggleTagSegment } from '../blockFormat'
 
 // ─── Card Counting ──────────────────────────────────
 function countCards(text) {
@@ -17,7 +18,7 @@ function countCards(text) {
       continue
     }
     // Basic card: Q >> A
-    if (/^.+?\s*>>\s*.+$/.test(cardContent)) {
+    if (BASIC_CARD_RE.test(cardContent)) {
       basic++
       continue
     }
@@ -34,6 +35,8 @@ const formatActions = {
   bold: (ta) => wrapSelection(ta, '**', '**'),
   italic: (ta) => wrapSelection(ta, '*', '*'),
   strikethrough: (ta) => wrapSelection(ta, '~~', '~~'),
+  subscript: (ta) => toggleTagInTextarea(ta, 'sub'),
+  superscript: (ta) => toggleTagInTextarea(ta, 'sup'),
   inlineCode: (ta) => wrapSelection(ta, '`', '`'),
   h1: (ta) => prefixLine(ta, '# '),
   h2: (ta) => prefixLine(ta, '## '),
@@ -72,6 +75,14 @@ const formatActions = {
 }
 
 function getSelection(ta) { return ta.value.substring(ta.selectionStart, ta.selectionEnd) }
+
+// Same toggle as the block editor, applied to the whole source text.
+function toggleTagInTextarea(ta, tag) {
+  const r = toggleTagSegment(ta.value, ta.selectionStart, ta.selectionEnd, tag)
+  ta.value = r.line
+  ta.selectionStart = r.selStart; ta.selectionEnd = r.selEnd
+  ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }))
+}
 
 function wrapSelection(ta, prefix, suffix) {
   const start = ta.selectionStart, end = ta.selectionEnd

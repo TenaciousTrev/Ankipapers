@@ -15,6 +15,11 @@ from .parser import (
     get_context_heading,
     inject_stable_block_ids,
     compute_hash,
+    md_inline_to_html,
+    render_breadcrumb_crumb,
+    IMG_RE,
+    AP_LINK_RE,
+    CODE_RE,
 )
 
 
@@ -71,6 +76,25 @@ _ANKIPAPERS_CSS = """
   font-size: 16px;
   font-weight: 600;
   color: #000000;
+}
+
+/* Inline code inside a breadcrumb. The card's own `code` rule is a white chip
+   with a border, which at the breadcrumb's 16px competes with the answer for
+   attention — a breadcrumb is meant to be quiet context. Keep the colour that
+   marks it as code and drop the chip. */
+.ap-meta-block code,
+.ap-meta-heading code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.92em;
+}
+.nightMode .ap-meta-block code,
+.nightMode .ap-meta-heading code,
+.night_mode .ap-meta-block code,
+.night_mode .ap-meta-heading code {
+  background: none;
+  border: none;
 }
 
 /* ─── Context Image ─────────────────────────────── */
@@ -297,33 +321,13 @@ img {
 }
 """
 
-_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
-# Document links: [phrase](ap://paperId#blockId). Rendered as styled text —
-# they are not clickable inside Anki, but the phrase must never show up as raw
-# markdown on a card.
-_AP_LINK_RE = re.compile(r"(?<!!)\[([^\]\[]+)\]\(ap://([^)\s]+)\)")
-_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
-_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
-_STRIKE_RE = re.compile(r"~~(.+?)~~")
-_CODE_RE = re.compile(r"`([^`]+?)`")
-_MATH_BLOCK_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
-_MATH_INLINE_RE = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)")
-
-
-def _md_inline_to_html(text: str) -> str:
-    """Convert lightweight inline markdown to HTML."""
-    if not text:
-        return text
-    r = text
-    r = _MATH_BLOCK_RE.sub(r"\\[\1\\]", r)
-    r = _MATH_INLINE_RE.sub(r"\\(\1\\)", r)
-    r = _IMG_RE.sub(r'<img src="\2">', r)
-    r = _AP_LINK_RE.sub(r'<span class="ap-link">\1</span>', r)
-    r = _BOLD_RE.sub(r"<b>\1</b>", r)
-    r = _ITALIC_RE.sub(r"<i>\1</i>", r)
-    r = _STRIKE_RE.sub(r"<s>\1</s>", r)
-    r = _CODE_RE.sub(r"<code>\1</code>", r)
-    return r
+# The inline-markdown renderer and its patterns live in parser.py — breadcrumbs
+# need them too, and this module already imports from there. Re-exported under
+# the old private names so the rest of this file reads unchanged.
+_IMG_RE = IMG_RE
+_AP_LINK_RE = AP_LINK_RE
+_CODE_RE = CODE_RE
+_md_inline_to_html = md_inline_to_html
 
 
 # A table's width setting rides on the end of its header row. Mirrors
@@ -485,7 +489,7 @@ def _render_context(text: str) -> str:
 
 def _paper_context_and_supplement(card: ParsedCard, paper: Paper) -> Tuple[str, str]:
     """The two note fields that come from the paper but not from the card's line."""
-    context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
+    context = _render_context(get_context_heading(paper.content, card.line_index))
     supp = _md_to_html(getattr(card, "supplement", ""))
     return context, supp
 
@@ -1103,7 +1107,7 @@ def get_deck_id(col, deck_name: str) -> int:
 def _update_note_from_card(col, note, card: ParsedCard, paper: Paper, deck_id: int) -> bool:
     """Apply parsed card fields to an existing note. Returns True on success."""
     try:
-        context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
+        context = _render_context(get_context_heading(paper.content, card.line_index))
         source_ref = f"{paper.id}:{card.line_index}"
         supp = _md_to_html(getattr(card, "supplement", ""))
 
@@ -1230,9 +1234,17 @@ def generate_cards(
             if note is not None:
                 bid = card.block_id or existing_ref.block_id
                 derived = derived_hash_for(card, paper)
+                # Whether this note actually got rewritten on this pass. Only
+                # then may the fresh derived_hash be recorded: the hash means
+                # "what was last written to this note", and stamping it after a
+                # write that did not happen told every later run the note was
+                # already current. One failed write left a note permanently
+                # stale, because nothing ever asked again.
+                written = False
                 if existing_ref.content_hash != card.content_hash:
                     if _update_note_from_card(col, note, card, paper, deck_id):
                         updated += 1
+                        written = True
                 else:
                     diff = _note_field_diff(note, card, paper)
                     # A paper-side change (the supplement or the heading above
@@ -1258,6 +1270,12 @@ def generate_cards(
                     ):
                         if _update_note_from_card(col, note, card, paper, deck_id):
                             updated += 1
+                            written = True
+                    elif not diff and not derived_moved:
+                        # Nothing to write because nothing differs — the note
+                        # already matches the paper, so the current hash is
+                        # genuinely what it holds.
+                        written = True
                 if not bid or bid in used_block_ids:
                     bid = str(uuid.uuid4())
                 # Backfill. This card already exists in Anki and keeps its
@@ -1279,7 +1297,10 @@ def generate_cards(
                         content_hash=card.content_hash,
                         synced=True,
                         block_id=bid,
-                        derived_hash=derived,
+                        derived_hash=(
+                            derived if written
+                            else (getattr(existing_ref, "derived_hash", None) or derived)
+                        ),
                     )
                 )
                 reused = True
@@ -1331,7 +1352,7 @@ def generate_cards(
 def _create_note(col, card: ParsedCard, paper: Paper, deck_id: int) -> Optional[int]:
     """Create a single Anki note from a ParsedCard."""
     try:
-        context = _render_context(get_context_heading(paper.content, card.line_index).replace(">>", "\u2192").replace(" > ", "<br>").replace("<>", "\u21D4"))
+        context = _render_context(get_context_heading(paper.content, card.line_index))
         source_ref = f"{paper.id}:{card.line_index}"
         supp = _md_to_html(getattr(card, "supplement", ""))
 

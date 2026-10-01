@@ -41,6 +41,8 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Subscript and superscript.** Highlight text and press `Ctrl+5` for subscript or `Ctrl+6` for superscript (the Control key on a Mac too), or use the two new toolbar buttons beside strikethrough. They work like Word: press the same one again to remove it, or the other one to swap. With nothing highlighted, you get a placeholder to type over. They are saved as ordinary `<sub>` and `<sup>` tags, so they show up on your Anki cards, in the PDF, and in other markdown apps such as Obsidian. A card whose question ends right against the separator, like `CO<sub>2</sub>>> a gas`, now splits in the right place.
+
 **Tabs.** Every paper you open gets a tab above the editor, so you can keep several papers at hand and switch between them with a click. Following a link to another paper opens it in a tab right next to the one you came from, and the paper you left stays open. Close a tab with its × or a middle-click; cycle with `Ctrl+Tab` and `Ctrl+Shift+Tab`. Tabs have a fixed width, so five fit across a full-screen window and the strip scrolls sideways beyond that. Open tabs are remembered between sessions.
 
 **Unsaved changes at a glance.** A dot on the active tab means the paper has edits that have not yet reached disk. It clears on `Ctrl+S`, on autosave, and whenever you switch papers, since switching always saves first.
@@ -435,6 +437,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Enter` | Split the line at the cursor |
 | `Backspace` at line start | Outdent, then merge into the line above |
 | `Ctrl+B` / `Ctrl+I` | Bold / italic |
+| `Ctrl+5` / `Ctrl+6` | Subscript / superscript — press again to remove |
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
 | `Ctrl+V` / `⌘V` on a Mac | Paste as copied — one block per line |
 | `Ctrl+Shift+V` / `⇧⌘V` on a Mac | Paste as plain text — flattened onto one line |
@@ -444,7 +447,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+,` | Settings |
 | `[[` | Autocomplete a link to another paper by title |
 
-> The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included. The two pasting shortcuts are the exception: they follow the system paste key, so on a Mac they are `⌘V` and `⇧⌘V`. `Ctrl+Shift+↓` and `Ctrl+Shift+↑` also accept `⇧⌘↓` and `⇧⌘↑` there.
+> The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included. The two pasting shortcuts are the exception: they follow the system paste key, so on a Mac they are `⌘V` and `⇧⌘V`. `Ctrl+Shift+↓` and `Ctrl+Shift+↑` also accept `⇧⌘↓` and `⇧⌘↑` there. On a Mac, `Ctrl+5` and `Ctrl+6` only work while macOS's "Switch to Desktop 5/6" shortcuts are off, which is the default.
 
 ---
 
@@ -512,6 +515,7 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | `web_src/src/components/LinksPanel.jsx` | Backlinks and outgoing links |
 | `web_src/src/components/GraphView.jsx` | Link graph |
 | `user_files/` | Local cache/fallback only (gitignored) |
+| `tests/` | Python tests — run `python3 -m unittest discover -s tests` |
 | `_build.ps1` / `build_ankiaddon.bat` | Pack `Ankipapers.ankiaddon` |
 
 ---
@@ -533,6 +537,7 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | Table | `\| A \| B \|` rows with a `\| --- \| --- \|` separator |
 | Table width | `<!--ap-table:s\|m\|l\|full-->` on the header row — set it by hovering the table |
 | Maths | `$inline$`, `$$block$$` |
+| Subscript / superscript | `H<sub>2</sub>O`, `x<sup>2</sup>` — via the toolbar or `Ctrl+5` / `Ctrl+6` |
 | Link to a heading or paper | `[phrase](ap://…)` — via right-click → **Create link…** |
 | Quick paper link | `[[Paper title]]` |
 | Hidden line anchor | `<!--ap:uuid-->` — written for you; leave it be |

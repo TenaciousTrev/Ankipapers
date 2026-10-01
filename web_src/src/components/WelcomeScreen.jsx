@@ -393,6 +393,12 @@ export default function WelcomeScreen({
                   when you want to see exactly what you've written.
                 </Ref>
                 <Ref code="Ctrl+B / Ctrl+I" tone="key">Bold and italic.</Ref>
+                <Ref code="Ctrl+5 / Ctrl+6" tone="key">
+                  Subscript and superscript, for things like H<sub>2</sub>O or
+                  x<sup>2</sup>. Highlight the text first. Press the same keys again
+                  to take it off, or the other pair to swap. The two buttons next to
+                  strikethrough in the toolbar do the same.
+                </Ref>
                 <Ref code="Ctrl+Z / Ctrl+Shift+Z" tone="key">Undo and redo.</Ref>
                 <Ref code="Ctrl+," tone="key">Open Settings.</Ref>
                 <Ref code="Ctrl+Tab / Ctrl+Shift+Tab" tone="key">
