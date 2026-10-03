@@ -16,26 +16,27 @@ import { AP_LINK_RE } from './docLinks'
 
 // ─── Card separators ────────────────────────────────
 // Basic card: "Question >> Answer", split at the first ">>". The
-// (?<!<\/su[bp]) guard stops a subscript or superscript closing tag written
-// flush against the separator ("CO<sub>2</sub>>> gas") from being read as the
-// start of it -- without it the split lands inside the tag. Mirrors
+// (?<!<\/su[bp]) and (?<!<\/[bui]) guards stop a subscript, superscript,
+// bold, underline or italic closing tag written flush against the separator
+// ("CO<sub>2</sub>>> gas") from being read as the start of it -- without them
+// the split lands inside the tag. Mirrors
 // BASIC_CARD_PATTERN in core/parser.py; the two have to agree, or the editor
 // and the generated card would split the same line differently.
-export const BASIC_CARD_RE = /^(.+?)(?<!<\/su[bp])\s*>>\s*(.+)$/
+export const BASIC_CARD_RE = /^(.+?)(?<!<\/su[bp])(?<!<\/[bui])\s*>>\s*(.+)$/
 
-// ─── Subscript / superscript ────────────────────────
-// Stored as plain <sub>/<sup> HTML: Anki renders it natively, and so do other
+// ─── Bold / italic / underline / sub / superscript ─
+// Stored as plain <b>/<i>/<u>/<sub>/<sup> HTML: Anki renders it natively, and so do other
 // markdown apps (Obsidian, GitHub), so papers stay readable outside Anki Papers.
 
 /**
- * Toggle <sub> or <sup> around a selection, Word-style:
+ * Toggle <b>, <i>, <u>, <sub> or <sup> around a selection, Word-style:
  *   - selection already inside that tag pair (or spanning exactly one) -> unwrap
- *   - selection inside the OTHER pair -> swap it (sub <-> sup)
+ *   - selection inside the OTHER pair -> swap it (sub <-> sup; the rest have none)
  *   - otherwise -> wrap; with nothing selected, insert a selected placeholder
  * Returns { line, selStart, selEnd }, the new selection covering the text.
  */
 export function toggleTagSegment(line, selStart, selEnd, tag, emptyPlaceholder = 'text') {
-  const other = tag === 'sub' ? 'sup' : 'sub'
+  const other = tag === 'sub' ? 'sup' : tag === 'sup' ? 'sub' : null
   const open = `<${tag}>`
   const close = `</${tag}>`
   const len = line.length
@@ -45,7 +46,9 @@ export function toggleTagSegment(line, selStart, selEnd, tag, emptyPlaceholder =
   const selected = line.slice(a, b)
 
   // Same tag -> unwrap. Other tag -> swap for this one.
-  for (const [o, c, swap] of [[open, close, false], [`<${other}>`, `</${other}>`, true]]) {
+  const pairs = [[open, close, false]]
+  if (other) pairs.push([`<${other}>`, `</${other}>`, true])
+  for (const [o, c, swap] of pairs) {
     // Cursor or selection sits just inside a pair: <tag>|text|</tag>
     if (a >= o.length && line.slice(a - o.length, a) === o && line.slice(b, b + c.length) === c) {
       const before = line.slice(0, a - o.length)
@@ -272,13 +275,19 @@ export function formatInlineRaw(text, mediaDir) {
   r = r.replace(/~~(.+?)~~/g, '<del>$1</del>')
   // Inline code
   r = r.replace(/`([^`]+?)`/g, '<code>$1</code>')
-  // Subscript / superscript. The text was HTML-escaped above, so turn exactly
-  // these two tag pairs back into markup. Code spans are skipped so that
-  // `<sub>` written inside backticks still reads as literal code.
-  r = r.replace(
-    /(<code>[\s\S]*?<\/code>)|&lt;(sub|sup)&gt;([\s\S]*?)&lt;\/\2&gt;/g,
-    (_m, code, tag, inner) => (code ? code : `<${tag}>${inner}</${tag}>`)
-  )
+  // Bold / italic / underline / subscript / superscript tags. The text was
+  // HTML-escaped above, so turn exactly these tag pairs back into markup.
+  // (Old **bold** / *italic* asterisks are still rendered by the rules above.)
+  // Code spans are skipped so that `<sub>` written inside backticks still reads
+  // as literal code. Repeated until nothing changes, because one pass only
+  // restores the outermost pair: <u>T<sub>4</sub></u> would otherwise show its
+  // inner <sub> as literal text.
+  const TAG_PAIR = /(<code>[\s\S]*?<\/code>)|&lt;(sub|sup|u|b|i)&gt;([\s\S]*?)&lt;\/\2&gt;/g
+  for (let pass = 0; pass < 8; pass++) {
+    const next = r.replace(TAG_PAIR, (_m, code, tag, inner) => (code ? code : `<${tag}>${inner}</${tag}>`))
+    if (next === r) break
+    r = next
+  }
   // Zettelkasten links
   r = r.replace(/\[\[(.+?)\]\]/g, '<span class="block-zettel-link" data-title="$1">[[$1]]</span>')
   // Document links: [text](ap://paperId#blockId)

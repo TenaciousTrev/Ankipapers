@@ -53,6 +53,26 @@ class BasicCardSplit(unittest.TestCase):
         kind, _, _ = self.card("x<sub>2</sub>> 3 is true")
         self.assertNotEqual(kind, "basic")
 
+    def test_underline_flush_against_separator(self):
+        self.assertEqual(self.card("<u>Insulin</u>>> lowers glucose"), ("basic", "<u>Insulin</u>", "lowers glucose"))
+
+    def test_underline_with_space_before_separator(self):
+        self.assertEqual(self.card("The <u>key</u> point >> answer"), ("basic", "The <u>key</u> point", "answer"))
+
+    def test_underline_closing_tag_then_greater_than_is_not_a_card(self):
+        kind, _, _ = self.card("<u>x</u>> 3 is true")
+        self.assertNotEqual(kind, "basic")
+
+    def test_bold_flush_against_separator(self):
+        self.assertEqual(self.card("<b>ALF</b>>> acute liver failure"), ("basic", "<b>ALF</b>", "acute liver failure"))
+
+    def test_italic_flush_against_separator(self):
+        self.assertEqual(self.card("<i>E. coli</i>>> gram negative"), ("basic", "<i>E. coli</i>", "gram negative"))
+
+    def test_bold_closing_tag_then_greater_than_is_not_a_card(self):
+        kind, _, _ = self.card("<b>x</b>> 3 is true")
+        self.assertNotEqual(kind, "basic")
+
     def test_reversible_with_tags(self):
         self.assertEqual(self.card("H<sub>2</sub>O<> water"), ("reversible", "H<sub>2</sub>O", "water"))
 

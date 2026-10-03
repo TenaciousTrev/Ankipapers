@@ -35,7 +35,7 @@ export function call(name, args = {}) {
   // usable standalone. Never falls back to the mock in a production build —
   // if pycmd hasn't shown up yet there, we just keep waiting for it.
   if (import.meta.env.DEV) {
-    if (!_mockBridge) _mockBridge = createMockBridge();
+    if (!_mockBridge) { _mockBridge = createMockBridge(); window.__mockBridge = _mockBridge; }  // dev-only: tests can stub calls
     const fn = _mockBridge[name];
     if (!fn) return Promise.resolve({ error: `${name} not available (mock bridge)` });
     return Promise.resolve(fn(args));
@@ -67,7 +67,7 @@ export function initBridge() {
       return;
     }
     if (import.meta.env.DEV) {
-      if (!_mockBridge) _mockBridge = createMockBridge();
+      if (!_mockBridge) { _mockBridge = createMockBridge(); window.__mockBridge = _mockBridge; }
       resolve();
       return;
     }
@@ -202,6 +202,10 @@ export async function exportPapersToDisk(mode = 'preview') {
 }
 
 // Settings
+/** One-time **bold** / *italic* → <b> / <i> conversion; dryRun only reports. */
+export async function convertEmphasisToTags(dryRun = true) {
+  return call('convert_emphasis_to_tags', { dry_run: dryRun });
+}
 /** The user's macOS Text Replacements: { items: [{ shortcut, phrase }] }. */
 export async function getTextReplacements() {
   return call('get_text_replacements');
@@ -265,7 +269,7 @@ function createMockBridge() {
     },
     create_paper: ({ title, folder_path }) => {
       const p = {
-        id: 'p-' + Date.now(), title, content: `# ${title}\n\n`, deck_name: 'Default',
+        id: 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), title, content: `# ${title}\n\n`, deck_name: 'Default',
         folder_path, card_refs: [], tags: [], created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
       };
       papers.push(p);
@@ -281,7 +285,8 @@ function createMockBridge() {
       if (p) p.folder_path = folder_path;
       return { ok: true };
     },
-    generate_cards: () => ({ created: 3, updated: 0, deleted: 0 }),
+    // Slightly slow, like the real thing, so progress is visible in dev.
+    generate_cards: () => new Promise((r) => setTimeout(() => r({ created: 3, updated: 1, deleted: 0 }), 250)),
     check_anki_edit_conflicts: () => ({ conflicts: [] }),
     get_decks: () => ['Default', 'Biology', 'Medicine'],
     get_folders: () => ({ name: 'Root', children: [{ type: 'folder', name: 'Biology', path: 'Biology', children: [] }] }),
@@ -315,7 +320,27 @@ function createMockBridge() {
       font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true,
       anki_edit_conflict: 'ask',
     }),
-    save_settings: () => ({ ok: true }),
+    // Mirrors gui/bridge.py: a changed card_style reports it was applied.
+    save_settings: ({ settings }) => {
+      const prev = createMockBridge._cardStyle || 'basic'
+      const next = (settings && settings.card_style) || 'basic'
+      createMockBridge._cardStyle = next
+      return next !== prev ? { ok: true, card_style_applied: true } : { ok: true }
+    },
+    convert_emphasis_to_tags: ({ dry_run }) => {
+      // Dev stand-in for core/emphasis.py (no code/maths protection here).
+      let bold = 0, italic = 0, changed = 0
+      const plan = papers.map((p) => {
+        let c = p.content
+        c = c.replace(/\*\*(.+?)\*\*/g, (_m, t) => { bold++; return `<b>${t}</b>` })
+        c = c.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, (_m, t) => { italic++; return `<i>${t}</i>` })
+        if (c !== p.content) changed++
+        return [p, c]
+      })
+      if (dry_run !== false || !changed) return { scanned: papers.length, papers: changed, bold, italic, dry_run: true }
+      plan.forEach(([p, c]) => { p.content = c })
+      return { scanned: papers.length, papers: changed, bold, italic, dry_run: false, backup: '(dev) no backup', failures: [] }
+    },
     get_text_replacements: () => ({ items: [
       { shortcut: ',sig', phrase: 'Signed, Trevor' },
       { shortcut: ',ab', phrase: 'abbreviation' },

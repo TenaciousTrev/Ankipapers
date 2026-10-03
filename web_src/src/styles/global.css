@@ -2199,3 +2199,26 @@ textarea.block-input.block-input-textarea {
 
 /* Subscript / superscript: line-height 0 stops them pushing the line apart. */
 sub, sup { line-height: 0; }
+
+/* ─── Generate all cards in folder ───────────────── */
+.folder-gen-modal { min-width: 420px; max-width: 520px; }
+.folder-gen-text { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 14px 0; }
+.folder-gen-status {
+  font-size: 13px; color: var(--text-primary); margin: 0 0 10px 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.folder-gen-bar {
+  height: 8px; border-radius: 999px; overflow: hidden;
+  background: var(--bg-primary); border: 1px solid var(--border);
+}
+.folder-gen-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-light));
+  transition: width 0.25s ease;
+}
+.folder-gen-fill.is-checking { opacity: 0.55; }
+.folder-gen-warning {
+  display: flex; align-items: center; gap: 6px; justify-content: center;
+  margin: 14px 0 0 0; font-size: 12px; font-weight: 700; color: var(--orange);
+}
+.generate-conflict-paper { margin-right: 8px; color: var(--text-primary); }

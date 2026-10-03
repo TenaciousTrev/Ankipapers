@@ -2089,12 +2089,6 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
 
     switch (action) {
-      case 'bold':
-        applyWrap('**', '**', 'text')
-        return
-      case 'italic':
-        applyWrap('*', '*', 'text')
-        return
       case 'strikethrough':
         applyWrap('~~', '~~', 'text')
         return
@@ -2114,9 +2108,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       // already there, and swaps sub <-> sup. Goes through the same
       // leadingSpaces + storeLine path as math, so indentation and the hidden
       // anchor survive.
+      case 'bold':
+      case 'italic':
       case 'subscript':
-      case 'superscript': {
-        const r = toggleTagSegment(line, selStart, selEnd, action === 'subscript' ? 'sub' : 'sup')
+      case 'superscript':
+      case 'underline': {
+        const tag = { bold: 'b', italic: 'i', subscript: 'sub', superscript: 'sup', underline: 'u' }[action]
+        const r = toggleTagSegment(line, selStart, selEnd, tag)
         const newLine = tableHead ? r.line : leadingSpaces + r.line
         if (tableHead) lines.splice(focusedTable.start, focusedTable.end - focusedTable.start + 1, ...newLine.split('\n'))
         else lines[focusedIndex] = storeLine(newLine)

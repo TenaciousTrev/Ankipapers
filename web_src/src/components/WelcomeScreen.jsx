@@ -249,6 +249,12 @@ export default function WelcomeScreen({
                   from at the top, which is helpful context. Add this when that context
                   would give the answer away.
                 </Ref>
+                <Ref code="Card style" tone="muted">
+                  How your cards look in Anki. Settings → Card Style switches between
+                  the built-in Basic look and Solarized Styling: a calm, colour-coded
+                  style that is light in Anki's light mode and dark in dark mode.
+                  Saving restyles every card at once, phone included after a sync.
+                </Ref>
               </RefGroup>
 
               <RefGroup
@@ -288,6 +294,12 @@ export default function WelcomeScreen({
                   out. Where you put the line decides what it does: on its own at
                   any level it is just part of the document, and indented under a
                   card it travels onto that card.
+                </Ref>
+                <Ref code="Right-click a folder" tone="key">
+                  Choose “Generate all cards in folder” to make the cards for every paper in
+                  that folder and its subfolders in one go. You confirm once, answer one
+                  question if any cards were edited in Anki, then a progress bar shows each
+                  paper as it is done. Keep Anki Papers open until it finishes.
                 </Ref>
               </RefGroup>
 
@@ -392,7 +404,14 @@ export default function WelcomeScreen({
                   Switch between the normal editor and the plain text behind it. Handy
                   when you want to see exactly what you've written.
                 </Ref>
-                <Ref code="Ctrl+B / Ctrl+I" tone="key">Bold and italic.</Ref>
+                <Ref code="Ctrl+B / Ctrl+I" tone="key">
+                  <b>Bold</b> and <i>italic</i>, saved as &lt;b&gt; and &lt;i&gt; tags. Press again to
+                  take it off.
+                </Ref>
+                <Ref code="Ctrl+U" tone="key">
+                  <u>Underline</u>. Highlight the text first; press again to take it
+                  off. The underline button in the toolbar does the same.
+                </Ref>
                 <Ref code="Ctrl+5 / Ctrl+6" tone="key">
                   Subscript and superscript, for things like H<sub>2</sub>O or
                   x<sup>2</sup>. Highlight the text first. Press the same keys again

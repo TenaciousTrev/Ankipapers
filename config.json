@@ -7,5 +7,6 @@
     "show_card_indicators": true,
     "reversible_separator": "<>",
     "basic_separator": ">>",
-    "text_replacements_enabled": true
+    "text_replacements_enabled": true,
+    "card_style": "basic"
 }

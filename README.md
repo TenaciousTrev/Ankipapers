@@ -41,7 +41,15 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Bold and italic are saved as `<b>` and `<i>` tags.** `Ctrl+B`, `Ctrl+I` and the toolbar buttons now write `<b>bold</b>` and `<i>italic</i>` — the same tags Anki's own editor uses, and the same way underline, subscript and superscript work — and pressing them again removes the formatting. Older `**bold**` and `*italic*` still display correctly. To bring existing papers in line, **Settings → Bold & italic format → Convert old bold & italic** rewrites them once: it shows how many it found and asks first, saves a backup of every paper to `<profile>/ankipapers/backups/`, and leaves code and maths untouched. Your cards look exactly the same afterwards. Nested formatting such as underlined subscript now also displays correctly in the editor and PDF.
+
+**Generate a whole folder at once.** Right-click a folder in the sidebar and choose **Generate all cards in folder** to make the cards for every paper in that folder and all its subfolders. You confirm once. If some of those cards were edited in Anki and your conflict setting is *Ask*, you get one combined dialog for the whole folder and make one choice for all of it; any other setting is simply followed. A progress bar then names each paper as it's generated — keep Anki Papers open until it finishes; closing waits for the run to complete. A summary at the end totals the created, updated and removed cards, and lists any paper that couldn't be generated and why, while the rest still finish.
+
+**Solarized Styling for your cards.** Settings → Card Style now offers Solarized Styling alongside the built-in Basic look: a monospace, colour-coded card where bold, italic, underline and cloze answers each get their own colour, and the heading breadcrumb sits quietly above the card in small capitals. It's light when Anki is in light mode and dark in dark mode, with every text colour chosen to stay comfortably readable on its background. Saving the setting restyles every Anki Papers card at once, and the style syncs to AnkiWeb and your phone with the cards. Switching back to Basic restores the original look exactly. The design is adapted from Shamim Ahmed's [How to Design Beautiful Anki Cards](https://medshamim.com/med/how-to-design-beautiful-anki-cards) (2018).
+
 **Your macOS Text Replacements work in the editor (Mac only).** The shortcuts you've set up in System Settings → Keyboard → Text Replacements now expand in Anki Papers: type a shortcut, then Space or Return, and it becomes its phrase. Control+Z brings the shortcut back. It needs a whole word, so `,sig` expands but `word,sig` doesn't, and it never fires inside code or math. Edits you make in System Settings are picked up when you return to the window. macOS doesn't do this on its own here, because Anki's web engine never asks macOS for the list. If you also use a text expander such as aText, keep each shortcut in only one of the two so they don't both fire. It's on by default, and Settings can turn it off.
+
+**Underline.** Highlight text and press `Ctrl+U` (the Control key on a Mac too), or use the new underline button between italic and strikethrough. Press it again to remove it. It's saved as an ordinary `<u>` tag, so it shows as a real underline on your Anki cards, in the PDF, and in other markdown apps.
 
 **Subscript and superscript.** Highlight text and press `Ctrl+5` for subscript or `Ctrl+6` for superscript (the Control key on a Mac too), or use the two new toolbar buttons beside strikethrough. They work like Word: press the same one again to remove it, or the other one to swap. With nothing highlighted, you get a placeholder to type over. They are saved as ordinary `<sub>` and `<sup>` tags, so they show up on your Anki cards, in the PDF, and in other markdown apps such as Obsidian. A card whose question ends right against the separator, like `CO<sub>2</sub>>> a gas`, now splits in the right place.
 
@@ -438,7 +446,8 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Tab` / `Shift+Tab` | Indent / outdent the line and its children |
 | `Enter` | Split the line at the cursor |
 | `Backspace` at line start | Outdent, then merge into the line above |
-| `Ctrl+B` / `Ctrl+I` | Bold / italic |
+| `Ctrl+B` / `Ctrl+I` | Bold / italic (`<b>` / `<i>`) — press again to remove |
+| `Ctrl+U` | Underline — press again to remove |
 | `Ctrl+5` / `Ctrl+6` | Subscript / superscript — press again to remove |
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
 | `Ctrl+V` / `⌘V` on a Mac | Paste as copied — one block per line |
@@ -465,6 +474,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `editor_theme` | `dark`, `light`, or `auto` |
 | `show_card_indicators` | Card markers in the left margin |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
+| `card_style` | `basic` (built-in) or `solarized` (Solarized Styling) — restyles every card when changed |
 | `text_replacements_enabled` | Mac only: apply your macOS Text Replacements as you type (on by default) |
 | Papers on disk | Preview / Write, for the one-time migration above |
 
@@ -541,6 +551,8 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | Table | `\| A \| B \|` rows with a `\| --- \| --- \|` separator |
 | Table width | `<!--ap-table:s\|m\|l\|full-->` on the header row — set it by hovering the table |
 | Maths | `$inline$`, `$$block$$` |
+| Bold / italic | `<b>key</b>`, `<i>term</i>` — via the toolbar or `Ctrl+B` / `Ctrl+I` (old `**` / `*` still display) |
+| Underline | `<u>key point</u>` — via the toolbar or `Ctrl+U` |
 | Subscript / superscript | `H<sub>2</sub>O`, `x<sup>2</sup>` — via the toolbar or `Ctrl+5` / `Ctrl+6` |
 | Link to a heading or paper | `[phrase](ap://…)` — via right-click → **Create link…** |
 | Quick paper link | `[[Paper title]]` |

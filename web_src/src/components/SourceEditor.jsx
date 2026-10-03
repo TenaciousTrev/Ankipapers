@@ -32,11 +32,12 @@ function countCards(text) {
 
 // ─── Format Actions Map ─────────────────────────────
 const formatActions = {
-  bold: (ta) => wrapSelection(ta, '**', '**'),
-  italic: (ta) => wrapSelection(ta, '*', '*'),
+  bold: (ta) => toggleTagInTextarea(ta, 'b'),
+  italic: (ta) => toggleTagInTextarea(ta, 'i'),
   strikethrough: (ta) => wrapSelection(ta, '~~', '~~'),
   subscript: (ta) => toggleTagInTextarea(ta, 'sub'),
   superscript: (ta) => toggleTagInTextarea(ta, 'sup'),
+  underline: (ta) => toggleTagInTextarea(ta, 'u'),
   inlineCode: (ta) => wrapSelection(ta, '`', '`'),
   h1: (ta) => prefixLine(ta, '# '),
   h2: (ta) => prefixLine(ta, '## '),

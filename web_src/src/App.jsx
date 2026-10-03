@@ -4,7 +4,7 @@ import {
   generateCards, checkAnkiEditConflicts, getDecks, createFolder, getFolders, movePaperToFolder,
   deleteFolder, renameFolder, moveFolder,
   pickImage, pasteImage, exportPdf, exportMarkdown, importMarkdown, getSettings, saveSettings as saveSettingsBridge,
-  getMediaDir, getTextReplacements, openInBrowser, moveCardsToDeck, extractPdfText, extractWebText, saveSourceLink, loadSourceLink, openSourceAtLocation,
+  getMediaDir, getTextReplacements, convertEmphasisToTags, openInBrowser, moveCardsToDeck, extractPdfText, extractWebText, saveSourceLink, loadSourceLink, openSourceAtLocation,
 } from './bridge'
 import Sidebar from './components/Sidebar'
 import EditorHeader from './components/EditorHeader'
@@ -24,6 +24,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Toast from './components/Toast'
 import Settings from './components/Settings'
 import GenerateConflictModal from './components/GenerateConflictModal'
+import FolderGenerateDialog from './components/FolderGenerateDialog'
 import TableDialog from './components/TableDialog'
 import SourcePanel from './components/SourcePanel'
 
@@ -34,6 +35,16 @@ const IS_MAC = typeof navigator !== 'undefined' &&
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
 
 const SIDEBAR_DEFAULT_WIDTH = 260
+
+// Let the folder-Generate progress dialog paint before the next paper: each
+// Generate holds Anki's main thread until it returns. Never waits on animation
+// frames alone -- browsers stop them entirely while the window is hidden
+// (minimised), which froze the whole run until the window came back. Whichever
+// comes first: two frames, or 120ms.
+const letPaint = () => Promise.race([
+  new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+  new Promise((r) => setTimeout(r, 120)),
+]).then(() => new Promise((r) => setTimeout(r, 30)))
 const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
 const SIDEBAR_SNAP_WIDTH = 120
@@ -799,11 +810,64 @@ export default function App() {
   }, [paper, setBusy, persistPaper])
 
   // ─── Settings ────────────────────────────────────
+  // ─── One-time **bold** / *italic* → <b> / <i> conversion ───
+  // Settings → "Convert old bold & italic". Runs in Python through the normal
+  // save path (disk file and collection copy together), after a backup of
+  // every paper. The open paper is saved first and reloaded after, so the
+  // editor never holds -- or autosaves -- the pre-conversion text.
+  const handleConvertEmphasis = useCallback(async () => {
+    if (isBusyRef.current) return
+    const open = paperRef.current
+    if (open) {
+      const res = await persistPaper(await reconcileBacklinks(open))
+      if (res?.error) { showToast(`Save failed, nothing converted: ${res.error}`, 'error'); return }
+    }
+    const plan = await convertEmphasisToTags(true)
+    if (plan?.error) { showToast(`Could not check your papers: ${plan.error}`, 'error'); return }
+    if (!plan.papers) {
+      window.alert('Nothing to convert: none of your papers use ** or * for bold or italic any more.')
+      return
+    }
+    const n = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`
+    const ok = window.confirm(
+      `Convert ${n(plan.bold, 'bold span')} and ${n(plan.italic, 'italic span')} in ${plan.papers} of your ${n(plan.scanned, 'paper')} ` +
+      'from ** and * to <b> and <i> tags?\n\n' +
+      'A backup of every paper is saved first. Your cards and the editor will look exactly the same; ' +
+      'code and maths are left untouched.'
+    )
+    if (!ok) return
+    setBusy(true, 'saving')
+    let res
+    try { res = await convertEmphasisToTags(false) } finally { setBusy(false) }
+    if (res?.error) { showToast(`Conversion failed: ${res.error}`, 'error'); return }
+    await refreshPapers()
+    if (open) {
+      const reloaded = await loadPaper(open.id)
+      if (reloaded) {
+        setPaper(reloaded)
+        markSaved(reloaded)
+        linkBaselineRef.current = { id: reloaded.id, content: reloaded.content }
+        historyRef.current = [reloaded.content]
+        historyIndexRef.current = 0
+      }
+    }
+    const failed = res.failures || []
+    window.alert(
+      (failed.length
+        ? `Converted ${res.papers - failed.length} of ${res.papers} papers. These could not be saved:\n` +
+          failed.map((f) => `• ${f.title}: ${f.error}`).join('\n')
+        : `Done: converted ${n(res.bold, 'bold span')} and ${n(res.italic, 'italic span')} in ${n(res.papers, 'paper')}.`) +
+      `\n\nBackup of every paper before the change:\n${res.backup}`
+    )
+  }, [persistPaper, reconcileBacklinks, setBusy, refreshPapers, markSaved])
+
   const handleSaveSettings = useCallback(async (newSettings) => {
-    await saveSettingsBridge(newSettings)
+    const res = await saveSettingsBridge(newSettings)
     setSettings(newSettings)
     document.documentElement.dataset.theme = newSettings.editor_theme || 'dark'
-    showToast('Settings saved', 'success')
+    if (res?.card_style_error) showToast(`Settings saved, but the card style could not be applied: ${res.card_style_error}`, 'error')
+    else if (res?.card_style_applied) showToast('Settings saved — card style applied to all your cards', 'success')
+    else showToast('Settings saved', 'success')
   }, [])
 
   // Sidebar preferences are written straight through rather than via
@@ -1004,6 +1068,112 @@ export default function App() {
     await runGenerateWithPolicy(mode)
   }, [settings.anki_edit_conflict, runGenerateWithPolicy, setBusy, persistPaper])
 
+  // ─── Generate a whole folder ─────────────────────
+  // Right-click a folder → "Generate all cards in folder". Runs the same
+  // per-paper Generate on every paper in the folder and its subfolders, one at
+  // a time, after one confirmation and -- with the "Ask" policy -- one combined
+  // conflict choice for the whole folder. busy stays 'generating' for the whole
+  // run, so autosave is held off and closing the window waits, exactly as it
+  // does for a single Generate.
+  const [folderGen, setFolderGen] = useState(null)
+  const folderGenPapersRef = useRef([])
+
+  const handleGenerateFolder = useCallback((folderPath) => {
+    if (isBusyRef.current) return
+    const inFolder = (p) => {
+      const f = p.folder_path || ''
+      return f === folderPath || f.startsWith(folderPath + '/')
+    }
+    const list = papersRef.current.filter(inFolder).sort((a, b) =>
+      (a.folder_path || '').localeCompare(b.folder_path || '') ||
+      (a.title || '').localeCompare(b.title || ''))
+    folderGenPapersRef.current = list
+    if (!list.length) { setFolderGen({ phase: 'empty', folder: folderPath }); return }
+    setFolderGen({
+      phase: 'confirm', folder: folderPath, papers: list,
+      includesSubfolders: list.some((p) => (p.folder_path || '') !== folderPath),
+    })
+  }, [])
+
+  const runFolderGenerate = useCallback(async (folder, policy) => {
+    const list = folderGenPapersRef.current
+    const totals = { created: 0, updated: 0, deleted: 0 }
+    const failures = []
+    setBusy(true, 'generating')
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i]
+        const title = p.title || 'Untitled'
+        setFolderGen({ phase: 'running', folder, index: i, total: list.length, title })
+        await letPaint()
+        try {
+          const res = await generateCards(p.id, policy)
+          if (res?.error === 'anki_edit_conflicts') {
+            failures.push({ id: p.id, title, reason: `stopped: ${res.conflicts?.length ?? 0} card(s) edited in Anki (Settings: abort on conflict)` })
+          } else if (res?.error) {
+            failures.push({ id: p.id, title, reason: res.error })
+          } else {
+            totals.created += res?.created || 0
+            totals.updated += res?.updated || 0
+            totals.deleted += res?.deleted || 0
+          }
+        } catch (e) {
+          failures.push({ id: p.id, title, reason: e?.message || String(e) })
+        }
+      }
+      await refreshPapers()
+      // Generate rewrites a paper on disk (new card links, anchors). If the
+      // open paper was in the folder, reload it so the editor -- and its next
+      // save -- carry the generated version, not the stale one.
+      const open = paperRef.current
+      if (open && list.some((p) => p.id === open.id)) {
+        const reloaded = await loadPaper(open.id)
+        if (reloaded) {
+          setPaper(reloaded)
+          markSaved(reloaded)
+          linkBaselineRef.current = { id: reloaded.id, content: reloaded.content }
+        }
+      }
+    } finally {
+      setBusy(false)
+    }
+    setFolderGen({ phase: 'done', folder, total: list.length, ...totals, failures })
+  }, [setBusy, refreshPapers, markSaved])
+
+  const handleConfirmFolderGenerate = useCallback(async () => {
+    if (!folderGen || folderGen.phase !== 'confirm') return
+    const folder = folderGen.folder
+    const list = folderGenPapersRef.current
+    document.activeElement?.blur?.()
+    // Save the open paper first, so the run uses exactly what is on screen.
+    const open = paperRef.current
+    if (open) {
+      try { await persistPaper(await reconcileBacklinks(open)) } catch { /* its own Generate will report it */ }
+    }
+    const mode = settingsRef.current.anki_edit_conflict || 'ask'
+    if (mode !== 'ask') { await runFolderGenerate(folder, mode); return }
+
+    // "Ask": check every paper first, then offer one combined choice.
+    const conflicts = []
+    setBusy(true, 'generating')
+    try {
+      for (let i = 0; i < list.length; i++) {
+        setFolderGen({ phase: 'checking', folder, index: i, total: list.length })
+        await letPaint()
+        try {
+          const chk = await checkAnkiEditConflicts(list[i].id)
+          for (const c of chk?.conflicts || []) conflicts.push({ ...c, paper_title: list[i].title || 'Untitled' })
+        } catch { /* a paper that can't be checked is still generated, and reports its own error */ }
+      }
+    } finally {
+      // Unlocked while the choice is on screen: nothing is running, so
+      // closing the window must not be held up by an open dialog.
+      setBusy(false)
+    }
+    if (conflicts.length) { setFolderGen({ phase: 'conflicts', folder, conflicts }); return }
+    await runFolderGenerate(folder, 'preserve')
+  }, [folderGen, persistPaper, reconcileBacklinks, setBusy, runFolderGenerate])
+
 
   const handleExtractFromSource = useCallback(async ({ mode, page, customText }) => {
     if (!paper) return
@@ -1126,6 +1296,8 @@ export default function App() {
       else if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) { e.preventDefault(); setViewMode(v => v === 'blocks' ? 'source' : 'blocks') }
       else if (e.ctrlKey && e.key === 'b') { e.preventDefault(); handleFormat('bold') }
       else if (e.ctrlKey && e.key === 'i') { e.preventDefault(); handleFormat('italic') }
+      // Underline: <u>, toggled like subscript. Control on macOS too, like Ctrl+B / Ctrl+I.
+      else if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'u' || e.code === 'KeyU')) { e.preventDefault(); handleFormat('underline') }
       else if (e.ctrlKey && e.key === ',') { e.preventDefault(); setShowSettings(true) }
       else if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); handleUndo() }
       else if (e.ctrlKey && e.shiftKey && e.key === 'Z') { e.preventDefault(); handleRedo() }
@@ -1199,6 +1371,7 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
         onDeleteFolder={handleDeleteFolder}
         onRenameFolder={handleRenameFolder}
+        onGenerateFolder={handleGenerateFolder}
         onMoveFolder={handleMoveFolder}
         collapsed={sidebarCollapsed}
         width={sidebarWidth}
@@ -1328,7 +1501,21 @@ export default function App() {
           </div>
         </>
       )}
-      {showSettings && <Settings settings={settings} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />}
+      {showSettings && <Settings settings={settings} onSave={handleSaveSettings} onClose={() => setShowSettings(false)}
+        onConvertEmphasis={() => { setShowSettings(false); handleConvertEmphasis() }} />}
+      <FolderGenerateDialog
+        state={folderGen && folderGen.phase !== 'conflicts' ? folderGen : null}
+        onConfirm={handleConfirmFolderGenerate}
+        onClose={() => setFolderGen(null)}
+      />
+      {folderGen?.phase === 'conflicts' && (
+        <GenerateConflictModal
+          conflicts={folderGen.conflicts}
+          onCancel={() => setFolderGen(null)}
+          onKeepAnki={() => runFolderGenerate(folderGen.folder, 'preserve')}
+          onUsePaper={() => runFolderGenerate(folderGen.folder, 'overwrite')}
+        />
+      )}
       {generateConflict && (
         <GenerateConflictModal
           conflicts={generateConflict}

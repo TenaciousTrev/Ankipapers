@@ -321,6 +321,96 @@ img {
 }
 """
 
+_SOLARIZED_CSS = """
+/* ═══ Solarized Styling ═════════════════════════════════════════════════
+   Optional card style (Settings → Card style), layered on top of the
+   built-in stylesheet above. Inspired by Shamim Ahmed's "How to Design
+   Beautiful Anki Cards" (medshamim.com, 2018): his slate palette is the dark
+   version, used when Anki is in dark mode; the light version keeps his hues,
+   deepened so every text colour clears the WCAG 4.5:1 contrast minimum on the
+   light background. */
+.card {
+  --ap-bg: #F5F7FA;
+  --ap-fg: #333B45;
+  --ap-muted: #5F6775;
+  --ap-bold: #8A4A8A;
+  --ap-italic: #B23A3A;
+  --ap-underline: #1D7676;
+  --ap-green: #1E7A45;
+  --ap-blue: #2A5F9E;
+  --ap-code: #A8480C;
+  --ap-code-bg: #E6EAF0;
+  --ap-rule: rgba(51,59,69,0.14);
+}
+.card.nightMode, .card.night_mode, .nightMode .card, .night_mode .card {
+  --ap-bg: #333B45;
+  --ap-fg: #D7DEE9;
+  --ap-muted: #A6ABB9;
+  --ap-bold: #C695C6;
+  --ap-italic: #CD5C5C;
+  --ap-underline: #5EB3B3;
+  --ap-green: #3CB371;
+  --ap-blue: #6699CC;
+  --ap-code: #F99157;
+  --ap-code-bg: #3E4651;
+  --ap-rule: rgba(215,222,233,0.14);
+}
+
+/* ── Solarized theme layer (inspired by Shamim Ahmed's Anki design) ──
+   Appended after the built-in stylesheet; every colour comes from the
+   --ap-* variables above, so the dark and light versions share one ruleset. */
+.card { background: var(--ap-bg) !important; color: var(--ap-fg); }
+.card .ankipapers-card {
+  font-family: Menlo, 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 18px; line-height: 1.6; color: var(--ap-fg);
+  text-align: left; max-width: 700px; word-wrap: break-word;
+}
+.card .ap-question, .card .ap-answer, .card .ap-cloze { font-size: 18px; font-weight: 400; color: var(--ap-fg); }
+/* Only the breadcrumb (and the Papers button) is centred; everything below
+   the breadcrumb's rule reads left-aligned. Pictures and tables stay centred
+   by their own auto margins. */
+.card .ap-meta { border-bottom: 1px solid var(--ap-rule); text-align: center; }
+.card .ap-meta-heading { color: var(--ap-muted); letter-spacing: 0.08em; }
+.card .ap-crumb-h1 { font-size: 17px; text-decoration: none; }
+.card .ap-crumb-h2 { font-size: 15px; }
+.card .ap-crumb-h3 { font-size: 14px; }
+.card .ap-meta-block { color: var(--ap-muted); font-size: 16px; font-weight: 400; }
+.card b, .card strong { color: var(--ap-bold); }
+.card i, .card em { color: var(--ap-italic); }
+.card u { text-decoration: none; color: var(--ap-underline); }
+.card .cloze, .card .cloze b, .card .cloze i, .card .cloze u { color: var(--ap-green); font-weight: 700; }
+.card .ap-answer-basic { color: var(--ap-green); }
+.card .ap-answer-reversible { color: var(--ap-blue); }
+.card .ap-supplement {
+  background: none; border-left: none; padding: 0; margin-top: 20px;
+  font-size: 15px; font-style: italic; color: var(--ap-fg);
+}
+.card .ap-divider { background: var(--ap-rule); margin: 20px 0; }
+.card code { background: var(--ap-code-bg); color: var(--ap-code); border-color: transparent; }
+.card .ap-link, .card .ankipapers-card .ap-link { color: var(--ap-blue); }
+.card .ap-cloze-hint { color: var(--ap-muted); }
+.card .ap-direction { color: var(--ap-muted); background: var(--ap-rule); }
+.card .ankipapers-md-table { font-size: 14px; }
+.card .ankipapers-md-table th { color: var(--ap-underline); border-bottom-color: var(--ap-rule); }
+.card .ankipapers-md-table td { border-bottom-color: var(--ap-rule); }
+.card .ap-jump { color: var(--ap-muted); border-color: var(--ap-rule); }
+.card .ap-jump:hover { background: var(--ap-rule); border-color: var(--ap-muted); }
+.card img { display: block; margin: 10px auto; }
+"""
+
+CARD_STYLES = ("basic", "solarized")
+
+
+def card_css(style: Optional[str] = "basic") -> str:
+    """The stylesheet for a card style: "basic" is the built-in look,
+    "solarized" layers Solarized Styling on top of it. Anything unrecognised
+    falls back to basic, so a bad config value can never break the cards."""
+    style = (style or "basic").strip().lower()
+    if style == "solarized":
+        return _ANKIPAPERS_CSS + "\n" + _SOLARIZED_CSS
+    return _ANKIPAPERS_CSS
+
+
 # The inline-markdown renderer and its patterns live in parser.py — breadcrumbs
 # need them too, and this module already imports from there. Re-exported under
 # the old private names so the rest of this file reads unchanged.
@@ -666,14 +756,17 @@ def list_anki_edit_conflicts(paper: Paper, col) -> List[Dict[str, Any]]:
     return out
 
 
-def ensure_note_types(col):
-    """Ensure the required note types exist in the collection."""
-    _ensure_basic_type(col)
-    _ensure_reversible_type(col)
-    _ensure_cloze_type(col)
+def ensure_note_types(col, card_style: str = "basic"):
+    """Ensure the required note types exist, with up-to-date templates and the
+    stylesheet for `card_style` (see card_css). Runs on every Generate and when
+    the Card style setting changes, so the style applies to every card at once."""
+    css = card_css(card_style)
+    _ensure_basic_type(col, css)
+    _ensure_reversible_type(col, css)
+    _ensure_cloze_type(col, css)
 
 
-def _ensure_basic_type(col):
+def _ensure_basic_type(col, css: str = _ANKIPAPERS_CSS):
     """Create the AnkiPapers Basic note type if it doesn't exist."""
     model_name = "AnkiPapers Basic"
     model = col.models.by_name(model_name)
@@ -735,10 +828,10 @@ def _ensure_basic_type(col):
 </div>'''
         col.models.add_template(model, tmpl)
 
-        model["css"] = _ANKIPAPERS_CSS
+        model["css"] = css
         col.models.add(model)
     else:
-        model["css"] = _ANKIPAPERS_CSS
+        model["css"] = css
         
         # Ensure Supplement field exists on older installs
         if not any(f["name"] == "Supplement" for f in model["flds"]):
@@ -783,7 +876,7 @@ def _ensure_basic_type(col):
         col.models.save(model)
 
 
-def _ensure_cloze_type(col):
+def _ensure_cloze_type(col, css: str = _ANKIPAPERS_CSS):
     """Create the AnkiPapers Cloze note type if it doesn't exist."""
     model_name = "AnkiPapers Cloze"
     model = col.models.by_name(model_name)
@@ -841,10 +934,10 @@ def _ensure_cloze_type(col):
 </div>'''
         col.models.add_template(model, tmpl)
 
-        model["css"] = _ANKIPAPERS_CSS
+        model["css"] = css
         col.models.add(model)
     else:
-        model["css"] = _ANKIPAPERS_CSS
+        model["css"] = css
         
         # Ensure Supplement field exists on older installs
         if not any(f["name"] == "Supplement" for f in model["flds"]):
@@ -887,7 +980,7 @@ def _ensure_cloze_type(col):
         col.models.save(model)
 
 
-def _ensure_reversible_type(col):
+def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
     """Create the AnkiPapers Reversible note type if it doesn't exist."""
     model_name = "AnkiPapers Reversible"
     model = col.models.by_name(model_name)
@@ -991,10 +1084,10 @@ def _ensure_reversible_type(col):
 </div>'''
         col.models.add_template(model, tmpl2)
 
-        model["css"] = _ANKIPAPERS_CSS
+        model["css"] = css
         col.models.add(model)
     else:
-        model["css"] = _ANKIPAPERS_CSS
+        model["css"] = css
         
         # Ensure Supplement field exists on older installs
         if not any(f["name"] == "Supplement" for f in model["flds"]):
@@ -1159,6 +1252,7 @@ def generate_cards(
     paper: Paper,
     col,
     anki_edit_conflict: str = "preserve",
+    card_style: str = "basic",
 ) -> Tuple[int, int, int]:
     """
     Generate/update Anki cards from a paper.
@@ -1171,7 +1265,7 @@ def generate_cards(
     Returns:
         Tuple of (created, updated, deleted) counts.
     """
-    ensure_note_types(col)
+    ensure_note_types(col, card_style)
 
     if anki_edit_conflict not in ("preserve", "overwrite", "abort"):
         anki_edit_conflict = "preserve"

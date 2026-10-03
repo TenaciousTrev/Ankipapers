@@ -55,11 +55,13 @@ class ParsedLine:
 # ─── Regex Patterns ────────────────────────────────────────────
 
 # Basic card: "Question >> Answer"
-# The (?<!</su[bp]) guard: a subscript or superscript closing tag written flush
-# against the separator ("CO<sub>2</sub>>> gas") puts a ">" right before it, and
-# without the guard the split would land inside the tag. Mirrors BASIC_CARD_RE
-# in web_src/src/blockFormat.js -- the two have to agree.
-BASIC_CARD_PATTERN = re.compile(r"^(.*?)(?<!</su[bp])\s*>>\s*(.+)$")
+# The (?<!</su[bp]) and (?<!</[bui]) guards: a subscript, superscript, bold,
+# underline or italic
+# closing tag written flush against the separator ("CO<sub>2</sub>>> gas") puts
+# a ">" right before it, and without the guards the split would land inside the
+# tag. Mirrors BASIC_CARD_RE in web_src/src/blockFormat.js -- the two have to
+# agree.
+BASIC_CARD_PATTERN = re.compile(r"^(.*?)(?<!</su[bp])(?<!</[bui])\s*>>\s*(.+)$")
 
 # Reversible card: "Front <> Back"
 REVERSIBLE_CARD_PATTERN = re.compile(r"^(.*?)\s*<>\s*(.+)$")

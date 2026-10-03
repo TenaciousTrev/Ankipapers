@@ -5,7 +5,7 @@ import { exportPapersToDisk } from '../bridge'
 const IS_MAC = typeof navigator !== 'undefined' &&
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
 
-export default function Settings({ settings, onSave, onClose }) {
+export default function Settings({ settings, onSave, onClose, onConvertEmphasis }) {
   const [local, setLocal] = useState({ ...settings })
   const update = (key, value) => setLocal(prev => ({ ...prev, [key]: value }))
 
@@ -91,6 +91,24 @@ export default function Settings({ settings, onSave, onClose }) {
             </>
           )}
 
+          <label className="settings-label">Card Style</label>
+          <p className="settings-field-hint">
+            How your Anki cards look. Solarized Styling is light when Anki is in light mode and
+            dark in dark mode. Saving restyles every Anki Papers card at once.
+          </p>
+          <div className="theme-toggle-group">
+            <button
+              className={`theme-btn ${(local.card_style || 'basic') === 'basic' ? 'active' : ''}`}
+              onClick={() => update('card_style', 'basic')}>
+              Basic
+            </button>
+            <button
+              className={`theme-btn ${local.card_style === 'solarized' ? 'active' : ''}`}
+              onClick={() => update('card_style', 'solarized')}>
+              Solarized Styling
+            </button>
+          </div>
+
           <label className="settings-label">When Anki note differs from paper</label>
           <p className="settings-field-hint">
             Applies when the paper line is unchanged but the note was edited in Browse / note editor.
@@ -163,6 +181,21 @@ export default function Settings({ settings, onSave, onClose }) {
             </div>
           )}
         </div>
+
+        {onConvertEmphasis && (
+          <div className="settings-info">
+            <div className="settings-shortcuts-title">Bold &amp; italic format</div>
+            <p className="settings-field-hint">
+              Bold and italic are now saved as &lt;b&gt; and &lt;i&gt; tags. This converts any
+              older **bold** and *italic* in your papers to match, once. It shows how many it
+              found and asks first, saves a backup of every paper, and leaves code and maths
+              alone. Your cards look exactly the same afterwards.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button className="modal-btn" onClick={onConvertEmphasis}>Convert old bold &amp; italic…</button>
+            </div>
+          </div>
+        )}
 
         <div className="settings-info">
           <div className="settings-shortcuts-title">Keyboard Shortcuts</div>

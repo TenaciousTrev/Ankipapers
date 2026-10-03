@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
-import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap } from 'lucide-react'
 
 // Hovering the rail slides the tree out; both numbers are deliberate. 260ms in
 // means crossing the rail on the way somewhere else does not open it, and
@@ -33,7 +33,7 @@ function SearchMatchBadges({ result }) {
   )
 }
 
-export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, collapsed = false, width = 260, onToggleCollapse }) {
+export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse }) {
   const [peeking, setPeeking] = useState(false)
   const peekTimer = useRef(null)
   const [expandedFolders, setExpandedFolders] = useState(new Set())
@@ -621,6 +621,19 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
             )}
             {contextMenu.type === 'folder' && onRenameFolder && onDeleteFolder && (
               <>
+                {onGenerateFolder && (
+                  <>
+                    <div className="context-item" onClick={() => {
+                      const f = contextMenu.folder
+                      setContextMenu(null)
+                      onGenerateFolder(f.path)
+                    }}>
+                      <Zap size={13} />
+                      <span>Generate all cards in folder</span>
+                    </div>
+                    <div className="context-menu-sep" />
+                  </>
+                )}
                 <div className="context-item" onClick={() => {
                   const f = contextMenu.folder
                   const name = window.prompt('New folder name', f.name)

@@ -9,3 +9,4 @@
 - **basic_card_separator**: The separator syntax for basic cards (default: ">>").
 - **cloze_syntax**: Cloze syntax style - "curly_braces" uses {{text}}.
 - **text_replacements_enabled**: macOS only. Apply your macOS Text Replacements (System Settings → Keyboard → Text Replacements) as you type in the editor — type a shortcut, then Space or Return. On by default; Anki's web engine doesn't do this on its own.
+- **card_style**: How your Anki cards look. `"basic"` is the built-in style; `"solarized"` is Solarized Styling (light in Anki's light mode, dark in dark mode). Changing it in Settings restyles every Anki Papers card at once.

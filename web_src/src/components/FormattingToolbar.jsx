@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bold, Italic, Strikethrough, Subscript, Superscript, Code, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Minus, Braces, ChevronsRight, ArrowLeftRight, Image, Sigma, Table2, Rows3, Columns3, Unlink } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Code, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Minus, Braces, ChevronsRight, ArrowLeftRight, Image, Sigma, Table2, Rows3, Columns3, Unlink } from 'lucide-react'
 
 const SUB_KEY = 'Ctrl+5'
 const SUP_KEY = 'Ctrl+6'
@@ -7,6 +7,7 @@ const SUP_KEY = 'Ctrl+6'
 const buttons = [
   { action: 'bold', icon: Bold, title: 'Bold (Ctrl+B)' },
   { action: 'italic', icon: Italic, title: 'Italic (Ctrl+I)' },
+  { action: 'underline', icon: Underline, title: 'Underline (Ctrl+U)' },
   { action: 'strikethrough', icon: Strikethrough, title: 'Strikethrough' },
   { action: 'subscript', icon: Subscript, title: `Subscript (${SUB_KEY})` },
   { action: 'superscript', icon: Superscript, title: `Superscript (${SUP_KEY})` },
