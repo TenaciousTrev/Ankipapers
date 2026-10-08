@@ -577,9 +577,35 @@ def _render_context(text: str) -> str:
     return _CONTEXT_CLOZE_RE.sub(cloze, text)
 
 
+NO_HEADING_TAG = "AnkiPapers::NH"
+
+
+def _hides_context(card: ParsedCard) -> bool:
+    """True when the card's line carries [[NH]] (any case)."""
+    return any((t or "").lower() == "nh" for t in (getattr(card, "inline_tags", None) or []))
+
+
+def _card_context(card: ParsedCard, paper: Paper) -> str:
+    """The Context field for a card: its breadcrumb, or empty under [[NH]].
+
+    [[NH]] is applied here, when the note is written, rather than by a script
+    in the card template that hid the field when the note had the NH tag. Two
+    things were wrong with the script. It only ran on the question side, so the
+    answer still showed the breadcrumb. And Generate could not see the tag
+    being added or removed — [[tags]] are stripped before content_hash, and
+    derived_hash covered only the field text — so adding [[NH]] to a line that
+    already had a card never reached Anki. An empty Context changes
+    derived_hash, so adding or removing [[NH]] is now an ordinary paper-side
+    edit that Generate always applies.
+    """
+    if _hides_context(card):
+        return ""
+    return _render_context(get_context_heading(paper.content, card.line_index))
+
+
 def _paper_context_and_supplement(card: ParsedCard, paper: Paper) -> Tuple[str, str]:
     """The two note fields that come from the paper but not from the card's line."""
-    context = _render_context(get_context_heading(paper.content, card.line_index))
+    context = _card_context(card, paper)
     supp = _md_to_html(getattr(card, "supplement", ""))
     return context, supp
 
@@ -793,19 +819,8 @@ def _ensure_basic_type(col, css: str = _ANKIPAPERS_CSS):
         # Add template
         tmpl = col.models.new_template("Card 1")
         tmpl["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
 <div class="ap-question">{{Front}}</div>
-<script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -814,7 +829,7 @@ def _ensure_basic_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
   <div class="ap-answer ap-answer-basic">{{Back}}</div>
@@ -840,19 +855,8 @@ def _ensure_basic_type(col, css: str = _ANKIPAPERS_CSS):
             
         tmpl = model["tmpls"][0]
         tmpl["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
 <div class="ap-question">{{Front}}</div>
-<script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -861,7 +865,7 @@ def _ensure_basic_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
   <div class="ap-answer ap-answer-basic">{{Back}}</div>
@@ -901,19 +905,8 @@ def _ensure_cloze_type(col, css: str = _ANKIPAPERS_CSS):
         # Add template
         tmpl = col.models.new_template("Cloze")
         tmpl["qfmt"] = '''<div class="ankipapers-card">
-    <div class="ap-meta" id="ctx">{{Context}}</div>
+    {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
     <div class="ap-cloze">{{cloze:Text}}</div>
-    <script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -922,7 +915,7 @@ def _ensure_cloze_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-cloze">{{cloze:Text}}</div>
   {{#Supplement}}<div class="ap-supplement">{{Supplement}}</div>{{/Supplement}}
   <div class="ap-footer">
@@ -946,19 +939,8 @@ def _ensure_cloze_type(col, css: str = _ANKIPAPERS_CSS):
             
         tmpl = model["tmpls"][0]
         tmpl["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-cloze">{{cloze:Text}}</div>
-  <script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -967,7 +949,7 @@ def _ensure_cloze_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-cloze">{{cloze:Text}}</div>
   {{#Supplement}}<div class="ap-supplement">{{Supplement}}</div>{{/Supplement}}
   <div class="ap-footer">
@@ -1007,20 +989,9 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
         # Forward template (Front → Back)
         tmpl1 = col.models.new_template("Forward")
         tmpl1["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Forward</div>
   <div class="ap-question">{{Front}}</div>
-  <script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -1029,7 +1000,7 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl1["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Forward</div>
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
@@ -1047,20 +1018,9 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
         # Reverse template (Back → Front)
         tmpl2 = col.models.new_template("Reverse")
         tmpl2["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Reverse</div>
   <div class="ap-question">{{Back}}</div>
-  <script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -1069,7 +1029,7 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl2["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Reverse</div>
   <div class="ap-question">{{Back}}</div>
   <div class="ap-divider"></div>
@@ -1096,20 +1056,9 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
             
         tmpl1 = model["tmpls"][0]
         tmpl1["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Forward</div>
   <div class="ap-question">{{Front}}</div>
-  <script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -1118,7 +1067,7 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl1["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Forward</div>
   <div class="ap-question">{{Front}}</div>
   <div class="ap-divider"></div>
@@ -1134,20 +1083,9 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
         
         tmpl2 = model["tmpls"][1]
         tmpl2["qfmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta" id="ctx">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Reverse</div>
   <div class="ap-question">{{Back}}</div>
-  <script>
-(function() {
-  var tags = "{{Tags}}".split(" ");
-  var hideCtx = tags.some(function(tag) {
-    return tag.toLowerCase() === "ankipapers::nh";
-  });
-  if (hideCtx) {
-    document.getElementById("ctx").style.display = "none";
-  }
-})();
-</script>
   <div class="ap-footer">
     <button class="ap-jump" onclick="pycmd('ankipapers_jump:'+'{{AnkiPapers_Source}}'); event.stopPropagation();">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -1156,7 +1094,7 @@ def _ensure_reversible_type(col, css: str = _ANKIPAPERS_CSS):
   </div>
 </div>'''
         tmpl2["afmt"] = '''<div class="ankipapers-card">
-  <div class="ap-meta">{{Context}}</div>
+  {{#Context}}<div class="ap-meta">{{Context}}</div>{{/Context}}
   <div class="ap-direction">Reverse</div>
   <div class="ap-question">{{Back}}</div>
   <div class="ap-divider"></div>
@@ -1200,7 +1138,7 @@ def get_deck_id(col, deck_name: str) -> int:
 def _update_note_from_card(col, note, card: ParsedCard, paper: Paper, deck_id: int) -> bool:
     """Apply parsed card fields to an existing note. Returns True on success."""
     try:
-        context = _render_context(get_context_heading(paper.content, card.line_index))
+        context = _card_context(card, paper)
         source_ref = f"{paper.id}:{card.line_index}"
         supp = _md_to_html(getattr(card, "supplement", ""))
 
@@ -1235,7 +1173,13 @@ def _update_note_from_card(col, note, card: ParsedCard, paper: Paper, deck_id: i
             for itag in card.inline_tags:
                 formatted_tag = f"AnkiPapers::{itag}"
                 if formatted_tag not in note.tags:
-                    note.tags.append(formatted_tag)  
+                    note.tags.append(formatted_tag)
+
+        # Tags above are only ever added, so the NH tag is the one that must
+        # also come off when [[NH]] is removed from the line. Other tags are
+        # left alone: one added by hand in Anki is the user's to keep.
+        if not _hides_context(card):
+            note.tags = [t for t in note.tags if t.lower() != NO_HEADING_TAG.lower()]
 
         note.model()["did"] = deck_id
         if hasattr(col, "update_note"):
@@ -1446,7 +1390,7 @@ def generate_cards(
 def _create_note(col, card: ParsedCard, paper: Paper, deck_id: int) -> Optional[int]:
     """Create a single Anki note from a ParsedCard."""
     try:
-        context = _render_context(get_context_heading(paper.content, card.line_index))
+        context = _card_context(card, paper)
         source_ref = f"{paper.id}:{card.line_index}"
         supp = _md_to_html(getattr(card, "supplement", ""))
 
