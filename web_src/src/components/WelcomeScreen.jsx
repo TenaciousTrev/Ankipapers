@@ -295,6 +295,17 @@ export default function WelcomeScreen({
                   any level it is just part of the document, and indented under a
                   card it travels onto that card.
                 </Ref>
+                <Ref code="Line numbers" tone="key">
+                  The numbers down the left are each line's place in the paper. Folding a
+                  section leaves a gap rather than renumbering, so a number always means
+                  the same line. Settings can turn them off.
+                </Ref>
+                <Ref code="Search" tone="key">
+                  The search box in the sidebar lists every line that matches, as the
+                  paper, then the headings above it, then the line number. Click one and
+                  the paper opens fully unfolded, with that line in the middle of the
+                  screen and briefly highlighted.
+                </Ref>
                 <Ref code="Right-click a folder" tone="key">
                   Choose “Generate all cards in folder” to make the cards for every paper in
                   that folder and its subfolders in one go. You confirm once, answer one
@@ -376,8 +387,12 @@ export default function WelcomeScreen({
                   a middle-click. Five tabs fit across the window; beyond that the strip
                   scrolls sideways. Your open tabs are remembered next time.
                 </Ref>
+                <Ref code="Right-click a tab" tone="key">
+                  Choose Rename to give the paper a new name right there in the tab.
+                  Enter saves it and Esc cancels. Links to the paper keep working.
+                </Ref>
                 <Ref code="Back / forward" tone="key">
-                  The two arrows at the left of the tab strip retrace your steps through
+                  The two arrows at the left of the toolbar retrace your steps through
                   every paper you have visited, landing on the same line each time — so
                   you can chase a chain of links and find your way back. A mouse's back
                   and forward buttons do the same.
@@ -433,7 +448,7 @@ export default function WelcomeScreen({
                 </Ref>
                 <Ref code="Ctrl+Alt+← / Ctrl+Alt+→" tone="key">
                   Back and forward through the papers you have visited, the same as the
-                  arrows on the tab strip.
+                  arrows at the left of the toolbar.
                 </Ref>
                 <Ref code={'Ctrl+\\'} tone="key">
                   Fold the folder list away and give the whole window to what you're

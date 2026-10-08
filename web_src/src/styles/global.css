@@ -157,7 +157,9 @@ body.is-resizing-sidebar .sidebar-resizer { background: var(--accent); }
    collapses" rather than silently doing something unexpected. */
 body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
 
-.sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
+/* Bottom padding leaves a small gap between the Paper/Folder buttons and the
+   rule; .sidebar-search's top padding does the same below it. */
+.sidebar-header { padding: 16px 16px 18px; border-bottom: 1px solid var(--border); }
 
 .sidebar-brand {
   display: flex;
@@ -456,37 +458,36 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ─── Header ─────────────────────────────────────── */
-.editor-header {
-  display: flex; align-items: center; padding: 6px 16px;
+/* ─── Editor toolbar (the one row under the tabs) ─── */
+.editor-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px;
+  padding: 4px 12px; gap: 1px;
   background: var(--bg-secondary); border-bottom: 1px solid var(--border);
-  gap: 10px; flex-shrink: 0;
+  flex-shrink: 0;
 }
-.paper-title-input {
-  flex: 1; background: transparent; border: none; color: var(--text-primary);
-  font-size: 18px; font-weight: 600; font-family: var(--font-sans);
-  outline: none; padding: 6px 0; border-bottom: 2px solid transparent;
-  transition: border-color var(--transition);
-}
-.paper-title-input:focus { border-bottom-color: var(--accent); }
-.paper-title-input::placeholder { color: var(--text-muted); }
+/* Pinned to the right end; wraps as a unit on narrow windows. */
+.editor-toolbar-end { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 
-.header-separator { width: 1px; height: 24px; background: var(--border); }
-.header-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.header-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; margin-right: 6px; }
 
 .header-icon-btn {
   background: transparent; border: none; color: var(--text-muted);
   cursor: pointer; padding: 6px; border-radius: var(--radius-sm);
   display: flex; align-items: center; transition: all var(--transition);
 }
-.header-icon-btn:hover { color: var(--accent); background: var(--bg-hover); }
+.header-icon-btn:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
+.header-icon-btn:disabled { opacity: 0.3; cursor: default; }
 .header-icon-btn.active { color: var(--accent); background: rgba(108,99,255,.12); }
 
 .deck-select {
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--radius-sm); color: var(--text-secondary);
   font-size: 12px; font-family: var(--font-sans); padding: 5px 10px;
-  outline: none; cursor: pointer; min-width: 120px;
+  outline: none; cursor: pointer;
+  /* Stretches to fill the row so the buttons after it sit against the
+     right-hand group; shrinks to 150px before anything wraps. The full name
+     shows on hover. */
+  flex: 1 1 150px; min-width: 150px; text-overflow: ellipsis;
   transition: border-color var(--transition);
 }
 .deck-select:hover, .deck-select:focus { border-color: var(--accent); }
@@ -505,16 +506,11 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
   color: #fff; box-shadow: 0 2px 8px var(--accent-glow);
 }
 
-/* ─── Formatting Toolbar ─────────────────────────── */
-.formatting-toolbar {
-  display: flex; align-items: center; padding: 4px 16px;
-  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
-  gap: 2px; flex-shrink: 0; flex-wrap: wrap;
-}
+/* ─── Formatting buttons ─────────────────────────── */
 .fmt-btn {
   background: transparent; border: 1px solid transparent;
   border-radius: 5px; color: var(--text-muted); font-size: 13px;
-  font-family: var(--font-sans); width: 30px; height: 28px;
+  font-family: var(--font-sans); width: 25px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all var(--transition); flex-shrink: 0;
 }
@@ -526,7 +522,7 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
 .fmt-btn.accent-pink:hover { color: #ff8ac4; }
 .fmt-btn.accent-blue { color: var(--blue); }
 .fmt-btn.accent-blue:hover { color: #a0d0ff; }
-.fmt-sep { width: 1px; height: 20px; background: var(--border); margin: 0 3px; flex-shrink: 0; }
+.fmt-sep { width: 1px; height: 20px; background: var(--border); margin: 0 5px; flex-shrink: 0; }
 
 /* ─── Editor Area ────────────────────────────────── */
 .editor-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -605,6 +601,39 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
 }
 
 .block-editor-pad { min-height: 200px; }
+
+/* ─── Line numbers ───────────────────────────────── */
+/* Each row's number sits in a gutter on its left, aligned with the row's
+   collapse arrow; the gutter's right edge draws one continuous rule. */
+.block-editor.with-line-numbers { padding-left: 12px; }
+.block-editor.with-line-numbers .block-row-inner { position: relative; padding-left: 46px; }
+.block-line-number {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 34px;
+  padding-top: 9px; padding-right: 8px; box-sizing: border-box;
+  border-right: 1px solid var(--border);
+  text-align: right; font-family: var(--font-mono); font-size: 11px; line-height: 14px;
+  color: var(--text-muted); user-select: none; pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+/* Headings are taller than a normal line; centre the number on their text
+   (.block-heading's 8px top margin plus a 24 / 20 / 17px line). */
+.block-row-inner:has(.block-h1) .block-line-number { padding-top: 19px; }
+.block-row-inner:has(.block-h2) .block-line-number { padding-top: 17px; }
+.block-row-inner:has(.block-h3) .block-line-number { padding-top: 15px; }
+.source-editor-highlight.with-line-numbers,
+.source-editor.with-line-numbers { padding-left: 64px; }
+.source-editor-highlight.with-line-numbers {
+  background: linear-gradient(var(--border), var(--border)) no-repeat 48px 0 / 1px 100%;
+}
+.src-line { display: block; position: relative; }
+/* Brief highlight on a line a search result or link just landed on (the
+   overlay sits behind the transparent textarea, so this shows through). */
+.src-line.src-line-revealed { animation: ap-reveal 2.4s ease-out 1; border-radius: 4px; }
+.with-line-numbers .src-line[data-line]::before {
+  content: attr(data-line); position: absolute; left: -64px; width: 40px;
+  text-align: right; color: var(--text-muted); font-size: 0.78em; line-height: 2.18; font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
 
 @keyframes staggerFadeIn {
   from { opacity: 0; transform: translateY(8px); }
@@ -1327,10 +1356,16 @@ textarea.block-input.block-input-textarea {
 
 /* ─── Bottom Toolbar ─────────────────────────────── */
 .bottom-toolbar {
-  display: flex; align-items: center; padding: 6px 16px;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 6px 16px; gap: 12px;
   background: var(--bg-secondary); border-top: 1px solid var(--border);
-  gap: 8px; flex-shrink: 0;
+  flex-shrink: 0;
 }
+.bottom-status {
+  display: flex; align-items: center; gap: 14px; min-width: 0;
+  font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden;
+}
+.bottom-actions { display: flex; align-items: center; gap: 8px; justify-self: end; }
 .toolbar-btn {
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--radius-md); color: var(--text-secondary);
@@ -1356,12 +1391,7 @@ textarea.block-input.block-input-textarea {
 .no-cards { color: var(--text-muted); font-weight: 400; }
 .spacer { flex: 1; }
 
-/* ─── Status Bar ─────────────────────────────────── */
-.status-bar {
-  display: flex; align-items: center; padding: 3px 16px;
-  background: var(--bg-primary); border-top: 1px solid var(--border);
-  font-size: 11px; color: var(--text-muted); gap: 16px; flex-shrink: 0;
-}
+/* ─── Status (left side of the bottom bar) ───────── */
 .status-mode { color: var(--accent); font-weight: 600; }
 
 /* ═══════════════════════════════════════════════════
@@ -1749,13 +1779,12 @@ textarea.block-input.block-input-textarea {
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 [data-theme="light"] .block-card { background: transparent; }
 [data-theme="light"] .kofi-banner { box-shadow: 0 2px 12px rgba(255, 64, 129, 0.2); }
-[data-theme="light"] .editor-header { background: #ffffff; border-bottom-color: #d8d8e0; }
-[data-theme="light"] .paper-title-input { color: #1a1a2e; }
-[data-theme="light"] .status-bar { background: #eeeef2; color: #4a4a65; }
+[data-theme="light"] .editor-toolbar { background: #ffffff; border-bottom-color: #d8d8e0; }
 [data-theme="light"] .deck-select { background: #f5f5f8; color: #1a1a2e; }
 [data-theme="light"] .deck-select option { background: #ffffff; color: #1a1a2e; }
 [data-theme="light"] .fmt-toolbar { background: #ffffff; }
 [data-theme="light"] .bottom-toolbar { background: #ffffff; }
+[data-theme="light"] .bottom-status { color: #4a4a65; }
 [data-theme="light"] .sidebar { background: #eeeef2; }
 [data-theme="light"] .sidebar-header { background: #e8e8ee; }
 [data-theme="light"] .sidebar-brand-text { color: #1a1a2e; }
@@ -1778,7 +1807,7 @@ textarea.block-input.block-input-textarea {
 [data-theme="light"] .math-block { color: #6c5ce7; background: rgba(108,92,231,0.08); }
 
 /* ─── Sidebar search ─────────────────────────────── */
-.sidebar-search { padding: 0 10px 10px; }
+.sidebar-search { padding: 12px 10px 10px; }
 
 .sidebar-search-trigger {
   width: 100%;
@@ -1990,30 +2019,21 @@ textarea.block-input.block-input-textarea {
   color: var(--text-accent);
 }
 
+.search-result-row { align-items: flex-start; }
+.search-result-row .tree-icon { margin-top: 2px; flex-shrink: 0; }
 .search-result-body { flex: 1; min-width: 0; overflow: hidden; }
-.search-result-meta { margin-top: 2px; }
-.search-snippet {
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Document › H1 › H2 › H3 · line N — wraps rather than truncating, so the
+   full location is always readable. */
+.search-result-path {
+  font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
+  color: var(--text-secondary);
 }
-.search-result-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
+.search-result-doc { color: var(--text-primary); font-weight: 600; }
+.search-result-sep { color: var(--text-muted); }
+.search-result-line {
+  color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums;
 }
-.search-result-loc {
-  font-size: 9px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
+.search-result-row .search-match-badges { margin-top: 3px; }
 .search-match-badges {
   display: flex;
   flex-wrap: wrap;
@@ -2139,43 +2159,84 @@ textarea.block-input.block-input-textarea {
   font-style: italic;
   opacity: 0.85;
 }
-/* ─── Tab bar ────────────────────────────────────── */
+/* ─── Tab bar (Chrome-style) ────────────────────── */
+/* The active tab is the toolbar's colour and has no bottom edge, so it and
+   the toolbar read as one piece; small inverse curves at its bottom corners
+   (::before / ::after) flare it into the toolbar the way Chrome does.
+   Inactive tabs have no fill and are split by thin dividers. */
+:root, [data-theme="dark"] {
+  --tab-strip-bg: var(--bg-primary);
+  --tab-active-bg: var(--bg-secondary);
+  --tab-hover-bg: rgba(255, 255, 255, 0.05);
+}
+[data-theme="light"] {
+  --tab-strip-bg: #e3e3ea;
+  --tab-active-bg: #ffffff;
+  --tab-hover-bg: rgba(0, 0, 0, 0.05);
+}
 .tab-bar {
   display: flex; align-items: stretch; flex-shrink: 0;
-  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
-  min-width: 0;
+  background: var(--tab-strip-bg);
+  min-width: 0; padding-top: 6px; /* breathing room above the tabs */
 }
-/* Only the tabs scroll; the back/forward arrows beside them stay pinned. */
+/* Side padding leaves room for the active tab's curves at either end. */
 .tab-strip {
-  display: flex; align-items: stretch; flex: 1; min-width: 0;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+  display: flex; align-items: flex-end; flex: 1; min-width: 0;
+  padding: 0 10px;
+  /* Scrolls sideways (wheel or trackpad) with no visible scrollbar, which
+     would otherwise sit between the active tab and the toolbar. */
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
+.tab-strip::-webkit-scrollbar { display: none; }
 .tab {
+  position: relative;
   display: flex; align-items: center; gap: 6px;
   /* Fixed width: at most five tabs fit in a full-screen window on a 16"
      MacBook Pro (1792px default scaling) with the sidebar at its default
      width; the strip scrolls sideways beyond that. */
-  flex: 0 0 290px; width: 290px; box-sizing: border-box;
-  padding: 6px 8px 6px 12px;
-  border-right: 1px solid var(--border); border-top: 2px solid transparent;
+  flex: 0 0 290px; width: 290px; height: 34px; box-sizing: border-box;
+  padding: 0 8px 0 14px;
+  border-radius: 9px 9px 0 0;
   color: var(--text-muted); font-size: 12px; font-family: var(--font-sans);
   cursor: pointer; user-select: none; white-space: nowrap;
   transition: color var(--transition), background var(--transition);
 }
-.tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.tab:hover:not(.active) { color: var(--text-secondary); background: var(--tab-hover-bg); }
 .tab.active {
-  color: var(--text-primary); background: var(--bg-primary);
-  border-top-color: var(--accent);
+  color: var(--text-primary); background: var(--tab-active-bg); z-index: 1;
 }
+.tab.active::before, .tab.active::after {
+  content: ''; position: absolute; bottom: 0; width: 9px; height: 9px; pointer-events: none;
+}
+.tab.active::before { left: -9px; background: radial-gradient(circle at 0 0, transparent 8.5px, var(--tab-active-bg) 9px); }
+.tab.active::after { right: -9px; background: radial-gradient(circle at 100% 0, transparent 8.5px, var(--tab-active-bg) 9px); }
+
+/* Divider on each inactive tab's right edge, hidden beside the active or a
+   hovered tab (and after the last tab), as in Chrome. */
+.tab:not(.active)::after {
+  content: ''; position: absolute; right: 0; top: 9px; bottom: 9px;
+  width: 1px; background: var(--border);
+}
+.tab:last-child::after,
+.tab:hover::after,
+.tab:has(+ .tab.active)::after,
+.tab:has(+ .tab:hover)::after { display: none; }
+
 .tab-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab-rename-input {
+  flex: 1; min-width: 0; user-select: text;
+  background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  font-size: 12px; font-family: var(--font-sans); padding: 1px 4px; outline: none;
+}
 .tab-close {
   display: flex; align-items: center; flex-shrink: 0;
-  background: transparent; border: none; border-radius: var(--radius-sm);
-  color: inherit; padding: 2px; cursor: pointer; opacity: 0;
+  background: transparent; border: none; border-radius: 50%;
+  color: inherit; padding: 3px; cursor: pointer; opacity: 0;
   transition: opacity var(--transition), background var(--transition);
 }
 .tab:hover .tab-close, .tab.active .tab-close { opacity: 0.7; }
-.tab-close:hover { opacity: 1; background: var(--bg-hover); color: var(--accent); }
+.tab-close:hover { opacity: 1; background: var(--tab-hover-bg); color: var(--accent); }
 
 /* Unsaved dot: shown in place of the close button until the tab is hovered. */
 .tab-dirty {
@@ -2184,18 +2245,7 @@ textarea.block-input.block-input-textarea {
 }
 .tab.dirty:not(:hover) .tab-dirty { display: block; }
 .tab.dirty:not(:hover) .tab-close { display: none; }
-
-.tab-nav { display: flex; align-items: center; flex-shrink: 0; padding: 0 4px; border-right: 1px solid var(--border); }
-.tab-nav-btn {
-  display: flex; align-items: center; background: transparent; border: none;
-  color: var(--text-muted); padding: 4px; border-radius: var(--radius-sm);
-  cursor: pointer; transition: color var(--transition), background var(--transition);
-}
-.tab-nav-btn:hover:not(:disabled) { color: var(--accent); background: var(--bg-hover); }
-.tab-nav-btn:disabled { opacity: 0.3; cursor: default; }
-[data-theme="light"] .tab-bar { background: #eeeef2; border-bottom-color: #d8d8e0; }
-[data-theme="light"] .tab, [data-theme="light"] .tab-nav { border-right-color: #d8d8e0; }
-[data-theme="light"] .tab.active { background: #ffffff; color: #1a1a2e; }
+[data-theme="light"] .tab.active { color: #1a1a2e; }
 
 /* Subscript / superscript: line-height 0 stops them pushing the line apart. */
 sub, sup { line-height: 0; }

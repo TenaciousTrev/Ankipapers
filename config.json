@@ -5,6 +5,7 @@
     "font_family": "JetBrains Mono",
     "editor_theme": "dark",
     "show_card_indicators": true,
+    "show_line_numbers": true,
     "reversible_separator": "<>",
     "basic_separator": ">>",
     "text_replacements_enabled": true,

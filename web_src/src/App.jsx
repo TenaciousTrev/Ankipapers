@@ -9,7 +9,6 @@ import {
 import Sidebar from './components/Sidebar'
 import EditorHeader from './components/EditorHeader'
 import TabBar from './components/TabBar'
-import FormattingToolbar from './components/FormattingToolbar'
 import SourceEditor from './components/SourceEditor'
 import BlockEditor from './components/BlockEditor'
 import BottomToolbar from './components/BottomToolbar'
@@ -166,6 +165,8 @@ export default function App() {
   // anywhere that writes to storage.
   const paperRef = useRef(null)
   paperRef.current = paper
+  const viewModeRef = useRef(viewMode)
+  viewModeRef.current = viewMode
 
   // The papers list, readable from callbacks without depending on it.
   const papersRef = useRef(papers)
@@ -487,10 +488,31 @@ export default function App() {
     setTimeout(() => { isUndoRedoRef.current = false }, 50)
   }, [])
 
-  const handleTitleChange = useCallback((newTitle) => {
-    if (!paper) return
-    setPaper(prev => ({ ...prev, title: newTitle }))
-  }, [paper])
+  // Rename from a tab's right-click menu. Links point at paper ids, not
+  // titles, so nothing else needs rewriting. The open paper is saved right
+  // away (with whatever else is unsaved in it, as autosave would) so the
+  // sidebar picks up the new name; any other paper is saved on its own.
+  const handleRenamePaper = useCallback(async (id, newTitle) => {
+    const title = (newTitle || '').trim()
+    if (!title) return
+    const current = paperRef.current
+    const target = current && current.id === id
+      ? current
+      : papersRef.current.find((p) => p.id === id)
+    if (!target || target.title === title) return
+    const updated = { ...target, title }
+    if (current && current.id === id) {
+      setPaper((prev) => (prev && prev.id === id ? { ...prev, title } : prev))
+      paperRef.current = { ...paperRef.current, title }
+      if (isBusyRef.current) return  // saved with the paper once Generate/Save finishes
+    }
+    const res = await (current && current.id === id ? persistPaper(updated) : savePaper(updated))
+    if (res && res.error) {
+      showToast(`Rename failed: ${res.error}`, 'error')
+      return
+    }
+    await refreshPapers()
+  }, [persistPaper, refreshPapers])
 
   const handleDeckChange = useCallback(async (deckName) => {
     if (!paper) return
@@ -577,16 +599,22 @@ export default function App() {
   const [showLinksPanel, setShowLinksPanel] = useState(false)
   const [showGraph, setShowGraph] = useState(false)
 
-  // Open a document and reveal one of its lines. Used by the backlinks panel
-  // and by the graph, so both land the same way a link does.
-  const handleGoToLine = useCallback(async (paperId, lineIndex) => {
+  // Open a document and reveal one of its lines. Used by the backlinks panel,
+  // the graph and sidebar search, so all of them land the same way a link
+  // does — in Source view too, where the caret moves to that line. Search
+  // passes expandAll to unfold the whole paper; the others unfold only the
+  // sections the line sits inside.
+  const handleGoToLine = useCallback(async (paperId, lineIndex, { expandAll = false } = {}) => {
     if (!paperId) return
     const alreadyOpen = paperRef.current?.id === paperId
     const line = lineIndex != null && lineIndex >= 0 ? lineIndex : -1
     if (alreadyOpen) pushNav(paperId, line)
     else await handleSelectPaper(paperId, { lineIndex: line })
     if (line >= 0) {
-      setTimeout(() => blockEditorRef.current?.revealBlock?.(line), alreadyOpen ? 30 : 320)
+      setTimeout(() => {
+        if (viewModeRef.current === 'source') editorRef.current?.goToLine?.(line)
+        else blockEditorRef.current?.revealBlock?.(line, { expandAll })
+      }, alreadyOpen ? 30 : 320)
     }
   }, [handleSelectPaper, pushNav])
 
@@ -1364,6 +1392,7 @@ export default function App() {
       <Sidebar
         papers={papers} folders={folders} activePaperId={activePaperId}
         onSelectPaper={handleSelectPaper} onCreatePaper={handleCreatePaper}
+        onGoToLine={(id, line) => handleGoToLine(id, line, { expandAll: true })}
         onDeletePaper={handleDeletePaper} onCreateFolder={handleCreateFolder}
         onMovePaper={handleMovePaper}
         onSelectFolder={setSelectedFolder} selectedFolder={selectedFolder}
@@ -1396,27 +1425,25 @@ export default function App() {
           activePaperId={paper?.id ?? null}
           activeTitle={paper?.title}
           activeDirty={paperDirty}
-          canBack={navState.canBack}
-          canForward={navState.canForward}
-          onBack={() => goHistory(-1)}
-          onForward={() => goHistory(1)}
           onSelect={handleSelectPaper}
           onClose={handleCloseTab}
+          onRename={handleRenamePaper}
         />
         {paper ? (
           <>
             <EditorHeader
-              title={paper.title} deckName={paper.deck_name} decks={decks}
+              canBack={navState.canBack} canForward={navState.canForward}
+              onBack={() => goHistory(-1)} onForward={() => goHistory(1)}
+              deckName={paper.deck_name} decks={decks}
               viewMode={viewMode} showSourcePanel={showSourcePanel}
               showLinksPanel={showLinksPanel}
-              onTitleChange={handleTitleChange}
+              onFormat={handleFormat}
               onDeckChange={handleDeckChange} onViewChange={setViewMode}
               onToggleSource={() => setShowSourcePanel((v) => !v)}
               onToggleLinks={() => setShowLinksPanel((v) => !v)}
               onExportPdf={handleExportPdf} onExportMarkdown={handleExportMarkdown}
               onImportMarkdown={handleImportMarkdown}
             />
-            <FormattingToolbar onFormat={handleFormat} />
 
             <div className="editor-area">
               {viewMode === 'source' ? (
@@ -1455,17 +1482,12 @@ export default function App() {
 
             <BottomToolbar 
               cardCounts={cardCounts} 
+              viewMode={viewMode}
+              modifiedAt={paper.modified_at}
               onSave={handleSave} 
               onGenerate={handleGenerate} 
               isSaving={isBusy} // Passes lock state to toolbar UI
             />
-
-            <div className="status-bar">
-              <span>Anki Papers</span>
-              <span className="spacer" />
-              <span className="status-mode">{viewMode === 'source' ? '✎ SOURCE' : '◻ EDITOR'}</span>
-              <span>Modified: {new Date(paper.modified_at * 1000).toLocaleTimeString()}</span>
-            </div>
           </>
         ) : (
           <WelcomeScreen

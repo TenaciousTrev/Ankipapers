@@ -41,6 +41,12 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Search finds the exact line.** Sidebar search now lists every matching line as `Document › H1 › H2 › H3 · line N` instead of a text excerpt, and clicking one opens the paper fully unfolded, centred on that line, which flashes briefly so you can spot it. See [Searching](#searching).
+
+**Line numbers.** A gutter down the left of the editor and Source view shows each line's number in the paper. Folded sections leave a gap, so a number always means the same line, and it's the same number search shows. Settings → Line Numbers turns them off.
+
+**One toolbar, Chrome-style tabs.** The title box and the separate header row are gone. Everything now sits in a single toolbar under the tabs: back and forward, the deck picker, then every formatting button, with Editor/Source, import and export, the Links panel and the source panel at the right end. The deck picker stretches to fill the spare room, and on a narrow window the right-hand group wraps onto a second line as one piece. Tabs are shaped like Chrome's: the active tab flows into the toolbar below it. **To rename a paper, right-click its tab and choose Rename**, type the new name, and press Enter (Esc cancels). The rename saves straight away, and links to the paper keep working because they point at the paper, not its name. The bottom of the window is now one bar too: status on the left, the card count in the centre, and Save and Generate Cards on the right.
+
 **Bold and italic are saved as `<b>` and `<i>` tags.** `Ctrl+B`, `Ctrl+I` and the toolbar buttons now write `<b>bold</b>` and `<i>italic</i>` — the same tags Anki's own editor uses, and the same way underline, subscript and superscript work — and pressing them again removes the formatting. Older `**bold**` and `*italic*` still display correctly. To bring existing papers in line, **Settings → Bold & italic format → Convert old bold & italic** rewrites them once: it shows how many it found and asks first, saves a backup of every paper to `<profile>/ankipapers/backups/`, and leaves code and maths untouched. Your cards look exactly the same afterwards. Nested formatting such as underlined subscript now also displays correctly in the editor and PDF.
 
 **Generate a whole folder at once.** Right-click a folder in the sidebar and choose **Generate all cards in folder** to make the cards for every paper in that folder and all its subfolders. You confirm once. If some of those cards were edited in Anki and your conflict setting is *Ask*, you get one combined dialog for the whole folder and make one choice for all of it; any other setting is simply followed. A progress bar then names each paper as it's generated — keep Anki Papers open until it finishes; closing waits for the run to complete. A summary at the end totals the created, updated and removed cards, and lists any paper that couldn't be generated and why, while the rest still finish.
@@ -53,11 +59,11 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **Subscript and superscript.** Highlight text and press `Ctrl+5` for subscript or `Ctrl+6` for superscript (the Control key on a Mac too), or use the two new toolbar buttons beside strikethrough. They work like Word: press the same one again to remove it, or the other one to swap. With nothing highlighted, you get a placeholder to type over. They are saved as ordinary `<sub>` and `<sup>` tags, so they show up on your Anki cards, in the PDF, and in other markdown apps such as Obsidian. A card whose question ends right against the separator, like `CO<sub>2</sub>>> a gas`, now splits in the right place.
 
-**Tabs.** Every paper you open gets a tab above the editor, so you can keep several papers at hand and switch between them with a click. Following a link to another paper opens it in a tab right next to the one you came from, and the paper you left stays open. Close a tab with its × or a middle-click; cycle with `Ctrl+Tab` and `Ctrl+Shift+Tab`. Tabs have a fixed width, so five fit across a full-screen window and the strip scrolls sideways beyond that. Open tabs are remembered between sessions.
+**Tabs.** Every paper you open gets a tab above the editor, so you can keep several papers at hand and switch between them with a click. Following a link to another paper opens it in a tab right next to the one you came from, and the paper you left stays open. Close a tab with its × or a middle-click; cycle with `Ctrl+Tab` and `Ctrl+Shift+Tab`; right-click a tab to rename its paper. Tabs have a fixed width, so five fit across a full-screen window and the strip scrolls sideways beyond that (with the mouse wheel or trackpad). Open tabs are remembered between sessions.
 
 **Unsaved changes at a glance.** A dot on the active tab means the paper has edits that have not yet reached disk. It clears on `Ctrl+S`, on autosave, and whenever you switch papers, since switching always saves first.
 
-**Back and forward.** After following a chain of links, `Ctrl+Alt+←` and `Ctrl+Alt+→` (or the arrows at the left of the tab strip, or a mouse's back and forward buttons) retrace your steps, landing on the same line each time.
+**Back and forward.** After following a chain of links, `Ctrl+Alt+←` and `Ctrl+Alt+→` (or the arrows at the left of the toolbar, or a mouse's back and forward buttons) retrace your steps, landing on the same line each time.
 
 **Renaming a heading keeps its links readable.** Links quote the heading they point at. When you rename a heading that other papers link to, saving (or leaving the paper) offers to update every link that still reads the old name. Links whose text you wrote yourself are left alone.
 
@@ -316,7 +322,7 @@ The first line of each file carries the same kind of marker for the paper itself
 
 ## Links panel and graph
 
-The **link icon** in the editor header opens the Links panel for the open paper:
+The **link icon** near the right end of the toolbar opens the Links panel for the open paper:
 
 - **Linked from** — every place that cites this paper, showing the citing sentence with the linked phrase highlighted and which heading it points at. Click to jump to that exact line in the citing document.
 - **Links out** — what this paper points at, with broken targets flagged.
@@ -345,7 +351,7 @@ The sidebar search takes more than plain words:
 | `-pediatric` | Exclude papers matching this |
 | `iron OR b12` | Alternative branches: `a b OR c d` matches `(a AND b)` or `(c AND d)` |
 
-Matches come back with a snippet showing the hit in context.
+Every result is a place, not an excerpt: one row per matching line, reading `Document › H1 › H2 › H3 · line N` — for example `Endocrinology › Hyperparathyroidism › Workup · line 12`. Heading levels the line doesn't sit under are left out, so a line above the first heading is just `Document · line N`. Click a row to open the paper with every section unfolded, scrolled so that line sits mid-screen and briefly highlighted (in Source view, the cursor lands on it). Following a link, the Links panel, the graph and back/forward unfold only the sections around their target line. A paper that matches only by its title, folder, deck or tags gets a single row with badges saying which. A very common word shows the first 200 rows and says how many there are in all. Hidden anchors and link addresses are never searched.
 
 ---
 
@@ -423,7 +429,7 @@ Because papers are ordinary files, any backup you already run covers them: Time 
 
 ## Exporting
 
-The editor header has three:
+The right end of the toolbar has three buttons:
 
 - **Import Markdown** — bring an existing `.md` in as a paper.
 - **Export Markdown** — write the paper back out as a `.md` file.
@@ -473,6 +479,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `font_family` / `font_size` | Editor typeface |
 | `editor_theme` | `dark`, `light`, or `auto` |
 | `show_card_indicators` | Card markers in the left margin |
+| `show_line_numbers` | Line numbers down the left of the editor and Source view (on by default) |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
 | `card_style` | `basic` (built-in) or `solarized` (Solarized Styling) — restyles every card when changed |
 | `text_replacements_enabled` | Mac only: apply your macOS Text Replacements as you type (on by default) |

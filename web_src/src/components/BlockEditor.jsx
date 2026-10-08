@@ -1455,22 +1455,64 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     if (target) onOpenDocLinkRef.current?.(target)
   }, [])
 
-  // Transient highlight used when arriving at a link's target, so the reader's
-  // eye lands on the right line without the block flipping into edit mode.
+  // Transient highlight used when arriving at a line (a link's target, a
+  // search result, back/forward), so the reader's eye lands on the right line
+  // without the block flipping into edit mode.
+  //
+  // A line inside a folded section would be invisible, so it is unfolded
+  // first: `expandAll` (sidebar search) opens every section in the paper;
+  // otherwise only the sections the line sits inside are opened.
   const [revealedIndex, setRevealedIndex] = useState(null)
   const revealTimerRef = useRef(null)
-  const revealBlock = useCallback((index) => {
+  const revealStepRef = useRef(null)
+  const revealBlock = useCallback((index, { expandAll = false } = {}) => {
+    const all = blocksRef.current
+    if (index == null || index < 0 || index >= all.length) return
     setSelectedIndices(new Set())
     setFocusedIndex(null)
-    setRevealedIndex(index)
-    setTimeout(() => {
-      const el = containerRef.current?.children[index]
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 50)
+
+    let unfolding = false
+    if (expandAll) {
+      unfolding = all.some((b) => b.isHidden)
+      setCollapsedKeys(new Set())
+    } else if (all[index].isHidden) {
+      // Walk up collecting each enclosing line (the nearest one above with a
+      // smaller indent), the same parent rule the folding itself uses.
+      const parents = []
+      let indent = all[index].indentLevel
+      for (let j = index - 1; j >= 0 && indent > 0; j--) {
+        if (all[j].indentLevel < indent) {
+          parents.push(all[j].key)
+          indent = all[j].indentLevel
+        }
+      }
+      unfolding = true
+      setCollapsedKeys((prev) => {
+        const next = new Set(prev)
+        parents.forEach((k) => next.delete(k))
+        return next
+      })
+    }
+
+    // A table draws all its rows in its first line's block, so a hit on any
+    // row lands on the table.
+    const bounds = findTableBounds(all.map((b) => b.line), index)
+    const target = bounds ? bounds.start : index
+    const blockId = all[target].id
+
+    // Clear first so the highlight replays when the same line is revealed
+    // twice in a row; wait out the unfold animation (0.3s) before scrolling.
+    setRevealedIndex(null)
+    clearTimeout(revealStepRef.current)
     clearTimeout(revealTimerRef.current)
-    revealTimerRef.current = setTimeout(() => setRevealedIndex(null), 2400)
+    revealStepRef.current = setTimeout(() => {
+      setRevealedIndex(target)
+      const el = blockId && containerRef.current?.querySelector(`[data-block-id="${CSS.escape(blockId)}"]`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      revealTimerRef.current = setTimeout(() => setRevealedIndex(null), 2400)
+    }, unfolding ? 340 : 50)
   }, [])
-  useEffect(() => () => clearTimeout(revealTimerRef.current), [])
+  useEffect(() => () => { clearTimeout(revealTimerRef.current); clearTimeout(revealStepRef.current) }, [])
 
   const closeBlockMenu = useCallback(() => setBlockMenu(null), [])
 
@@ -2330,9 +2372,10 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   }
 
   const allLines = useMemo(() => blocks.map(b => b.line), [blocks])
+  const showLineNumbers = settings?.show_line_numbers !== false
 
   return (
-    <div className="block-editor" ref={containerRef} onPaste={handlePaste} onMouseDown={handleEditorMouseDown} onClick={(e) => {
+    <div className={`block-editor ${showLineNumbers ? 'with-line-numbers' : ''}`} ref={containerRef} onPaste={handlePaste} onMouseDown={handleEditorMouseDown} onClick={(e) => {
       if ((e.target === containerRef.current || e.target.classList.contains('block-editor-pad')) && selectedIndices.size === 0) {
         const lines = content.split('\n')
         if (lines[lines.length - 1].trim() !== '') {
@@ -2355,6 +2398,9 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         return (
           <div key={b.id} className={`block-row-wrapper ${b.isHidden ? 'block-row-hidden' : 'stagger-in'}`} style={{ animationDelay: `${staggerDelays.get(b.id) ?? 0}ms` }}>
             <div className="block-row-inner">
+              {/* The line's real number in the paper (Source view counts the
+                  same way), so folded sections leave a gap. */}
+              {showLineNumbers && <div className="block-line-number" aria-hidden="true">{i + 1}</div>}
               <Block
                 blockId={b.id}
                 line={displayLine}

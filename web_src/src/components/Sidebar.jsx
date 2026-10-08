@@ -15,6 +15,31 @@ const MAX_FOLDER_DEPTH = 3
 
 const DND_MIME = 'application/x-ankipapers-drag'
 
+// The search lists one row per matching line (see core/search_query.py),
+// capped so a very common word doesn't flood the popover.
+const MAX_SEARCH_ROWS = 200
+
+function searchRows(results) {
+  const rows = []
+  let total = 0
+  for (const r of results) {
+    if (r.lines && r.lines.length) {
+      total += r.lines_total ?? r.lines.length
+      // Papers often open with an H1 that repeats their title; don't say it twice.
+      const title = (r.title || '').trim().toLowerCase()
+      for (const h of r.lines) {
+        const path = (h.path || []).filter((crumb, i) => !(i === 0 && crumb.trim().toLowerCase() === title))
+        if (rows.length < MAX_SEARCH_ROWS) rows.push({ key: `${r.id}:${h.line}`, result: r, line: h.line, path })
+      }
+    } else {
+      // Matched on its title, folder, deck or tags only: no line to point at.
+      total += 1
+      if (rows.length < MAX_SEARCH_ROWS) rows.push({ key: r.id, result: r, line: null, path: [] })
+    }
+  }
+  return { rows, total }
+}
+
 function SearchMatchBadges({ result }) {
   const bits = [
     result.title_match && { k: 'title', t: 'Title' },
@@ -33,7 +58,7 @@ function SearchMatchBadges({ result }) {
   )
 }
 
-export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse }) {
+export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse }) {
   const [peeking, setPeeking] = useState(false)
   const peekTimer = useRef(null)
   const [expandedFolders, setExpandedFolders] = useState(new Set())
@@ -124,12 +149,13 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
 
   const closeSearchPopover = useCallback(() => setSearchPopoverOpen(false), [])
 
-  const selectSearchResult = useCallback((id) => {
-    onSelectPaper(id)
+  const selectSearchResult = useCallback((id, line = null) => {
+    if (line != null && onGoToLine) onGoToLine(id, line)
+    else onSelectPaper(id)
     setSearchQuery('')
     setSearchResults(null)
     setSearchPopoverOpen(false)
-  }, [onSelectPaper])
+  }, [onSelectPaper, onGoToLine])
 
   const toggleExpand = (path) => {
     setExpandedFolders(prev => {
@@ -511,43 +537,46 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
               {searchQuery.trim() && searchResults === null && (
                 <div className="sidebar-search-popover-hint">Searching…</div>
               )}
-              {searchQuery.trim() && searchResults !== null && (
+              {searchQuery.trim() && searchResults !== null && (() => {
+                const { rows, total } = searchRows(searchResults)
+                return (
                 <>
                   <div className="sidebar-search-popover-results-header">
-                    {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                    {total} result{total !== 1 ? 's' : ''}
+                    {searchResults.length > 0 && ` in ${searchResults.length} paper${searchResults.length !== 1 ? 's' : ''}`}
+                    {total > rows.length && ` · showing the first ${rows.length}`}
                   </div>
-                  {searchResults.map(r => (
+                  {rows.map(({ key, result: r, line, path }) => (
                     <div
-                      key={r.id}
-                      className={`tree-item search-result-row ${activePaperId === r.id ? 'active' : ''}`}
+                      key={key}
+                      className={`tree-item search-result-row ${line == null && activePaperId === r.id ? 'active' : ''}`}
                       style={{ paddingLeft: 12 }}
                       role="button"
                       tabIndex={0}
-                      onClick={() => selectSearchResult(r.id)}
+                      title={[r.folder_path, r.deck_name].filter(Boolean).join(' · ') || undefined}
+                      onClick={() => selectSearchResult(r.id, line)}
                       onKeyDown={e => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
-                          selectSearchResult(r.id)
+                          selectSearchResult(r.id, line)
                         }
                       }}
                     >
                       <span className="tree-chevron-spacer" style={{ width: FOLDER_CHEVRON_SIZE, flexShrink: 0 }} aria-hidden />
                       <FileText size={14} className="tree-icon" />
                       <div className="search-result-body">
-                        <div className="tree-item-label">{r.title}</div>
-                        <div className="search-result-meta">
-                          {r.snippet && <div className="search-snippet">{r.snippet}</div>}
-                          <div className="search-result-foot">
-                            {(r.folder_path || r.deck_name) && (
-                              <span className="search-result-loc">
-                                {r.folder_path ? <span title="Folder">{r.folder_path}</span> : null}
-                                {r.folder_path && r.deck_name ? ' · ' : null}
-                                {r.deck_name ? <span title="Deck">{r.deck_name}</span> : null}
-                              </span>
-                            )}
-                            <SearchMatchBadges result={r} />
-                          </div>
+                        {/* Document › H1 › H2 › H3 · line N */}
+                        <div className="search-result-path">
+                          <span className="search-result-doc">{r.title || 'Untitled'}</span>
+                          {path.map((h, i) => (
+                            <React.Fragment key={i}>
+                              <span className="search-result-sep" aria-hidden> › </span>
+                              <span className="search-result-heading">{h}</span>
+                            </React.Fragment>
+                          ))}
+                          {line != null && <span className="search-result-line"> · line {line + 1}</span>}
                         </div>
+                        {line == null && <SearchMatchBadges result={r} />}
                       </div>
                     </div>
                   ))}
@@ -555,7 +584,8 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
                     <div className="sidebar-search-popover-empty">No results for &quot;{searchQuery}&quot;</div>
                   )}
                 </>
-              )}
+                )
+              })()}
             </div>
             <details className="sidebar-search-syntax sidebar-search-syntax--popover">
               <summary>Search syntax</summary>

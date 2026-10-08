@@ -317,7 +317,7 @@ function createMockBridge() {
     export_papers_to_disk: () => ({ root: '', written: [] }),
     get_settings: () => ({
       default_deck: 'Default', auto_save_interval_seconds: 30, font_size: 14,
-      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true,
+      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true, show_line_numbers: true,
       anki_edit_conflict: 'ask',
     }),
     // Mirrors gui/bridge.py: a changed card_style reports it was applied.

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Save, Zap } from 'lucide-react'
 
-export default function BottomToolbar({ cardCounts, onSave, onGenerate, isSaving: externalIsSaving }) {
+export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, onSave, onGenerate, isSaving: externalIsSaving }) {
   // Local state to track if an operation is currently running
   const [localIsSaving, setLocalIsSaving] = useState(false)
   const [localIsGenerating, setLocalIsGenerating] = useState(false)
@@ -50,7 +50,15 @@ export default function BottomToolbar({ cardCounts, onSave, onGenerate, isSaving
   const isBusy = externalIsSaving || localIsSaving || localIsGenerating
 
   return (
+    // Three columns: status on the left, card counts centred on the whole bar
+    // (not just the space between), Save/Generate on the right.
     <div className="bottom-toolbar">
+      <div className="bottom-status">
+        <span>Anki Papers</span>
+        <span className="status-mode">{viewMode === 'source' ? '✎ SOURCE' : '◻ EDITOR'}</span>
+        {modifiedAt != null && <span>Modified: {new Date(modifiedAt * 1000).toLocaleTimeString()}</span>}
+      </div>
+
       <span className="card-count">
         {total > 0 ? (
           <>
@@ -61,8 +69,8 @@ export default function BottomToolbar({ cardCounts, onSave, onGenerate, isSaving
           <span className="no-cards">No cards detected</span>
         )}
       </span>
-      <div className="spacer" />
-      
+
+      <div className="bottom-actions">
       <button 
         className={`toolbar-btn ${isBusy ? 'disabled' : ''}`} 
         onClick={handleSave} 
@@ -84,6 +92,7 @@ export default function BottomToolbar({ cardCounts, onSave, onGenerate, isSaving
         <Zap size={14} />
         <span>{localIsGenerating ? 'Generating...' : 'Generate Cards'}</span>
       </button>
+      </div>
     </div>
   )
 }

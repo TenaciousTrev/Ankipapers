@@ -75,6 +75,14 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
             <span className="toggle-text">{local.show_card_indicators !== false ? 'Enabled' : 'Disabled'}</span>
           </label>
 
+          <label className="settings-label">Line Numbers</label>
+          <label className="settings-toggle">
+            <input type="checkbox" checked={local.show_line_numbers !== false}
+              onChange={e => update('show_line_numbers', e.target.checked)} />
+            <span className="toggle-slider" />
+            <span className="toggle-text">{local.show_line_numbers !== false ? 'Enabled' : 'Disabled'}</span>
+          </label>
+
           {IS_MAC && (
             <>
               <label className="settings-label">macOS Text Replacements</label>

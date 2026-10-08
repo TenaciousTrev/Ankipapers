@@ -35,9 +35,12 @@ const buttons = [
   { action: 'insertImage', icon: Image, title: 'Insert Image' },
 ]
 
-export default function FormattingToolbar({ onFormat }) {
+// Just the buttons, with no wrapper: EditorHeader lays them out inside the
+// single toolbar row under the tabs, between the deck picker and the view
+// controls.
+export default function FormattingButtons({ onFormat }) {
   return (
-    <div className="formatting-toolbar">
+    <>
       {buttons.map((btn, i) => {
         if (btn === 'sep') return <div key={i} className="fmt-sep" />
         const Icon = btn.icon
@@ -54,6 +57,6 @@ export default function FormattingToolbar({ onFormat }) {
           </button>
         )
       })}
-    </div>
+    </>
   )
 }
