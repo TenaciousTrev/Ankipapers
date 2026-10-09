@@ -1,15 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import ankipapersLogo from '../assets/ankipapers-logo.svg'
+import CardHeatmap from './CardHeatmap'
+import { getHomeStats } from '../bridge'
 import {
   FileText,
   Plus,
-  Search,
   FileInput,
   Settings,
-  Clock,
   FolderOpen,
   Sparkles,
-  ChevronDown,
   BookOpen,
   Link2,
   Share2,
@@ -17,6 +16,8 @@ import {
   Keyboard,
   HardDrive,
   Layers,
+  CalendarDays,
+  History,
 } from 'lucide-react'
 
 function formatRelativeTime(modifiedAt) {
@@ -54,6 +55,38 @@ function RefGroup({ icon: Icon, title, blurb, children }) {
   )
 }
 
+// Topics of the guide at the bottom of the page. Each chip opens its section
+// in place, so the page stays short and nothing in the guide is lost.
+const GUIDE_TOPICS = [
+  { id: 'start', icon: Sparkles, label: 'Start here' },
+  { id: 'flashcards', icon: FileText, label: 'Making flashcards' },
+  { id: 'organising', icon: Hash, label: 'Organising notes' },
+  { id: 'linking', icon: Link2, label: 'Linking papers' },
+  { id: 'graph', icon: Share2, label: 'The graph' },
+  { id: 'tabs', icon: Layers, label: 'Tabs and search' },
+  { id: 'keys', icon: Keyboard, label: 'Keys' },
+  { id: 'disk', icon: HardDrive, label: 'Papers on disk' },
+]
+
+function greeting() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
+// Count each paper's marked lines by kind (one Anki note per line).
+function cardCounts(papers) {
+  const c = { basic: 0, reversible: 0, cloze: 0 }
+  for (const p of papers) {
+    for (const r of p.card_refs || []) {
+      if (r.card_type in c) c[r.card_type]++
+      else c.basic++
+    }
+  }
+  return { ...c, total: c.basic + c.reversible + c.cloze }
+}
+
 export default function WelcomeScreen({
   papers = [],
   selectedFolder = null,
@@ -62,73 +95,178 @@ export default function WelcomeScreen({
   onImportMarkdown,
   onOpenSettings,
 }) {
+  const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
+  // A brand-new library opens on "Start here"; otherwise the guide starts
+  // closed. Until a chip is pressed this follows the papers list, which
+  // arrives a moment after the page first draws.
+  const [picked, setGuide] = useState(undefined)
+  const guide = picked === undefined ? (papers.length === 0 ? 'start' : null) : picked
+  const [stats, setStats] = useState(null)
 
-  const recentPapers = useMemo(() => {
-    return [...papers].sort((a, b) => (b.modified_at || 0) - (a.modified_at || 0)).slice(0, 8)
+  // Card history comes from Anki itself (see get_home_stats in gui/bridge.py).
+  // Re-read whenever the papers list refreshes, e.g. after a Generate.
+  useEffect(() => {
+    let alive = true
+    getHomeStats().then((s) => { if (alive) setStats(s) }).catch(() => {})
+    return () => { alive = false }
   }, [papers])
 
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return []
-    return papers.filter((p) => {
-      const title = (p.title || '').toLowerCase()
-      const folder = (p.folder_path || '').toLowerCase()
-      return title.includes(q) || folder.includes(q)
-    }).slice(0, 12)
-  }, [papers, searchQuery])
+  const recentPapers = useMemo(() => {
+    return [...papers].sort((a, b) => (b.modified_at || 0) - (a.modified_at || 0)).slice(0, 3)
+  }, [papers])
+
+  const counts = useMemo(() => cardCounts(papers), [papers])
+  const folderCount = useMemo(
+    () => new Set(papers.map((p) => p.folder_path).filter(Boolean)).size,
+    [papers],
+  )
+
+  const last = stats?.last_generated
+  const lastPaper = last?.paper_id ? papers.find((p) => p.id === last.paper_id) : null
 
   const handleCreate = useCallback(() => {
     const title = newTitle.trim() || 'Untitled Paper'
     onCreatePaper?.(title, selectedFolder || '')
     setNewTitle('')
+    setCreating(false)
   }, [newTitle, onCreatePaper, selectedFolder])
 
-  const folderHint =
-    selectedFolder && selectedFolder.length > 0
-      ? `New paper will be created in “${selectedFolder}” (sidebar folder filter).`
-      : 'New paper goes to the library root unless a folder is selected in the sidebar.'
+  const pct = (n) => (counts.total ? `${(n / counts.total) * 100}%` : '0%')
 
   return (
     <div className="welcome">
-      <div className="welcome-inner">
-        <div className="welcome-top">
-          <div className="welcome-hero">
-            <div className="welcome-icon">
-              <img
-                src={ankipapersLogo}
-                alt="Anki Papers"
-                className="welcome-logo"
-                width={96}
-                height={96}
-                decoding="async"
-              />
+      <div className="home">
+        {/* ── Top row: greeting and the two things you start with ── */}
+        <section className="home-hero">
+          <img src={ankipapersLogo} alt="" className="home-hero-logo" width={52} height={52} decoding="async" />
+          <div className="home-hero-text">
+            <h1 className="home-hero-title">{greeting()}</h1>
+            {creating ? (
+              <div className="home-create">
+                <input
+                  className="welcome-input"
+                  autoFocus
+                  placeholder={selectedFolder ? `Title for a new paper in “${selectedFolder}”…` : 'Title for a new paper…'}
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate()
+                    else if (e.key === 'Escape') { e.stopPropagation(); setCreating(false); setNewTitle('') }
+                  }}
+                />
+                <button type="button" className="welcome-btn welcome-btn-primary" onClick={handleCreate}>Create</button>
+              </div>
+            ) : (
+              <p className="home-hero-sub">Write your notes. Mark the lines worth remembering. Press Ctrl+G.</p>
+            )}
+          </div>
+          {!creating && (
+            <div className="home-hero-actions">
+              <button type="button" className="welcome-btn welcome-btn-ghost" onClick={() => onImportMarkdown?.()}>
+                <FileInput size={15} /> Import
+              </button>
+              <button type="button" className="welcome-btn welcome-btn-primary" onClick={() => setCreating(true)}>
+                <Plus size={15} /> New paper
+              </button>
             </div>
-            <h1 className="welcome-title">Anki Papers</h1>
-            <p className="welcome-subtitle">
-              Write your notes the way you always would. Mark the lines you want to
-              remember, and Anki Papers turns those lines into flashcards for you —
-              no copying, no second deck to keep in step.
-            </p>
-            <div className="welcome-stats">
-              <span className="welcome-stat">
-                <Sparkles size={14} />
-                {papers.length} {papers.length === 1 ? 'paper' : 'papers'}
-              </span>
+          )}
+        </section>
+
+        {/* ── Second row: the library at a glance ── */}
+        <section className="home-tiles">
+          <div className="home-tile">
+            <div className="home-tile-label">Papers</div>
+            <div className="home-tile-value">{papers.length.toLocaleString()}</div>
+            <div className="home-tile-sub">in {folderCount} {folderCount === 1 ? 'folder' : 'folders'}</div>
+          </div>
+          <div className="home-tile">
+            <div className="home-tile-label">Cards</div>
+            <div className="home-tile-value">{counts.total.toLocaleString()}</div>
+            <div className="home-cardbar" aria-hidden="true">
+              <span className="is-basic" style={{ width: pct(counts.basic) }} />
+              <span className="is-reversible" style={{ width: pct(counts.reversible) }} />
+              <span className="is-cloze" style={{ width: pct(counts.cloze) }} />
+            </div>
+            <div className="home-tile-sub">
+              {counts.basic.toLocaleString()} basic · {counts.reversible.toLocaleString()} reversible · {counts.cloze.toLocaleString()} cloze
             </div>
           </div>
+          <button
+            type="button"
+            className="home-tile home-tile-button"
+            disabled={!lastPaper}
+            onClick={() => lastPaper && onSelectPaper?.(lastPaper.id)}
+          >
+            <div className="home-tile-label">Last generated</div>
+            {last ? (
+              <>
+                <div className="home-tile-paper">{lastPaper?.title || last.title || 'A deleted paper'}</div>
+                <div className="home-tile-sub">
+                  {formatRelativeTime(last.at)}
+                  {lastPaper ? ` · ${(lastPaper.card_refs?.length ?? 0).toLocaleString()} cards` : ''}
+                </div>
+              </>
+            ) : (
+              <div className="home-tile-sub home-tile-empty">Nothing yet. Press Ctrl+G in a paper.</div>
+            )}
+          </button>
+        </section>
 
-          <div className="welcome-syntax-wrap">
-            <section className="welcome-card welcome-syntax-card-centered">
-              <h2 className="welcome-card-title welcome-card-title-center">
-                <FileText size={16} /> Start here
-              </h2>
-              <p className="welcome-card-hint welcome-card-hint-center">
-                There are four ways to mark a line. Write the rest of your notes
-                normally — anything you don't mark stays plain text.
-              </p>
-              <div className="welcome-ref welcome-ref-compact">
+        {/* ── Third row: pick up where you left off ── */}
+        <h2 className="home-section-title"><History size={14} /> Continue where you left off</h2>
+        {recentPapers.length === 0 ? (
+          <p className="home-empty">No papers yet. Press <b>New paper</b> above to start one.</p>
+        ) : (
+          <section className="home-recent">
+            {recentPapers.map((p) => {
+              const n = p.card_refs?.length ?? 0
+              return (
+                <button key={p.id} type="button" className="home-paper" onClick={() => onSelectPaper?.(p.id)}>
+                  <span className="home-paper-folder">
+                    <FolderOpen size={12} /> {p.folder_path ? p.folder_path.split('/').join(' › ') : 'Library'}
+                  </span>
+                  <span className="home-paper-title">{p.title || 'Untitled'}</span>
+                  <span className="home-paper-meta">
+                    {n.toLocaleString()} {n === 1 ? 'card' : 'cards'} · edited {formatRelativeTime(p.modified_at)}
+                  </span>
+                </button>
+              )
+            })}
+          </section>
+        )}
+
+        {/* ── Card-creation heatmap ── */}
+        <h2 className="home-section-title"><CalendarDays size={14} /> Cards you've made</h2>
+        <section className="home-panel">
+          <CardHeatmap days={stats?.days || {}} firstDay={stats?.first_day || null} />
+        </section>
+
+        {/* ── Guide: one chip per topic, opening in place ── */}
+        <h2 className="home-section-title"><BookOpen size={14} /> Guide</h2>
+        <div className="home-guide-chips" role="tablist">
+          {GUIDE_TOPICS.map(({ id, icon, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={guide === id}
+              className={`home-chip ${guide === id ? 'active' : ''}`}
+              onClick={() => setGuide(guide === id ? null : id)}
+            >
+              {React.createElement(icon, { size: 13 })} {label}
+            </button>
+          ))}
+        </div>
+
+        {guide && (
+          <section className="home-panel welcome-ref home-guide">
+          {guide === 'start' && (
+              <RefGroup
+                icon={Sparkles}
+                title="Start here"
+                blurb="There are four ways to mark a line. Write the rest of your notes normally — anything you don't mark stays plain text. When you're ready, press Ctrl+G and your cards appear in Anki."
+              >
                 <Ref code="Question >> Answer" tone="basic">
                   Asks you the question, shows the answer.
                 </Ref>
@@ -141,66 +279,9 @@ export default function WelcomeScreen({
                 <Ref code="# Heading" tone="heading">
                   A title. It organises your notes and never becomes a card.
                 </Ref>
-              </div>
-              <p className="welcome-card-hint welcome-card-hint-center">
-                When you're ready, press <b>Ctrl+G</b> and your cards appear in Anki.
-              </p>
-            </section>
-          </div>
-
-          <p className="welcome-scroll-cue">
-            <ChevronDown size={18} className="welcome-scroll-cue-icon" aria-hidden />
-            Scroll down for the full guide, quick start, and your recent papers
-          </p>
-        </div>
-
-        <div className="welcome-lower">
-          <section className="welcome-card welcome-card-notice">
-            <h2 className="welcome-card-title">
-              <HardDrive size={16} /> Your papers are files on your computer
-            </h2>
-            <p className="welcome-card-hint">
-              Every paper is an ordinary markdown file kept in your Anki profile
-              folder, arranged in the same folders you see in the sidebar. You can
-              open them in any editor, put them in Dropbox, or track them with git.
-              The editor reads those files directly, so what is on your disk is what
-              you see here. A copy still goes into your Anki collection and travels
-              to AnkiWeb with the rest of your sync, as a backup.
-            </p>
-            <p className="welcome-card-hint">
-              <b>Already been using Anki Papers?</b> Papers you wrote before this
-              version live only in the collection until you copy them out, and it is
-              a one-time job. Open <b>Settings → Papers on disk</b> and press{' '}
-              <b>Preview</b>: it tells you how many papers would be written, how many
-              card links they carry, and the exact folder they would go to, without
-              touching anything. When that looks right, press <b>Write</b>. It only
-              adds files — nothing in your collection is changed or removed, so there
-              is nothing to undo. From then on every save writes itself to disk.
-            </p>
-            <div className="welcome-actions-row">
-              <button
-                type="button"
-                className="welcome-btn welcome-btn-primary"
-                onClick={() => onOpenSettings?.()}
-              >
-                <Settings size={15} /> Open Settings
-              </button>
-            </div>
-          </section>
-
-          <section className="welcome-card">
-            <h2 className="welcome-card-title">
-              <BookOpen size={16} /> A guide to Anki Papers
-            </h2>
-            <p className="welcome-card-hint">
-              You keep one document per subject and write in it the way you'd write
-              anywhere else. Certain lines are special: when you press Generate, each
-              of those lines becomes a flashcard in Anki, and pressing Generate again
-              later updates the same cards rather than making new ones. Everything
-              below is optional — you can get a long way with just the four marks above.
-            </p>
-
-            <div className="welcome-ref">
+              </RefGroup>
+          )}
+          {guide === 'flashcards' && (
               <RefGroup
                 icon={FileText}
                 title="Making flashcards"
@@ -256,7 +337,8 @@ export default function WelcomeScreen({
                   Saving restyles every card at once, phone included after a sync.
                 </Ref>
               </RefGroup>
-
+          )}
+          {guide === 'organising' && (
               <RefGroup
                 icon={Hash}
                 title="Organising your notes"
@@ -313,7 +395,8 @@ export default function WelcomeScreen({
                   paper as it is done. Keep Anki Papers open until it finishes.
                 </Ref>
               </RefGroup>
-
+          )}
+          {guide === 'linking' && (
               <RefGroup
                 icon={Link2}
                 title="Linking papers together"
@@ -354,7 +437,8 @@ export default function WelcomeScreen({
                   themselves; delete one and whatever pointed at that line loses it.
                 </Ref>
               </RefGroup>
-
+          )}
+          {guide === 'graph' && (
               <RefGroup
                 icon={Share2}
                 title="Seeing the whole picture"
@@ -374,7 +458,8 @@ export default function WelcomeScreen({
                   exists, so you can find and mend them.
                 </Ref>
               </RefGroup>
-
+          )}
+          {guide === 'tabs' && (
               <RefGroup
                 icon={Layers}
                 title="Several papers at once"
@@ -403,7 +488,8 @@ export default function WelcomeScreen({
                   you switch papers, since switching always saves first.
                 </Ref>
               </RefGroup>
-
+          )}
+          {guide === 'keys' && (
               <RefGroup
                 icon={Keyboard}
                 title="Keys worth knowing"
@@ -483,102 +569,32 @@ export default function WelcomeScreen({
                   back as one word. It's in the right-click menu too.
                 </Ref>
               </RefGroup>
-            </div>
+          )}
+          {guide === 'disk' && (
+              <RefGroup
+                icon={HardDrive}
+                title="Your papers are files on your computer"
+                blurb="Every paper is an ordinary markdown file kept in your Anki profile folder, arranged in the same folders you see in the sidebar. You can open them in any editor, put them in Dropbox, or track them with git. The editor reads those files directly, so what is on your disk is what you see here. A copy still goes into your Anki collection and travels to AnkiWeb with the rest of your sync, as a backup."
+              >
+                <p className="welcome-ref-blurb">
+                  <b>Already been using Anki Papers?</b> Papers you wrote before this
+                  version live only in the collection until you copy them out, and it is
+                  a one-time job. Open <b>Settings → Papers on disk</b> and press{' '}
+                  <b>Preview</b>: it tells you how many papers would be written, how many
+                  card links they carry, and the exact folder they would go to, without
+                  touching anything. When that looks right, press <b>Write</b>. It only
+                  adds files — nothing in your collection is changed or removed, so there
+                  is nothing to undo. From then on every save writes itself to disk.
+                </p>
+                <div className="welcome-actions-row">
+                  <button type="button" className="welcome-btn welcome-btn-primary" onClick={() => onOpenSettings?.()}>
+                    <Settings size={15} /> Open Settings
+                  </button>
+                </div>
+              </RefGroup>
+          )}
           </section>
-
-          <section className="welcome-card">
-            <h2 className="welcome-card-title">
-              <Plus size={16} /> Quick start
-            </h2>
-            <p className="welcome-card-hint">{folderHint}</p>
-            <div className="welcome-create-row">
-              <input
-                className="welcome-input"
-                placeholder="Title for a new paper…"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              />
-              <button type="button" className="welcome-btn welcome-btn-primary" onClick={handleCreate}>
-                Create
-              </button>
-            </div>
-            <div className="welcome-actions-row">
-              <button type="button" className="welcome-btn welcome-btn-ghost" onClick={() => onImportMarkdown?.()}>
-                <FileInput size={15} /> Import Markdown
-              </button>
-              <button type="button" className="welcome-btn welcome-btn-ghost" onClick={() => onOpenSettings?.()}>
-                <Settings size={15} /> Settings
-              </button>
-            </div>
-          </section>
-
-          <section className="welcome-card">
-            <h2 className="welcome-card-title">
-              <Search size={16} /> Find a paper
-            </h2>
-            <input
-              className="welcome-input"
-              placeholder="Search by title or folder…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery.trim() && (
-              <ul className="welcome-paper-list">
-                {searchResults.length === 0 ? (
-                  <li className="welcome-paper-empty">No matches</li>
-                ) : (
-                  searchResults.map((p) => (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        className="welcome-paper-btn"
-                        onClick={() => onSelectPaper?.(p.id)}
-                      >
-                        <span className="welcome-paper-title">{p.title || 'Untitled'}</span>
-                        {p.folder_path ? (
-                          <span className="welcome-paper-meta">
-                            <FolderOpen size={12} /> {p.folder_path}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-            )}
-          </section>
-
-          <section className="welcome-card">
-            <h2 className="welcome-card-title">
-              <Clock size={16} /> Recently edited
-            </h2>
-            {recentPapers.length === 0 ? (
-              <p className="welcome-card-hint">No papers yet. Use Quick start above or the sidebar.</p>
-            ) : (
-              <ul className="welcome-paper-list">
-                {recentPapers.map((p) => {
-                  const n = p.card_refs?.length ?? 0
-                  return (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        className="welcome-paper-btn"
-                        onClick={() => onSelectPaper?.(p.id)}
-                      >
-                        <span className="welcome-paper-title">{p.title || 'Untitled'}</span>
-                        <span className="welcome-paper-meta">
-                          {formatRelativeTime(p.modified_at)}
-                          {n > 0 ? ` · ${n} card${n === 1 ? '' : 's'}` : ''}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
+        )}
       </div>
     </div>
   )

@@ -41,6 +41,12 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Three colour schemes.** Settings → Colour scheme picks **Original purple**, **Black & white** (greyscale, keeping the green / amber / pink card-type colours) or **Carolina blue** (the default), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
+
+**Carolina blue and #19468D.** A Carolina blue (#4B9CD3) and #19468D colourway in both themes: deep #19468D-tinted navy with Carolina accents in dark mode, and #19468D accents on pale blue-white in light mode. Reversible cards are now amber and document links violet, so neither blends into the blues. The **Basic** card style follows suit — #19468D headings (pale Carolina in night mode), a Carolina bar beside `&&` notes, amber reversible answers and violet links — and reaches every existing card the next time you Generate. The Solarized card style is unchanged.
+
+**A new home page.** A greeting with **New paper** and **Import**; tiles for your papers, your cards (split into basic, reversible and cloze) and the paper you last generated; your three most recently edited papers; and a **heatmap of the cards you've made**, six months at a time with arrows to step back through your history one month per click. One square per day (Sunday at the top of each column, Saturday at the bottom); hover a square for that day's count. Above it: your current streak (consecutive days with at least one new card), the average per day in that streak, and the cards and average per day for the month on the right. "Cards" here means lines turned into cards, counted from Anki's own record of when each note was created, so the history reaches back to your very first card. The guide now sits at the bottom as a row of topics that open in place.
+
 **Search finds the exact line.** Sidebar search now lists every matching line as `Document › H1 › H2 › H3 · line N` instead of a text excerpt, and clicking one opens the paper fully unfolded, centred on that line, which flashes briefly so you can spot it. See [Searching](#searching).
 
 **Line numbers.** A gutter down the left of the editor and Source view shows each line's number in the paper. Folded sections leave a gap, so a number always means the same line, and it's the same number search shows. Settings → Line Numbers turns them off.
@@ -479,6 +485,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `font_family` / `font_size` | Editor typeface |
 | `editor_theme` | `dark`, `light`, or `auto` |
 | `show_card_indicators` | Card markers in the left margin |
+| `color_scheme` | `carolina` (default), `purple` or `mono`: colours the app and the Basic card style |
 | `show_line_numbers` | Line numbers down the left of the editor and Source view (on by default) |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
 | `card_style` | `basic` (built-in) or `solarized` (Solarized Styling) — restyles every card when changed |

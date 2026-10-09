@@ -193,8 +193,9 @@ export default function App() {
       tabsLoadedRef.current = true
       if (Number.isFinite(s.sidebar_width)) setSidebarWidth(clampSidebarWidth(s.sidebar_width))
       setSidebarCollapsed(!!s.sidebar_collapsed)
-      // Apply theme
+      // Apply theme and colour scheme
       document.documentElement.dataset.theme = s.editor_theme || 'dark'
+      document.documentElement.dataset.scheme = s.color_scheme || 'carolina'
       const md = await getMediaDir()
       setMediaDir(md.base_url || '')
     })
@@ -893,8 +894,9 @@ export default function App() {
     const res = await saveSettingsBridge(newSettings)
     setSettings(newSettings)
     document.documentElement.dataset.theme = newSettings.editor_theme || 'dark'
+    document.documentElement.dataset.scheme = newSettings.color_scheme || 'carolina'
     if (res?.card_style_error) showToast(`Settings saved, but the card style could not be applied: ${res.card_style_error}`, 'error')
-    else if (res?.card_style_applied) showToast('Settings saved — card style applied to all your cards', 'success')
+    else if (res?.card_style_applied) showToast('Settings saved — card colours and style applied to all your cards', 'success')
     else showToast('Settings saved', 'success')
   }, [])
 

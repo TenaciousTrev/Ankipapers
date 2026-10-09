@@ -55,7 +55,7 @@ export default class ErrorBoundary extends React.Component {
       font: '13px/1.55 Inter, -apple-system, system-ui, sans-serif',
     }
     const button = {
-      background: '#6c5ce7', color: '#fff', border: 'none', borderRadius: 6,
+      background: '#19468d', color: '#fff', border: 'none', borderRadius: 6,
       padding: '7px 14px', fontSize: 13, cursor: 'pointer', marginRight: 8,
     }
     const ghost = { ...button, background: 'transparent', border: '1px solid #2a2a3d', color: '#b8b8c8' }

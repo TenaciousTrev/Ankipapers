@@ -82,5 +82,47 @@ class EnsureNoteTypes(unittest.TestCase):
             self.assertEqual(col.models.models[n]["css"], cm._ANKIPAPERS_CSS)
 
 
+
+class ColourSchemes(unittest.TestCase):
+    """Settings → Colour scheme also colours the Basic card style. Carolina is
+    the base stylesheet itself; the others layer on top of it; Solarized comes
+    last so it looks the same in every scheme."""
+
+    def test_carolina_is_the_base_stylesheet(self):
+        self.assertEqual(cm.card_css("basic", "carolina"), cm._ANKIPAPERS_CSS)
+
+    def test_other_schemes_layer_after_the_base(self):
+        for scheme, layer in (("purple", cm._PURPLE_CSS), ("mono", cm._MONO_CSS)):
+            css = cm.card_css("basic", scheme)
+            self.assertEqual(css, cm._ANKIPAPERS_CSS + layer, scheme)
+
+    def test_purple_restores_the_original_colours(self):
+        css = cm.card_css("basic", "purple")
+        for colour in ("#6c5ce7", "#4169E1", "#123a8a", "#7aa7ff"):
+            self.assertIn(colour, css)
+
+    def test_mono_keeps_the_answer_colours(self):
+        # Greyscale chrome, but the card-type colours come from the base sheet.
+        self.assertNotIn("ap-answer-basic", cm._MONO_CSS)
+        self.assertNotIn("ap-answer-reversible", cm._MONO_CSS)
+        self.assertNotIn(".cloze", cm._MONO_CSS)
+
+    def test_solarized_comes_after_the_scheme(self):
+        for scheme in cm.COLOR_SCHEMES:
+            css = cm.card_css("solarized", scheme)
+            self.assertTrue(css.endswith(cm._SOLARIZED_CSS), scheme)
+
+    def test_unknown_scheme_falls_back_to_carolina(self):
+        for scheme in (None, "", "nope"):
+            self.assertEqual(cm.card_css("basic", scheme), cm._ANKIPAPERS_CSS)
+        self.assertEqual(cm.card_css("basic", " PURPLE "), cm.card_css("basic", "purple"))
+
+    def test_scheme_is_written_to_all_three_note_types(self):
+        col = FakeCol()
+        cm.ensure_note_types(col, "basic", "mono")
+        for n in NAMES:
+            self.assertEqual(col.models.models[n]["css"], cm.card_css("basic", "mono"))
+
+
 if __name__ == "__main__":
     unittest.main()

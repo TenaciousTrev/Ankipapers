@@ -9,5 +9,6 @@
     "reversible_separator": "<>",
     "basic_separator": ">>",
     "text_replacements_enabled": true,
-    "card_style": "basic"
+    "card_style": "basic",
+    "color_scheme": "carolina"
 }

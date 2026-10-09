@@ -5,6 +5,12 @@ import { exportPapersToDisk } from '../bridge'
 const IS_MAC = typeof navigator !== 'undefined' &&
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
 
+const COLOR_SCHEMES = [
+  { id: 'purple', label: 'Original purple', swatch: 'linear-gradient(135deg, #6c5ce7, #a855f7)' },
+  { id: 'mono', label: 'Black & white', swatch: 'linear-gradient(135deg, #111111 50%, #ffffff 50%)' },
+  { id: 'carolina', label: 'Carolina blue', swatch: 'linear-gradient(135deg, #4b9cd3 50%, #19468d 50%)' },
+]
+
 export default function Settings({ settings, onSave, onClose, onConvertEmphasis }) {
   const [local, setLocal] = useState({ ...settings })
   const update = (key, value) => setLocal(prev => ({ ...prev, [key]: value }))
@@ -26,6 +32,9 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
       <div className="modal settings-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-title"><SettingsIcon size={18} /> Settings</div>
 
+        {/* Only this part scrolls, so the title and the Save button always
+            stay on screen however short the window is. */}
+        <div className="settings-body">
         <div className="settings-grid">
           <label className="settings-label">Default Deck</label>
           <input className="modal-input" value={local.default_deck || 'Default'}
@@ -65,6 +74,22 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
               onClick={() => update('editor_theme', 'light')}>
               <Sun size={14} /> Light
             </button>
+          </div>
+
+          <label className="settings-label">Colour Scheme</label>
+          <p className="settings-field-hint">
+            Colours the whole app in both Dark and Light, and the Basic card style on your
+            Anki cards. Source view stays black on white in every scheme.
+          </p>
+          <div className="theme-toggle-group scheme-toggle-group">
+            {COLOR_SCHEMES.map(({ id, label, swatch }) => (
+              <button key={id}
+                className={`theme-btn ${(local.color_scheme || 'carolina') === id ? 'active' : ''}`}
+                onClick={() => update('color_scheme', id)}>
+                <span className="scheme-swatch" style={{ background: swatch }} aria-hidden="true" />
+                {label}
+              </button>
+            ))}
           </div>
 
           <label className="settings-label">Show Card Indicators</label>
@@ -211,7 +236,10 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
           <div className="settings-shortcut"><kbd>Ctrl+G</kbd> Generate Cards</div>
           <div className="settings-shortcut"><kbd>Ctrl+B</kbd> Bold</div>
           <div className="settings-shortcut"><kbd>Ctrl+I</kbd> Italic</div>
-          <div className="settings-shortcut"><kbd>Ctrl+Shift+V</kbd> Toggle View</div>
+          <div className="settings-shortcut"><kbd>Ctrl+Shift+E</kbd> Switch between Editor and Source</div>
+          <div className="settings-shortcut"><kbd>Ctrl+Shift+V</kbd> Paste as plain text</div>
+        </div>
+
         </div>
 
         <div className="modal-actions">

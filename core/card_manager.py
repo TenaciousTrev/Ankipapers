@@ -52,8 +52,13 @@ _ANKIPAPERS_CSS = """
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #6c5ce7;
+  color: #19468d;
   margin-bottom: 4px;
+}
+/* #19468D is too dark to read on Anki's night background; use pale Carolina. */
+.nightMode .ap-meta-heading,
+.night_mode .ap-meta-heading {
+  color: #7bafd4;
 }
 
 /* Per-level breadcrumb crumbs (see parser.get_context_heading). Weight,
@@ -116,27 +121,26 @@ _ANKIPAPERS_CSS = """
 
 /* ─── Revealed Text Colors ──────────────────────── */
 
-/* Basic Cards (Default/Light: Forest Green) */
+/* Basic Cards (Default/Light: deep green) */
 .ap-answer-basic {
-  color: #228B22; 
+  color: #1e7a45;
 }
-/* Basic Cards (Dark: Light Green) */
+/* Basic Cards (Dark: light green) */
 .nightMode .ap-answer-basic {
-  color: #82E0AA; 
+  color: #5fd39a;
 }
 
-/* Reversible Cards (Default/Light: Royal Blue) */
+/* Reversible Cards: amber, kept apart from the Carolina / #19468D blues */
 .ap-answer-reversible {
-  color: #4169E1; 
+  color: #a8620a;
 }
-/* Reversible Cards (Dark: Carolina Blue) */
 .nightMode .ap-answer-reversible {
-  color: #4B9CD3; 
+  color: #f0b45a;
 }
 
 /* Cloze Deletions (Reddish/Pink) */
 .cloze {
-  color: #e83e8c;
+  color: #c2306f;
   font-weight: 600;
 }
 .nightMode .cloze {
@@ -172,19 +176,19 @@ _ANKIPAPERS_CSS = """
   line-height: 1.5;
   margin-top: 24px;
   padding: 16px 20px;
-  background: rgba(108, 92, 231, 0.05);
-  border-left: 4px solid #6c5ce7;
+  background: rgba(75, 156, 211, 0.08);
+  border-left: 4px solid #4b9cd3;
   border-radius: 4px;
   color: inherit;
 }
 .nightMode .ap-supplement {
-  background: rgba(108, 92, 231, 0.15);
+  background: rgba(25, 70, 141, 0.35);
 }
 
 /* ─── Divider ───────────────────────────────────── */
 .ap-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(108, 92, 231, 0.35), transparent);
+  background: linear-gradient(90deg, transparent, rgba(75, 156, 211, 0.55), transparent);
   margin: 28px 0;
   border: none;
 }
@@ -196,8 +200,8 @@ _ANKIPAPERS_CSS = """
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: #6c5ce7;
-  background: rgba(108, 92, 231, 0.08);
+  color: #19468d;
+  background: rgba(75, 156, 211, 0.12);
   padding: 4px 10px;
   border-radius: 6px;
   margin-bottom: 14px;
@@ -214,9 +218,9 @@ _ANKIPAPERS_CSS = """
   gap: 6px;
   padding: 7px 14px;
   background: transparent;
-  border: 1px solid rgba(108, 92, 231, 0.22);
+  border: 1px solid rgba(75, 156, 211, 0.35);
   border-radius: 8px;
-  color: #6c5ce7;
+  color: #19468d;
   font-size: 11px;
   font-weight: 600;
   font-family: inherit;
@@ -225,8 +229,8 @@ _ANKIPAPERS_CSS = """
   transition: all 0.2s ease;
 }
 .ap-jump:hover {
-  background: rgba(108, 92, 231, 0.08);
-  border-color: #6c5ce7;
+  background: rgba(75, 156, 211, 0.1);
+  border-color: #4b9cd3;
 }
 .ap-jump svg {
   opacity: 0.7;
@@ -269,9 +273,9 @@ img {
 .ankipapers-md-table th {
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 2px solid rgba(108, 92, 231, 0.25);
+  border-bottom: 2px solid rgba(75, 156, 211, 0.35);
   font-weight: 600;
-  color: #6c5ce7;
+  color: #19468d;
 }
 .ankipapers-md-table td {
   padding: 10px 12px;
@@ -281,7 +285,16 @@ img {
 /* ─── Dark Mode (Anki native .nightMode / .night_mode) ─── */
 .nightMode .ankipapers-card,
 .night_mode .ankipapers-card {
-  color: #e8e8f0;
+  color: #e9f1fb;
+}
+/* The #19468D accents above lightened to pale Carolina for night mode. */
+.nightMode .ap-direction,
+.night_mode .ap-direction,
+.nightMode .ap-jump,
+.night_mode .ap-jump,
+.nightMode .ankipapers-md-table th,
+.night_mode .ankipapers-md-table th {
+  color: #7bafd4;
 }
 .nightMode .ap-answer,
 .night_mode .ap-answer {
@@ -294,18 +307,19 @@ img {
 
 /* ─── Document links ─── */
 /* A phrase that points at a header elsewhere in Anki Papers. It is not
-   clickable inside Anki, but it keeps the visual cue that it is a link. */
+   clickable inside Anki, but it keeps the visual cue that it is a link.
+   Violet, so a link never reads as a heading in the card's blues. */
 .ankipapers-card .ap-link {
-  color: #123a8a;
+  color: #7a3fb8;
   text-decoration: underline;
-  text-decoration-color: rgba(18, 58, 138, 0.85);
+  text-decoration-color: rgba(122, 63, 184, 0.85);
   text-underline-offset: 2px;
   text-decoration-thickness: 2px;
 }
 .nightMode .ankipapers-card .ap-link,
 .night_mode .ankipapers-card .ap-link {
-  color: #7aa7ff;
-  text-decoration-color: rgba(122, 167, 255, 0.75);
+  color: #c4a5f5;
+  text-decoration-color: rgba(196, 165, 245, 0.75);
 }
 
 /* ─── Cloze hints ─── */
@@ -400,15 +414,85 @@ _SOLARIZED_CSS = """
 
 CARD_STYLES = ("basic", "solarized")
 
+# ═══ Colour schemes ═══════════════════════════════════════════════════════
+# The app's colour scheme (Settings → Colour scheme) also colours the Basic
+# card style. _ANKIPAPERS_CSS above is the Carolina blue / #19468D look; the
+# other schemes are layered on top of it here, repeating each selector of the
+# base sheet (day and night) so they win on order alone. Solarized is appended
+# after the scheme layer and overrides every one of these colours, so it is
+# the same in every scheme.
+_PURPLE_CSS = """
+/* ═══ Colour scheme: original purple ═══ */
+.ap-meta-heading { color: #6c5ce7; }
+.nightMode .ap-meta-heading,
+.night_mode .ap-meta-heading { color: #6c5ce7; }
+.ap-answer-basic { color: #228B22; }
+.nightMode .ap-answer-basic { color: #82E0AA; }
+.ap-answer-reversible { color: #4169E1; }
+.nightMode .ap-answer-reversible { color: #4B9CD3; }
+.cloze { color: #e83e8c; }
+.ap-supplement { background: rgba(108, 92, 231, 0.05); border-left-color: #6c5ce7; }
+.nightMode .ap-supplement { background: rgba(108, 92, 231, 0.15); }
+.ap-divider { background: linear-gradient(90deg, transparent, rgba(108, 92, 231, 0.35), transparent); }
+.ap-direction { color: #6c5ce7; background: rgba(108, 92, 231, 0.08); }
+.ap-jump { border-color: rgba(108, 92, 231, 0.22); color: #6c5ce7; }
+.ap-jump:hover { background: rgba(108, 92, 231, 0.08); border-color: #6c5ce7; }
+.ankipapers-md-table th { border-bottom-color: rgba(108, 92, 231, 0.25); color: #6c5ce7; }
+.nightMode .ankipapers-card,
+.night_mode .ankipapers-card { color: #e8e8f0; }
+.nightMode .ap-direction,
+.night_mode .ap-direction,
+.nightMode .ap-jump,
+.night_mode .ap-jump,
+.nightMode .ankipapers-md-table th,
+.night_mode .ankipapers-md-table th { color: #6c5ce7; }
+.ankipapers-card .ap-link { color: #123a8a; text-decoration-color: rgba(18, 58, 138, 0.85); }
+.nightMode .ankipapers-card .ap-link,
+.night_mode .ankipapers-card .ap-link { color: #7aa7ff; text-decoration-color: rgba(122, 167, 255, 0.75); }
+"""
 
-def card_css(style: Optional[str] = "basic") -> str:
-    """The stylesheet for a card style: "basic" is the built-in look,
-    "solarized" layers Solarized Styling on top of it. Anything unrecognised
-    falls back to basic, so a bad config value can never break the cards."""
+# Greyscale, except the answer colours, which tell card types apart.
+_MONO_CSS = """
+/* ═══ Colour scheme: black & white ═══ */
+.ap-meta-heading { color: #111111; }
+.nightMode .ap-meta-heading,
+.night_mode .ap-meta-heading { color: #f0f0f0; }
+.ap-supplement { background: rgba(0, 0, 0, 0.04); border-left-color: #555555; }
+.nightMode .ap-supplement { background: rgba(255, 255, 255, 0.06); border-left-color: #aaaaaa; }
+.ap-divider { background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.45), transparent); }
+.ap-direction { color: #333333; background: rgba(0, 0, 0, 0.06); }
+.ap-jump { border-color: rgba(0, 0, 0, 0.2); color: #333333; }
+.ap-jump:hover { background: rgba(0, 0, 0, 0.05); border-color: #333333; }
+.ankipapers-md-table th { border-bottom-color: rgba(0, 0, 0, 0.2); color: #111111; }
+.nightMode .ankipapers-card,
+.night_mode .ankipapers-card { color: #ececec; }
+.nightMode .ap-direction,
+.night_mode .ap-direction,
+.nightMode .ap-jump,
+.night_mode .ap-jump,
+.nightMode .ankipapers-md-table th,
+.night_mode .ankipapers-md-table th { color: #dddddd; }
+.ankipapers-card .ap-link { color: #111111; text-decoration-color: rgba(0, 0, 0, 0.6); }
+.nightMode .ankipapers-card .ap-link,
+.night_mode .ankipapers-card .ap-link { color: #eeeeee; text-decoration-color: rgba(255, 255, 255, 0.6); }
+"""
+
+COLOR_SCHEMES = ("carolina", "purple", "mono")
+_SCHEME_CSS = {"carolina": "", "purple": _PURPLE_CSS, "mono": _MONO_CSS}
+
+
+def card_css(style: Optional[str] = "basic", color_scheme: Optional[str] = "carolina") -> str:
+    """The stylesheet for a card style in a colour scheme: "basic" is the
+    built-in look, coloured by the scheme; "solarized" layers Solarized
+    Styling on top, which looks the same in every scheme. Anything
+    unrecognised falls back to basic / carolina, so a bad config value can
+    never break the cards."""
     style = (style or "basic").strip().lower()
+    scheme = (color_scheme or "carolina").strip().lower()
+    css = _ANKIPAPERS_CSS + _SCHEME_CSS.get(scheme, "")
     if style == "solarized":
-        return _ANKIPAPERS_CSS + "\n" + _SOLARIZED_CSS
-    return _ANKIPAPERS_CSS
+        return css + "\n" + _SOLARIZED_CSS
+    return css
 
 
 # The inline-markdown renderer and its patterns live in parser.py — breadcrumbs
@@ -782,11 +866,11 @@ def list_anki_edit_conflicts(paper: Paper, col) -> List[Dict[str, Any]]:
     return out
 
 
-def ensure_note_types(col, card_style: str = "basic"):
+def ensure_note_types(col, card_style: str = "basic", color_scheme: str = "carolina"):
     """Ensure the required note types exist, with up-to-date templates and the
-    stylesheet for `card_style` (see card_css). Runs on every Generate and when
-    the Card style setting changes, so the style applies to every card at once."""
-    css = card_css(card_style)
+    stylesheet for `card_style` in `color_scheme` (see card_css). Runs on every
+    Generate and when either setting changes, so it applies to every card at once."""
+    css = card_css(card_style, color_scheme)
     _ensure_basic_type(col, css)
     _ensure_reversible_type(col, css)
     _ensure_cloze_type(col, css)
@@ -1197,6 +1281,7 @@ def generate_cards(
     col,
     anki_edit_conflict: str = "preserve",
     card_style: str = "basic",
+    color_scheme: str = "carolina",
 ) -> Tuple[int, int, int]:
     """
     Generate/update Anki cards from a paper.
@@ -1209,7 +1294,7 @@ def generate_cards(
     Returns:
         Tuple of (created, updated, deleted) counts.
     """
-    ensure_note_types(col, card_style)
+    ensure_note_types(col, card_style, color_scheme)
 
     if anki_edit_conflict not in ("preserve", "overwrite", "abort"):
         anki_edit_conflict = "preserve"

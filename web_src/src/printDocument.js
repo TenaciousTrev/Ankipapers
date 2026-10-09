@@ -175,11 +175,11 @@ export function renderBody(content, mediaDir = '') {
 const PRINT_CSS = `
 sub, sup { line-height: 0; }
 :root{
-  --bg:#ffffff; --border:#d8d8e0;
-  --text-primary:#1a1a2e; --text-secondary:#4a4a65; --text-muted:#8888a0;
-  --accent:#6c5ce7; --accent-light:#a855f7; --h3:#8b5cf6;
-  --green:#00a884; --blue:#3178b8; --pink:#c2185b; --pink-hint:#b01e63;
-  --code:#c2410c; --ap-link:#123a8a;
+  --bg:#ffffff; --border:#cfdcec;
+  --text-primary:#0f2a55; --text-secondary:#34507a; --text-muted:#6a80a3;
+  --accent:#19468d; --accent-light:#23599f; --h3:#2f6fb3;
+  --green:#00a884; --blue:#a8620a; --pink:#c2185b; --pink-hint:#b01e63;
+  --code:#c2410c; --ap-link:#7a3fb8;
 }
 @page{ size:Letter; margin:0.5in; }
 *{ box-sizing:border-box; margin:0; padding:0; }
@@ -215,7 +215,7 @@ body{
 .supplement-row{ break-inside:avoid; page-break-inside:avoid; }
 blockquote{
   border-left:3px solid var(--accent); padding:5px 12px;
-  background:rgba(108,92,231,0.06); color:var(--text-muted);
+  background:rgba(75,156,211,0.08); color:var(--text-muted);
   font-style:italic; border-radius:0 5px 5px 0; margin:4px 0;
   break-inside:avoid; page-break-inside:avoid;
 }

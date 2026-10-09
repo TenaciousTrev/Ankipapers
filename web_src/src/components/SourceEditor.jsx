@@ -262,19 +262,11 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
 }
 
+// Source view is plain black on white, so a line is just its escaped text.
+// (The layer it goes in only positions line numbers and highlights; the
+// visible text is the textarea's own.)
 function highlightLine(line) {
-  let h = escapeHtml(line)
-
-  h = h.replace(/(\{\{c\d+::.+?\}\}|\{\{.+?\}\})/g, '<span class="src-syn-cloze">$1</span>')
-  h = h.replace(/(\s&lt;&gt;\s)/g, '<span class="src-syn-reversible">$1</span>')
-  h = h.replace(/(\s&gt;&gt;\s)/g, '<span class="src-syn-basic">$1</span>')
-  h = h.replace(/(\*\*[^*]+\*\*)/g, '<span class="src-syn-bold">$1</span>')
-  h = h.replace(/(^|[^*])(\*[^*\n]+\*)/g, '$1<span class="src-syn-italic">$2</span>')
-
-  if (/^#{1,6}\s/.test(line)) {
-    h = `<span class="src-syn-heading">${h}</span>`
-  }
-  return h
+  return escapeHtml(line)
 }
 
 // One block per line, so each line can be found (to centre and highlight it

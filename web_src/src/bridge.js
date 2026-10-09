@@ -210,6 +210,12 @@ export async function convertEmphasisToTags(dryRun = true) {
 export async function getTextReplacements() {
   return call('get_text_replacements');
 }
+// Per-day count of lines turned into cards ({ "YYYY-MM-DD": n }), the first
+// such day, and the paper whose cards were written most recently.
+export async function getHomeStats() {
+  return call('get_home_stats');
+}
+
 export async function getSettings() {
   return call('get_settings');
 }
@@ -310,6 +316,25 @@ function createMockBridge() {
     }),
     move_cards_to_deck: () => ({ ok: true }),
     search_papers: ({ query }) => searchPapersAdvanced(papers, query),
+    get_home_stats: () => {
+      // Sample history so the heatmap has something to show without Anki.
+      const days = {}
+      let seed = 7
+      const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const d = new Date(today); d.setMonth(d.getMonth() - 14)
+      const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+      for (; d <= today; d.setDate(d.getDate() + 1)) {
+        const daysAgo = Math.round((today - d) / 86400000)
+        if (daysAgo < 9 || rnd() > 0.4) days[iso(d)] = 1 + Math.round(rnd() * rnd() * 40)
+      }
+      const first = papers[0]
+      return {
+        days,
+        first_day: Object.keys(days).sort()[0] || null,
+        last_generated: first ? { at: Date.now() / 1000 - 7200, paper_id: first.id, title: first.title } : null,
+      }
+    },
     import_markdown: () => ({ cancelled: true }),
     export_markdown: () => ({ cancelled: true }),
     export_pdf: () => ({ cancelled: true }),
@@ -317,13 +342,13 @@ function createMockBridge() {
     export_papers_to_disk: () => ({ root: '', written: [] }),
     get_settings: () => ({
       default_deck: 'Default', auto_save_interval_seconds: 30, font_size: 14,
-      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true, show_line_numbers: true,
+      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true, show_line_numbers: true, color_scheme: 'carolina',
       anki_edit_conflict: 'ask',
     }),
     // Mirrors gui/bridge.py: a changed card_style reports it was applied.
     save_settings: ({ settings }) => {
-      const prev = createMockBridge._cardStyle || 'basic'
-      const next = (settings && settings.card_style) || 'basic'
+      const prev = createMockBridge._cardStyle || 'basic|carolina'
+      const next = `${(settings && settings.card_style) || 'basic'}|${(settings && settings.color_scheme) || 'carolina'}`
       createMockBridge._cardStyle = next
       return next !== prev ? { ok: true, card_style_applied: true } : { ok: true }
     },
@@ -370,7 +395,7 @@ if (typeof window !== 'undefined') {
     getDecks, getFolders, createFolder, deleteFolder, renameFolder, moveFolder,
     getMediaDir, pickImage, getClipboardText, pasteImage,
     openInBrowser, diagnoseCrosslink, moveCardsToDeck,
-    searchPapers,
+    searchPapers, getHomeStats,
     importMarkdown, exportMarkdown, exportPdf, exportPapersToDisk,
     getSettings, saveSettings, openUrl,
     pickPdfFile, getPdfViewerUrl, getPdfUrl, extractPdfText, extractWebText,

@@ -684,9 +684,9 @@ const Block = React.memo(function Block({
          )}
       </div>
       <div className="block-handle"><GripVertical size={12} /></div>
-      <div className="block-bullet-indicator">
-         {(type === 'text' || type === 'empty') && <div className="block-dot" />}
-      </div>
+      {/* Keeps the gap where an outliner dot used to mark plain and empty
+          lines; the line numbers do that job now, so the text stays put. */}
+      <div className="block-bullet-indicator" />
       <div className={`block type-${type} ${focused ? 'block-editing' : ''} ${focused && isSelected ? 'block-editing-selected' : ''}`}>
         {focused ? (
           <textarea
