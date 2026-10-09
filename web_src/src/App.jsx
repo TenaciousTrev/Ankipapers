@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   initBridge, listPapers, loadPaper, savePaper, createPaper, deletePaper,
   generateCards, checkAnkiEditConflicts, getDecks, createFolder, getFolders, movePaperToFolder,
   deleteFolder, renameFolder, moveFolder,
   pickImage, pasteImage, exportPdf, exportMarkdown, importMarkdown, getSettings, saveSettings as saveSettingsBridge,
   getMediaDir, getTextReplacements, convertEmphasisToTags, openInBrowser, moveCardsToDeck, extractPdfText, extractWebText, saveSourceLink, loadSourceLink, openSourceAtLocation,
+  getNoteStats, unsuspendNote,
 } from './bridge'
+import { buildOutline } from './outline'
+import { buildCardRefIndex, resolveNoteIdFromIndex } from './crossLink'
 import Sidebar from './components/Sidebar'
 import EditorHeader from './components/EditorHeader'
 import TabBar from './components/TabBar'
@@ -605,7 +608,7 @@ export default function App() {
   // does — in Source view too, where the caret moves to that line. Search
   // passes expandAll to unfold the whole paper; the others unfold only the
   // sections the line sits inside.
-  const handleGoToLine = useCallback(async (paperId, lineIndex, { expandAll = false } = {}) => {
+  const handleGoToLine = useCallback(async (paperId, lineIndex, { expandAll = false, align = 'center' } = {}) => {
     if (!paperId) return
     const alreadyOpen = paperRef.current?.id === paperId
     const line = lineIndex != null && lineIndex >= 0 ? lineIndex : -1
@@ -614,7 +617,7 @@ export default function App() {
     if (line >= 0) {
       setTimeout(() => {
         if (viewModeRef.current === 'source') editorRef.current?.goToLine?.(line)
-        else blockEditorRef.current?.revealBlock?.(line, { expandAll })
+        else blockEditorRef.current?.revealBlock?.(line, { expandAll, align })
       }, alreadyOpen ? 30 : 320)
     }
   }, [handleSelectPaper, pushNav])
@@ -1065,6 +1068,50 @@ export default function App() {
     }
   }, [refreshPapers, setBusy, persistPaper, reconcileBacklinks, markSaved])
 
+  // ─── Weak spots and the outline ─────────────────
+  // Review stats for the open paper's notes, straight from Anki (read-only).
+  // Re-read whenever the paper or its card links change (e.g. after Generate).
+  const [noteStats, setNoteStats] = useState(null)
+  const [weakOnly, setWeakOnly] = useState(false)
+  const [visibleLine, setVisibleLine] = useState(0)
+  const weakMarkersOn = settings.weak_spot_markers !== false
+  const paperNoteIds = useMemo(
+    () => (paper?.card_refs || []).map((r) => r.anki_note_id).filter((n) => n != null),
+    [paper?.card_refs],
+  )
+  const refreshNoteStats = useCallback(async () => {
+    if (!weakMarkersOn || !paperNoteIds.length) { setNoteStats(null); return }
+    const res = await getNoteStats(paperNoteIds)
+    setNoteStats(res?.stats || null)
+  }, [weakMarkersOn, paperNoteIds])
+  useEffect(() => { refreshNoteStats() }, [refreshNoteStats])
+  useEffect(() => { setWeakOnly(false); setVisibleLine(0) }, [paper?.id])
+
+  const weakCount = useMemo(
+    () => (noteStats ? Object.values(noteStats).filter((s) => s && s.status).length : 0),
+    [noteStats],
+  )
+  useEffect(() => { if (weakCount === 0) setWeakOnly(false) }, [weakCount])
+
+  const handleUnsuspendNote = useCallback(async (noteId) => {
+    const res = await unsuspendNote(noteId)
+    if (res?.error) showToast(`Could not unsuspend: ${res.error}`, 'error')
+    else showToast('Card unsuspended', 'success')
+    refreshNoteStats()
+  }, [refreshNoteStats])
+
+  // The sidebar outline: headings with card counts and weak-spot dots.
+  const outline = useMemo(() => {
+    if (!paper) return null
+    const idx = buildCardRefIndex(paper.card_refs)
+    const statusOf = (i, line) => {
+      if (!noteStats) return null
+      const nid = resolveNoteIdFromIndex(i, line, idx)
+      return nid != null ? noteStats[String(nid)]?.status || null : null
+    }
+    return buildOutline(paper.content, statusOf)
+  }, [paper, noteStats])
+
   const handleGenerate = useCallback(async () => {
     const paper = paperRef.current
     if (!paper || isBusyRef.current) return
@@ -1407,6 +1454,15 @@ export default function App() {
         collapsed={sidebarCollapsed}
         width={sidebarWidth}
         onToggleCollapse={toggleSidebar}
+        outline={outline}
+        outlineTitle={paper?.title || ''}
+        outlineCurrentLine={visibleLine}
+        currentPaper={paper}
+        onJumpToHeading={(lineIndex) => {
+          if (!paper) return
+          setVisibleLine(lineIndex) // short papers may not scroll, so mark it now
+          handleGoToLine(paper.id, lineIndex, { align: 'start' })
+        }}
       />
 
       {!sidebarCollapsed && (
@@ -1478,6 +1534,10 @@ export default function App() {
                   onOpenDocLink={handleOpenDocLink}
                   onRequestCreateLink={handleRequestCreateLink}
                   onNotify={showToast}
+                  noteStats={noteStats}
+                  weakOnly={weakOnly}
+                  onUnsuspendNote={handleUnsuspendNote}
+                  onVisibleLineChange={setVisibleLine}
                 />
               )}
             </div>
@@ -1489,6 +1549,9 @@ export default function App() {
               onSave={handleSave} 
               onGenerate={handleGenerate} 
               isSaving={isBusy} // Passes lock state to toolbar UI
+              weakCount={weakMarkersOn ? weakCount : 0}
+              weakOnly={weakOnly}
+              onToggleWeakOnly={() => setWeakOnly((v) => !v)}
             />
           </>
         ) : (

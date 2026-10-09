@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
-import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap } from 'lucide-react'
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
+import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap, ListTree } from 'lucide-react'
+import OutlinePanel from './OutlinePanel'
 
 // Hovering the rail slides the tree out; both numbers are deliberate. 260ms in
 // means crossing the rail on the way somewhere else does not open it, and
@@ -10,6 +11,7 @@ const PEEK_CLOSE_MS = 200
 const FOLDER_ICON_SIZE = 17
 const FOLDER_CHEVRON_SIZE = 16
 import { openUrl, searchPapers } from '../bridge'
+import { searchPapersAdvanced } from '../searchQuery'
 
 const MAX_FOLDER_DEPTH = 3
 
@@ -58,7 +60,9 @@ function SearchMatchBadges({ result }) {
   )
 }
 
-export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse }) {
+export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse, outline = null, outlineTitle = '', outlineCurrentLine = 0, onJumpToHeading, currentPaper = null }) {
+  // Papers (the folder tree) or Outline (the open paper's headings).
+  const [tab, setTab] = useState('papers')
   const [peeking, setPeeking] = useState(false)
   const peekTimer = useRef(null)
   const [expandedFolders, setExpandedFolders] = useState(new Set())
@@ -66,8 +70,14 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
   const [newName, setNewName] = useState('')
   const [contextMenu, setContextMenu] = useState(null)
   const [dragOverTarget, setDragOverTarget] = useState(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState(null)
+  // Two searches, one per tab: Papers searches every paper (via Anki);
+  // Outline searches only the open paper, in its current (unsaved) text.
+  // Each keeps its own query, so switching tabs doesn't lose either.
+  const [allQuery, setAllQuery] = useState('')
+  const [allResults, setAllResults] = useState(null)
+  const [paperQuery, setPaperQuery] = useState('')
+  const inPaper = tab === 'outline'
+  const paperName = (currentPaper?.title || '').trim() || 'Untitled'
   const [searchPopoverOpen, setSearchPopoverOpen] = useState(false)
   const [searchPopoverPos, setSearchPopoverPos] = useState({ top: 0, left: 0, width: 280 })
   const searchTimer = useRef(null)
@@ -90,15 +100,36 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
   }, [collapsed])
   useEffect(() => () => clearTimeout(peekTimer.current), [])
 
-  const handleSearchChange = useCallback((q) => {
-    setSearchQuery(q)
-    clearTimeout(searchTimer.current)
-    if (!q.trim()) { setSearchResults(null); return }
-    searchTimer.current = setTimeout(async () => {
-      const results = await searchPapers(q)
-      setSearchResults(results)
-    }, 250)
+  // Within one paper, field filters (title:, folder:, deck:, tag:) have
+  // nothing to choose between, so they're dropped before searching.
+  // One paper searches instantly in the browser, so its results are simply
+  // derived from the query and the paper's current text (and follow edits).
+  const paperResults = useMemo(() => {
+    const words = paperQuery.replace(/(^|\s)-?(title|folder|deck|tag):("[^"]*"|\S+)/gi, ' ').trim()
+    if (!paperQuery.trim() || !currentPaper) return null
+    return words ? searchPapersAdvanced([currentPaper], words) : []
+  }, [paperQuery, currentPaper])
+
+  const searchQuery = inPaper ? paperQuery : allQuery
+  const searchResults = inPaper ? paperResults : allResults
+
+  const runAllSearch = useCallback(async (q) => {
+    setAllResults(await searchPapers(q))
   }, [])
+
+  const handleSearchChange = useCallback((q) => {
+    if (inPaper) { setPaperQuery(q); return }
+    setAllQuery(q)
+    clearTimeout(searchTimer.current)
+    if (!q.trim()) { setAllResults(null); return }
+    searchTimer.current = setTimeout(() => runAllSearch(q), 250)
+  }, [inPaper, runAllSearch])
+
+  const clearSearch = useCallback(() => {
+    if (inPaper) { setPaperQuery(''); return }
+    setAllQuery('')
+    setAllResults(null)
+  }, [inPaper])
 
   const updateSearchPopoverPosition = useCallback(() => {
     const el = searchTriggerRef.current
@@ -124,13 +155,10 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
   useEffect(() => {
     if (!searchPopoverOpen) return
     const t = window.setTimeout(() => searchInputRef.current?.focus(), 0)
-    const q = searchQuery.trim()
-    if (q) {
+    const q = allQuery.trim()
+    if (q && !inPaper) {
       clearTimeout(searchTimer.current)
-      searchTimer.current = window.setTimeout(async () => {
-        const results = await searchPapers(q)
-        setSearchResults(results)
-      }, 0)
+      searchTimer.current = window.setTimeout(() => runAllSearch(q), 0)
     }
     return () => clearTimeout(t)
   }, [searchPopoverOpen])
@@ -152,10 +180,9 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
   const selectSearchResult = useCallback((id, line = null) => {
     if (line != null && onGoToLine) onGoToLine(id, line)
     else onSelectPaper(id)
-    setSearchQuery('')
-    setSearchResults(null)
+    clearSearch()
     setSearchPopoverOpen(false)
-  }, [onSelectPaper, onGoToLine])
+  }, [onSelectPaper, onGoToLine, clearSearch])
 
   const toggleExpand = (path) => {
     setExpandedFolders(prev => {
@@ -406,6 +433,14 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
       </button>
       <button
         type="button"
+        className="sidebar-rail-btn"
+        onClick={() => { setTab('outline'); onToggleCollapse?.() }}
+        title="Outline of this paper"
+      >
+        <ListTree size={18} />
+      </button>
+      <button
+        type="button"
         className={`sidebar-rail-btn${selectedFolder ? ' has-dot' : ''}`}
         onClick={onToggleCollapse}
         title={filterTitle}
@@ -466,19 +501,48 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
         </div>
       </div>
 
+      <div className="sidebar-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'papers'}
+          className={tab === 'papers' ? 'active' : ''} onClick={() => setTab('papers')}>
+          <Folder size={13} /> Papers
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'outline'}
+          className={tab === 'outline' ? 'active' : ''} onClick={() => setTab('outline')}>
+          <ListTree size={13} /> Outline
+        </button>
+      </div>
+
       <div className="sidebar-search">
         <button
           type="button"
           ref={searchTriggerRef}
           className="sidebar-search-trigger"
           onClick={() => setSearchPopoverOpen(true)}
+          disabled={inPaper && !currentPaper}
           aria-haspopup="dialog"
           aria-expanded={searchPopoverOpen}
         >
           <Search size={16} className="sidebar-search-trigger-icon" strokeWidth={2} aria-hidden />
-          <span className="sidebar-search-trigger-text">{searchQuery.trim() ? searchQuery : 'Search papers…'}</span>
+          <span className="sidebar-search-trigger-text">
+            {searchQuery.trim()
+              ? searchQuery
+              : inPaper
+                ? (currentPaper ? `Search ${paperName}…` : 'Open a paper to search it')
+                : 'Search papers…'}
+          </span>
         </button>
       </div>
+
+      {tab === 'outline' && (
+        <OutlinePanel
+          items={outline}
+          title={outlineTitle}
+          totalCards={papers.find((p) => p.id === activePaperId)?.card_refs?.length || 0}
+          currentLine={outlineCurrentLine}
+          onJump={onJumpToHeading}
+        />
+      )}
+
 
       {searchPopoverOpen && (
         <>
@@ -491,7 +555,7 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
             ref={searchPopoverRef}
             className="sidebar-search-popover"
             role="dialog"
-            aria-label="Search papers"
+            aria-label={inPaper ? `Search ${paperName}` : 'Search papers'}
             style={{
               top: searchPopoverPos.top,
               left: searchPopoverPos.left,
@@ -505,7 +569,7 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
                 <input
                   ref={searchInputRef}
                   className="sidebar-search-input sidebar-search-input--popover"
-                  placeholder="title:, folder:, tag:, &quot;phrase&quot;, -exclude, OR"
+                  placeholder={inPaper ? `Search ${paperName}: words, "phrase", -exclude, OR` : 'title:, folder:, tag:, "phrase", -exclude, OR'}
                   value={searchQuery}
                   onChange={e => handleSearchChange(e.target.value)}
                   aria-label="Search query"
@@ -514,7 +578,7 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
                   <button
                     type="button"
                     className="sidebar-search-clear"
-                    onClick={() => { setSearchQuery(''); setSearchResults(null) }}
+                    onClick={clearSearch}
                     title="Clear"
                   >
                     <X size={12} />
@@ -532,18 +596,24 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
             </div>
             <div className="sidebar-search-popover-results">
               {!searchQuery.trim() && (
-                <div className="sidebar-search-popover-hint">Type to search titles, content, folders, decks, and tags.</div>
+                <div className="sidebar-search-popover-hint">
+                  {inPaper ? `Type to search ${paperName}. Only this paper is searched.` : 'Type to search titles, content, folders, decks, and tags.'}
+                </div>
               )}
               {searchQuery.trim() && searchResults === null && (
                 <div className="sidebar-search-popover-hint">Searching…</div>
               )}
               {searchQuery.trim() && searchResults !== null && (() => {
-                const { rows, total } = searchRows(searchResults)
+                // In one paper, only line hits mean anything (the title-only
+                // row would just point back at the paper you're in).
+                const { rows: allRows, total: allTotal } = searchRows(searchResults)
+                const rows = inPaper ? allRows.filter((r) => r.line != null) : allRows
+                const total = inPaper ? searchResults.reduce((n, r) => n + (r.lines_total || 0), 0) : allTotal
                 return (
                 <>
                   <div className="sidebar-search-popover-results-header">
                     {total} result{total !== 1 ? 's' : ''}
-                    {searchResults.length > 0 && ` in ${searchResults.length} paper${searchResults.length !== 1 ? 's' : ''}`}
+                    {inPaper ? ` in ${paperName}` : searchResults.length > 0 && ` in ${searchResults.length} paper${searchResults.length !== 1 ? 's' : ''}`}
                     {total > rows.length && ` · showing the first ${rows.length}`}
                   </div>
                   {rows.map(({ key, result: r, line, path }) => (
@@ -566,22 +636,25 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
                       <FileText size={14} className="tree-icon" />
                       <div className="search-result-body">
                         {/* Document › H1 › H2 › H3 · line N */}
+                        {/* (H1 › H2 › H3 · line N when searching just this paper) */}
                         <div className="search-result-path">
-                          <span className="search-result-doc">{r.title || 'Untitled'}</span>
+                          {!inPaper && <span className="search-result-doc">{r.title || 'Untitled'}</span>}
                           {path.map((h, i) => (
                             <React.Fragment key={i}>
-                              <span className="search-result-sep" aria-hidden> › </span>
-                              <span className="search-result-heading">{h}</span>
+                              {(i > 0 || !inPaper) && <span className="search-result-sep" aria-hidden> › </span>}
+                              <span className={inPaper && i === 0 ? 'search-result-doc' : 'search-result-heading'}>{h}</span>
                             </React.Fragment>
                           ))}
-                          {line != null && <span className="search-result-line"> · line {line + 1}</span>}
+                          {line != null && (
+                            <span className="search-result-line">{inPaper && path.length === 0 ? `Line ${line + 1}` : ` · line ${line + 1}`}</span>
+                          )}
                         </div>
                         {line == null && <SearchMatchBadges result={r} />}
                       </div>
                     </div>
                   ))}
-                  {searchResults.length === 0 && (
-                    <div className="sidebar-search-popover-empty">No results for &quot;{searchQuery}&quot;</div>
+                  {rows.length === 0 && (
+                    <div className="sidebar-search-popover-empty">No results for &quot;{searchQuery}&quot;{inPaper ? ` in ${paperName}` : ''}</div>
                   )}
                 </>
                 )
@@ -589,19 +662,28 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
             </div>
             <details className="sidebar-search-syntax sidebar-search-syntax--popover">
               <summary>Search syntax</summary>
-              <ul>
-                <li><code>word1 word2</code> — all words must match (title, content, folder, deck, or tags).</li>
-                <li><code>&quot;exact phrase&quot;</code> — substring in those fields.</li>
-                <li><code>title:</code>, <code>content:</code>, <code>folder:</code>, <code>deck:</code>, <code>tag:</code> — limit to one field; quote values with spaces.</li>
-                <li><code>-word</code> or <code>-folder:Name</code> — exclude matches.</li>
-                <li><code>mito OR ATP</code> — either side can match (each side is its own AND group).</li>
-              </ul>
+              {inPaper ? (
+                <ul>
+                  <li><code>word1 word2</code> — lines in this paper containing those words.</li>
+                  <li><code>&quot;exact phrase&quot;</code> — an exact phrase.</li>
+                  <li><code>-word</code> — leave out a word.</li>
+                  <li><code>mito OR ATP</code> — either side can match.</li>
+                </ul>
+              ) : (
+                <ul>
+                  <li><code>word1 word2</code> — all words must match (title, content, folder, deck, or tags).</li>
+                  <li><code>&quot;exact phrase&quot;</code> — substring in those fields.</li>
+                  <li><code>title:</code>, <code>content:</code>, <code>folder:</code>, <code>deck:</code>, <code>tag:</code> — limit to one field; quote values with spaces.</li>
+                  <li><code>-word</code> or <code>-folder:Name</code> — exclude matches.</li>
+                  <li><code>mito OR ATP</code> — either side can match (each side is its own AND group).</li>
+                </ul>
+              )}
             </details>
           </div>
         </>
       )}
 
-      <div className="sidebar-tree">
+      <div className="sidebar-tree" style={tab === 'outline' ? { display: 'none' } : undefined}>
         {renderFolderTree(folders)}
 
         <div

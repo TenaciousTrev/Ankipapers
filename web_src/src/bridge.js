@@ -212,6 +212,14 @@ export async function getTextReplacements() {
 }
 // Per-day count of lines turned into cards ({ "YYYY-MM-DD": n }), the first
 // such day, and the paper whose cards were written most recently.
+// Weak-spot markers: Anki review stats per note id ({ stats: { [nid]: {...} } }).
+export async function getNoteStats(noteIds) {
+  return call('get_note_stats', { note_ids: noteIds || [] });
+}
+export async function unsuspendNote(noteId) {
+  return call('unsuspend_note', { note_id: noteId });
+}
+
 export async function getHomeStats() {
   return call('get_home_stats');
 }
@@ -261,7 +269,9 @@ function createMockBridge() {
     {
       id: 'demo-1', title: 'Cell Biology',
       content: '# Cell Biology\n\n## Organelles\n\nWhat is the powerhouse of the cell? >> Mitochondria\n\nATP <> Adenosine Triphosphate\n\nThe {{mitochondria}} is the powerhouse of the cell.\n\n{{c1::ATP}} is produced through {{c2::oxidative phosphorylation}}.\n\n## Cell Membrane\n\n- **Phospholipid bilayer** forms the basic structure\n\n> The fluid mosaic model describes membrane structure\n\n---\n\nWhat is endocytosis? >> The process by which cells absorb molecules\n',
-      deck_name: 'Biology', folder_path: 'Biology', card_refs: [], tags: [],
+      deck_name: 'Biology', folder_path: 'Biology', tags: [],
+      // Pretend these lines were generated, so weak spots have notes to show.
+      card_refs: [4, 6, 8, 10, 22].map((line_index, i) => ({ line_index, card_type: ['basic', 'reversible', 'cloze', 'cloze', 'basic'][i], anki_note_id: 1001 + i, content_hash: '', synced: true })),
       created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
     },
   ];
@@ -316,6 +326,16 @@ function createMockBridge() {
     }),
     move_cards_to_deck: () => ({ ok: true }),
     search_papers: ({ query }) => searchPapersAdvanced(papers, query),
+    get_note_stats: ({ note_ids }) => {
+      const sample = {
+        1001: { status: 'weak', lapses: 3, reviews: 9, again: 3, ease: 170, last_review: Date.now() / 1000 - 2 * 86400, last_ease: 1, next_due_days: 1, is_new: false, suspended: false },
+        1004: { status: 'leech', lapses: 8, reviews: 14, again: 8, ease: 130, last_review: Date.now() / 1000 - 5 * 86400, last_ease: 1, next_due_days: null, is_new: false, suspended: true },
+      }
+      const stats = {}
+      for (const n of note_ids || []) stats[n] = sample[n] || { status: null, lapses: 0, reviews: 4, again: 0, ease: 250, last_review: Date.now() / 1000 - 86400, last_ease: 3, next_due_days: 6, is_new: false, suspended: false }
+      return { stats }
+    },
+    unsuspend_note: () => ({ ok: true, unsuspended: 1 }),
     get_home_stats: () => {
       // Sample history so the heatmap has something to show without Anki.
       const days = {}
@@ -342,7 +362,7 @@ function createMockBridge() {
     export_papers_to_disk: () => ({ root: '', written: [] }),
     get_settings: () => ({
       default_deck: 'Default', auto_save_interval_seconds: 30, font_size: 14,
-      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true, show_line_numbers: true, color_scheme: 'carolina',
+      font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true, show_line_numbers: true, color_scheme: 'carolina', weak_spot_markers: true,
       anki_edit_conflict: 'ask',
     }),
     // Mirrors gui/bridge.py: a changed card_style reports it was applied.
@@ -395,7 +415,7 @@ if (typeof window !== 'undefined') {
     getDecks, getFolders, createFolder, deleteFolder, renameFolder, moveFolder,
     getMediaDir, pickImage, getClipboardText, pasteImage,
     openInBrowser, diagnoseCrosslink, moveCardsToDeck,
-    searchPapers, getHomeStats,
+    searchPapers, getHomeStats, getNoteStats, unsuspendNote,
     importMarkdown, exportMarkdown, exportPdf, exportPapersToDisk,
     getSettings, saveSettings, openUrl,
     pickPdfFile, getPdfViewerUrl, getPdfUrl, extractPdfText, extractWebText,

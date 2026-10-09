@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { GripVertical, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { openInBrowser, pasteImage, getClipboardText } from '../bridge'
+import WeakSpotHover from './WeakSpotHover'
 import { buildCardRefIndex, resolveNoteIdFromIndex } from '../crossLink'
 import {
   formatInlineRaw,
@@ -231,7 +232,7 @@ function LinkPreview({ url }) {
 }
 
 // ─── Rendered block ─────────────────────────────────
-function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId }) {
+function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId, weakStatus, weakLapses }) {
   const t = stripApBlockId(line).trim()
 
   // Cells come from the shared parseTableRow rather than a local copy. The
@@ -332,8 +333,13 @@ function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId }) 
     const content = t.replace(/^\s*[-*]\s+/, '')
     const m = content.match(BASIC_CARD_RE)
     if (m) return (
-      <div className="block-card block-card-basic">
+      <div className={`block-card block-card-basic${weakStatus ? ' has-weak' : ''}`}>
         <div className="block-card-type">
+          {weakStatus && (
+            <i className={`weak-pill is-${weakStatus}`}>
+              {weakStatus === 'leech' ? `Leech · ${weakLapses} lapses` : `${weakLapses} lapses`}
+            </i>
+          )}
           <span>BASIC</span>
           {noteId && (
             <button className="block-card-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
@@ -352,8 +358,13 @@ function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId }) 
     const content = t.replace(/^\s*[-*]\s+/, '')
     const m = content.match(/^(.+?)\s*<>\s*(.+)$/)
     if (m) return (
-      <div className="block-card block-card-reversible">
+      <div className={`block-card block-card-reversible${weakStatus ? ' has-weak' : ''}`}>
         <div className="block-card-type reversible">
+          {weakStatus && (
+            <i className={`weak-pill is-${weakStatus}`}>
+              {weakStatus === 'leech' ? `Leech · ${weakLapses} lapses` : `${weakLapses} lapses`}
+            </i>
+          )}
           <span>REVERSIBLE</span>
           {noteId && (
             <button className="block-card-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
@@ -370,9 +381,14 @@ function RenderBlock({ line, type, mediaDir, onResize, onTableResize, noteId }) 
 
   if (type === 'cloze') {
     return (
-      <div className="block-cloze-wrapper">
+      <div className={`block-cloze-wrapper${weakStatus ? ' has-weak' : ''}`}>
         {/* Injected the standard card type container with a specific cloze class */}
         <div className="block-card-type cloze-type">
+          {weakStatus && (
+            <i className={`weak-pill is-${weakStatus}`}>
+              {weakStatus === 'leech' ? `Leech · ${weakLapses} lapses` : `${weakLapses} lapses`}
+            </i>
+          )}
           <span>CLOZE</span>
           {noteId && (
             <button className="block-card-browser-btn" onClick={(e) => { e.stopPropagation(); openInBrowser(noteId); }}>
@@ -589,6 +605,8 @@ const Block = React.memo(function Block({
   onToggleCollapse,
   blockKey,
   onZettelSearch,
+  weakStatus = null,
+  weakLapses = 0,
 }) {
   const inputRef = useRef(null)
 
@@ -625,7 +643,7 @@ const Block = React.memo(function Block({
 
   return (
     <div
-      className={`block-row ${isDragOver ? 'drag-over' : ''} ${isSelected && !focused ? 'block-row-selected' : ''} ${isRevealed ? 'block-row-revealed' : ''}`}
+      className={`block-row ${isDragOver ? 'drag-over' : ''} ${isSelected && !focused ? 'block-row-selected' : ''} ${isRevealed ? 'block-row-revealed' : ''} ${weakStatus ? `block-row-${weakStatus}` : ''}`}
       style={{ marginLeft: indentPx }}
       data-block-id={blockId}
       draggable={!focused && !dragDisabled}
@@ -716,7 +734,7 @@ const Block = React.memo(function Block({
             onKeyDown={e => onKeyDown(e, blockId)}
           />
         ) : (
-          <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(blockId, w)} onTableResize={(sz) => onTableResize?.(blockId, sz)} noteId={noteId} />
+          <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(blockId, w)} onTableResize={(sz) => onTableResize?.(blockId, sz)} noteId={noteId} weakStatus={weakStatus} weakLapses={weakLapses} />
         )}
       </div>
     </div>
@@ -737,7 +755,7 @@ function getBlockRangeAndIndent(lines, idx) {
 }
 
 // ─── Block Editor ───────────────────────────────────
-const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [], textReplacements = null, onHistoryCheckpoint }, ref) {
+const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [], textReplacements = null, onHistoryCheckpoint, noteStats = null, weakOnly = false, onUnsuspendNote, onVisibleLineChange }, ref) {
   const [focusedIndex, setFocusedIndex] = useState(null)
   const [selectedIndices, setSelectedIndices] = useState(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState(null)
@@ -1465,7 +1483,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   const [revealedIndex, setRevealedIndex] = useState(null)
   const revealTimerRef = useRef(null)
   const revealStepRef = useRef(null)
-  const revealBlock = useCallback((index, { expandAll = false } = {}) => {
+  const revealBlock = useCallback((index, { expandAll = false, align = 'center' } = {}) => {
     const all = blocksRef.current
     if (index == null || index < 0 || index >= all.length) return
     setSelectedIndices(new Set())
@@ -1508,7 +1526,9 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     revealStepRef.current = setTimeout(() => {
       setRevealedIndex(target)
       const el = blockId && containerRef.current?.querySelector(`[data-block-id="${CSS.escape(blockId)}"]`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // The outline jumps a heading to the top of the view (its section reads
+      // down from there); everything else lands mid-screen.
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: align === 'start' ? 'start' : 'center' })
       revealTimerRef.current = setTimeout(() => setRevealedIndex(null), 2400)
     }, unfolding ? 340 : 50)
   }, [])
@@ -2374,8 +2394,91 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   const allLines = useMemo(() => blocks.map(b => b.line), [blocks])
   const showLineNumbers = settings?.show_line_numbers !== false
 
+  // ── Weak spots (Settings → Weak-Spot Markers) ──
+  // noteStats comes from Anki's review history, keyed by note id; a card
+  // line is weak or a leech when its note's status says so.
+  const showWeakMarkers = settings?.weak_spot_markers !== false
+  const weakOf = useCallback((b) => {
+    if (!showWeakMarkers || b?.noteId == null || !noteStats) return null
+    const st = noteStats[String(b.noteId)]
+    return st && st.status ? st : null
+  }, [showWeakMarkers, noteStats])
+
+  // "Weak lines only" (the bottom-bar button): weak lines plus the headings
+  // they sit under, whatever is folded. null when the filter is off.
+  const weakVisible = useMemo(() => {
+    if (!weakOnly) return null
+    const visible = new Set()
+    const path = [] // open headings, outermost first: { level, index }
+    blocks.forEach((b, i) => {
+      if (b.type === 'heading') {
+        const level = (b.actualText.match(/^#+/) || ['#'])[0].length
+        while (path.length && path[path.length - 1].level >= level) path.pop()
+        path.push({ level, index: i })
+        return
+      }
+      if (weakOf(b)) {
+        visible.add(i)
+        path.forEach((h) => visible.add(h.index))
+      }
+    })
+    return visible
+  }, [weakOnly, blocks, weakOf])
+
+  // ── Weak-spot hover: a weak line's review history, above the line ──
+  const [hover, setHover] = useState(null) // { index, rect }
+  const hoverOpenTimer = useRef(null)
+  const hoverCloseTimer = useRef(null)
+  const closeHover = useCallback(() => {
+    clearTimeout(hoverOpenTimer.current)
+    clearTimeout(hoverCloseTimer.current)
+    setHover(null)
+  }, [])
+  const scheduleHover = (i, el) => {
+    clearTimeout(hoverOpenTimer.current)
+    const b = blocks[i]
+    // Only a line that opens its own box cancels the pending close; moving
+    // onto an ordinary line lets the previous box close as normal.
+    if (!b || focusedIndex === i || !weakOf(b)) return
+    clearTimeout(hoverCloseTimer.current)
+    // A short rest before opening, so it doesn't flicker past as you move.
+    hoverOpenTimer.current = setTimeout(() => {
+      if (el?.isConnected) setHover({ index: i, rect: el.getBoundingClientRect() })
+    }, 450)
+  }
+  const leaveHover = () => {
+    clearTimeout(hoverOpenTimer.current)
+    clearTimeout(hoverCloseTimer.current)
+    hoverCloseTimer.current = setTimeout(() => setHover(null), 160)
+  }
+  const keepHover = () => clearTimeout(hoverCloseTimer.current)
+  // Editing, typing or switching papers closes it.
+  useEffect(() => { closeHover() }, [content, closeHover])
+  useEffect(() => { if (focusedIndex != null) closeHover() }, [focusedIndex, closeHover])
+  useEffect(() => () => { clearTimeout(hoverOpenTimer.current); clearTimeout(hoverCloseTimer.current) }, [])
+
+  // ── Which line is at the top of the view (for the outline's highlight) ──
+  const visibleLineRaf = useRef(0)
+  const reportVisibleLine = useCallback(() => {
+    if (!onVisibleLineChange) return
+    cancelAnimationFrame(visibleLineRaf.current)
+    visibleLineRaf.current = requestAnimationFrame(() => {
+      const box = containerRef.current
+      if (!box) return
+      const top = box.getBoundingClientRect().top + 24
+      for (const el of box.querySelectorAll('[data-line]')) {
+        if (el.classList.contains('block-row-hidden')) continue
+        if (el.getBoundingClientRect().bottom > top) { onVisibleLineChange(Number(el.dataset.line)); return }
+      }
+    })
+  }, [onVisibleLineChange])
+  useEffect(() => { reportVisibleLine() }, [blocks, reportVisibleLine])
+  useEffect(() => () => cancelAnimationFrame(visibleLineRaf.current), [])
+
   return (
-    <div className={`block-editor ${showLineNumbers ? 'with-line-numbers' : ''}`} ref={containerRef} onPaste={handlePaste} onMouseDown={handleEditorMouseDown} onClick={(e) => {
+    <div className={`block-editor ${showLineNumbers ? 'with-line-numbers' : ''}`} ref={containerRef} onPaste={handlePaste}
+      onScroll={() => { if (hover) closeHover(); reportVisibleLine() }}
+      onMouseDown={(e) => { closeHover(); handleEditorMouseDown(e) }} onClick={(e) => {
       if ((e.target === containerRef.current || e.target.classList.contains('block-editor-pad')) && selectedIndices.size === 0) {
         const lines = content.split('\n')
         if (lines[lines.length - 1].trim() !== '') {
@@ -2395,8 +2498,16 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         const isTableHead = !!bounds && bounds.start === i
         const displayLine = isTableHead ? allLines.slice(bounds.start, bounds.end + 1).join('\n') : b.line
         const displayType = isTableHead ? 'table' : b.type
+        // The weak-only filter decides visibility on its own (weak lines show
+        // even inside folded sections); otherwise folding does.
+        const hidden = weakVisible ? !weakVisible.has(i) : b.isHidden
+        const weak = weakOf(b)
         return (
-          <div key={b.id} className={`block-row-wrapper ${b.isHidden ? 'block-row-hidden' : 'stagger-in'}`} style={{ animationDelay: `${staggerDelays.get(b.id) ?? 0}ms` }}>
+          <div key={b.id} data-line={i}
+            className={`block-row-wrapper ${hidden ? 'block-row-hidden' : 'stagger-in'}`}
+            style={{ animationDelay: `${staggerDelays.get(b.id) ?? 0}ms` }}
+            onMouseEnter={(e) => scheduleHover(i, e.currentTarget)}
+            onMouseLeave={leaveHover}>
             <div className="block-row-inner">
               {/* The line's real number in the paper (Source view counts the
                   same way), so folded sections leave a gap. */}
@@ -2428,6 +2539,8 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
                 onToggleCollapse={toggleCollapse}
                 blockKey={b.key}
                 onZettelSearch={handleZettelSearch}
+                weakStatus={weak?.status || null}
+                weakLapses={weak?.lapses || 0}
               />
               {zettelSearch?.index === i && (
                  <ZettelkastenSearch 
@@ -2441,6 +2554,16 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         )
       })}
       <div className="block-editor-pad" />
+      {hover && weakOf(blocks[hover.index]) && (
+        <WeakSpotHover
+          rect={hover.rect}
+          stats={weakOf(blocks[hover.index])}
+          onEnter={keepHover}
+          onLeave={leaveHover}
+          onOpenInAnki={() => { openInBrowser(blocks[hover.index].noteId); closeHover() }}
+          onUnsuspend={() => { onUnsuspendNote?.(blocks[hover.index].noteId); closeHover() }}
+        />
+      )}
       {blockMenu && (
         <BlockContextMenu
           x={blockMenu.x}

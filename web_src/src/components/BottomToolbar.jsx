@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
-import { Save, Zap } from 'lucide-react'
+import { Save, Zap, AlertTriangle } from 'lucide-react'
 
-export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, onSave, onGenerate, isSaving: externalIsSaving }) {
+export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, weakCount = 0, weakOnly = false, onToggleWeakOnly, onSave, onGenerate, isSaving: externalIsSaving }) {
   // Local state to track if an operation is currently running
   const [localIsSaving, setLocalIsSaving] = useState(false)
   const [localIsGenerating, setLocalIsGenerating] = useState(false)
@@ -59,6 +59,7 @@ export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, onSave
         {modifiedAt != null && <span>Modified: {new Date(modifiedAt * 1000).toLocaleTimeString()}</span>}
       </div>
 
+      <span className="bottom-center">
       <span className="card-count">
         {total > 0 ? (
           <>
@@ -68,6 +69,20 @@ export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, onSave
         ) : (
           <span className="no-cards">No cards detected</span>
         )}
+      </span>
+      {/* Only there when this paper has weak spots: click to show just those
+          lines (and the headings they sit under), click again for all. */}
+      {weakCount > 0 && (
+        <button
+          type="button"
+          className={`weak-spots-btn${weakOnly ? ' active' : ''}`}
+          onClick={onToggleWeakOnly}
+          title={weakOnly ? 'Show the whole paper' : 'Show only the lines you keep missing'}
+        >
+          <AlertTriangle size={12} />
+          {weakCount} weak spot{weakCount === 1 ? '' : 's'}
+        </button>
+      )}
       </span>
 
       <div className="bottom-actions">

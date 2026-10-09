@@ -101,6 +101,18 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
             <span className="toggle-text">{local.show_card_indicators !== false ? 'Enabled' : 'Disabled'}</span>
           </label>
 
+          <label className="settings-label">Weak-Spot Markers</label>
+          <p className="settings-field-hint">
+            Marks lines whose cards you keep missing in Anki: amber after 3 lapses, red for a
+            leech Anki has suspended. Rest the pointer on one for its review history.
+          </p>
+          <label className="settings-toggle">
+            <input type="checkbox" checked={local.weak_spot_markers !== false}
+              onChange={e => update('weak_spot_markers', e.target.checked)} />
+            <span className="toggle-slider" />
+            <span className="toggle-text">{local.weak_spot_markers !== false ? 'Enabled' : 'Disabled'}</span>
+          </label>
+
           <label className="settings-label">Line Numbers</label>
           <label className="settings-toggle">
             <input type="checkbox" checked={local.show_line_numbers !== false}
@@ -127,8 +139,10 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
 
           <label className="settings-label">Card Style</label>
           <p className="settings-field-hint">
-            How your Anki cards look. Solarized Styling is light when Anki is in light mode and
-            dark in dark mode. Saving restyles every Anki Papers card at once.
+            How your Anki cards look, in the colour scheme chosen above: each scheme has its
+            own Basic and Solarized version (Original purple keeps the classic Solarized).
+            Solarized is light when Anki is in light mode and dark in dark mode. Saving
+            restyles every Anki Papers card at once.
           </p>
           <div className="theme-toggle-group">
             <button

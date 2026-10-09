@@ -377,6 +377,15 @@ export default function WelcomeScreen({
                   any level it is just part of the document, and indented under a
                   card it travels onto that card.
                 </Ref>
+                <Ref code="Outline" tone="key">
+                  The Papers | Outline switch at the top of the sidebar lists this paper's
+                  headings with their card counts. Click one to jump there.
+                </Ref>
+                <Ref code="Weak spots" tone="key">
+                  Lines whose cards you keep missing in Anki are marked amber (red for a
+                  leech). Rest the pointer on one for its review history, or use the
+                  "weak spots" button in the bottom bar to see only those lines.
+                </Ref>
                 <Ref code="Line numbers" tone="key">
                   The numbers down the left are each line's place in the paper. Folding a
                   section leaves a gap rather than renumbering, so a number always means

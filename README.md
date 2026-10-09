@@ -41,7 +41,15 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
-**Three colour schemes.** Settings → Colour scheme picks **Original purple**, **Black & white** (greyscale, keeping the green / amber / pink card-type colours), **Carolina blue** (the default) or **Crimson** (crimson & white, with violet cloze and blue links so neither blends into the red), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
+**Weak spots and an outline.**
+- **Weak-spot markers:** lines whose cards you keep missing in Anki get an amber edge and a "3 lapses" tag; a leech Anki has suspended gets a red one. Rest the pointer on one and its review history opens above the line (times you pressed Again, ease, last review, next due) with **Open in Anki**, and **Unsuspend** for leeches. When a paper has weak spots, a **"⚠ N weak spots"** button appears in the bottom bar: click it to show only those lines and the headings they sit under, click again for the whole paper. It only reads Anki's review history; nothing changes unless you press Unsuspend. Settings → Weak-Spot Markers turns it off.
+- **Outline:** the sidebar has a **Papers | Outline** switch. Outline lists the open paper's H1–H3 headings with their card counts and an amber or red dot where there are weak spots; click one to jump there, and the heading you're reading stays highlighted as you scroll. The collapsed sidebar has an outline button too.
+- **Search this paper:** on the Outline tab the search box reads **"Search <paper name>…"** and searches only the open paper (including unsaved edits), listing each match as `H1 › H2 › H3 · line N`. The Papers tab still searches everything; each tab keeps its own search.
+- Clicking a line still edits it, exactly as before; the weak-spot box closes as soon as you do.
+
+**Every colour scheme has a Basic and a Solarized card style.** Pick a colour scheme, then Basic or Solarized under Card style: Carolina, Crimson and Black & white each get their own Solarized palette (same monospace layout, the scheme's colours; Black & white draws a real underline), and Original purple keeps the classic Solarized.
+
+**Four colour schemes.** Settings → Colour scheme picks **Original purple**, **Black & white** (greyscale, keeping the green / amber / pink card-type colours), **Carolina blue** (the default) or **Crimson** (crimson & white, with violet cloze and blue links so neither blends into the red), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
 
 **Carolina blue and #19468D.** A Carolina blue (#4B9CD3) and #19468D colourway in both themes: deep #19468D-tinted navy with Carolina accents in dark mode, and #19468D accents on pale blue-white in light mode. Reversible cards are now amber and document links violet, so neither blends into the blues. The **Basic** card style follows suit — #19468D headings (pale Carolina in night mode), a Carolina bar beside `&&` notes, amber reversible answers and violet links — and reaches every existing card the next time you Generate. The Solarized card style is unchanged.
 
@@ -488,7 +496,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `color_scheme` | `carolina` (default), `purple`, `mono` or `crimson`: colours the app and the Basic card style |
 | `show_line_numbers` | Line numbers down the left of the editor and Source view (on by default) |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
-| `card_style` | `basic` (built-in) or `solarized` (Solarized Styling) — restyles every card when changed |
+| `card_style` | `basic` (built-in) or `solarized` (Solarized Styling), each in the colour scheme's own version — restyles every card when changed |
 | `text_replacements_enabled` | Mac only: apply your macOS Text Replacements as you type (on by default) |
 | Papers on disk | Preview / Write, for the one-time migration above |
 

@@ -33,7 +33,7 @@ _ANKIPAPERS_CSS = """
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 20px;
   line-height: 1.65;
-  color: #1a1a2e;
+  color: #000000;  /* pitch black in day mode (purple / mono keep #1a1a2e) */
   max-width: 640px;
   margin: 0 auto;
   padding: 32px 28px;
@@ -355,6 +355,13 @@ _SOLARIZED_CSS = """
   --ap-code: #A8480C;
   --ap-code-bg: #E6EAF0;
   --ap-rule: rgba(51,59,69,0.14);
+  /* Slots a colour scheme can re-point (see _SOLARIZED_PALETTES); the classic
+     look takes cloze from green and reversible answers and links from blue. */
+  --ap-cloze: var(--ap-green);
+  --ap-rev: var(--ap-blue);
+  --ap-link: var(--ap-blue);
+  --ap-u-deco: none;
+  --ap-crumb: var(--ap-muted);  /* the breadcrumb above the card */
 }
 .card.nightMode, .card.night_mode, .nightMode .card, .night_mode .card {
   --ap-bg: #333B45;
@@ -384,24 +391,24 @@ _SOLARIZED_CSS = """
    the breadcrumb's rule reads left-aligned. Pictures and tables stay centred
    by their own auto margins. */
 .card .ap-meta { border-bottom: 1px solid var(--ap-rule); text-align: center; }
-.card .ap-meta-heading { color: var(--ap-muted); letter-spacing: 0.08em; }
+.card .ap-meta-heading { color: var(--ap-crumb); letter-spacing: 0.08em; }
 .card .ap-crumb-h1 { font-size: 17px; text-decoration: none; }
 .card .ap-crumb-h2 { font-size: 15px; }
 .card .ap-crumb-h3 { font-size: 14px; }
-.card .ap-meta-block { color: var(--ap-muted); font-size: 16px; font-weight: 400; }
+.card .ap-meta-block { color: var(--ap-crumb); font-size: 16px; font-weight: 400; }
 .card b, .card strong { color: var(--ap-bold); }
 .card i, .card em { color: var(--ap-italic); }
-.card u { text-decoration: none; color: var(--ap-underline); }
-.card .cloze, .card .cloze b, .card .cloze i, .card .cloze u { color: var(--ap-green); font-weight: 700; }
+.card u { text-decoration: var(--ap-u-deco); color: var(--ap-underline); }
+.card .cloze, .card .cloze b, .card .cloze i, .card .cloze u { color: var(--ap-cloze); font-weight: 700; }
 .card .ap-answer-basic { color: var(--ap-green); }
-.card .ap-answer-reversible { color: var(--ap-blue); }
+.card .ap-answer-reversible { color: var(--ap-rev); }
 .card .ap-supplement {
   background: none; border-left: none; padding: 0; margin-top: 20px;
   font-size: 15px; font-style: italic; color: var(--ap-fg);
 }
 .card .ap-divider { background: var(--ap-rule); margin: 20px 0; }
 .card code { background: var(--ap-code-bg); color: var(--ap-code); border-color: transparent; }
-.card .ap-link, .card .ankipapers-card .ap-link { color: var(--ap-blue); }
+.card .ap-link, .card .ankipapers-card .ap-link { color: var(--ap-link); }
 .card .ap-cloze-hint { color: var(--ap-muted); }
 .card .ap-direction { color: var(--ap-muted); background: var(--ap-rule); }
 .card .ankipapers-md-table { font-size: 14px; }
@@ -423,6 +430,7 @@ CARD_STYLES = ("basic", "solarized")
 # the same in every scheme.
 _PURPLE_CSS = """
 /* ═══ Colour scheme: original purple ═══ */
+.ankipapers-card { color: #1a1a2e; }
 .ap-meta-heading { color: #6c5ce7; }
 .nightMode .ap-meta-heading,
 .night_mode .ap-meta-heading { color: #6c5ce7; }
@@ -454,6 +462,7 @@ _PURPLE_CSS = """
 # Greyscale, except the answer colours, which tell card types apart.
 _MONO_CSS = """
 /* ═══ Colour scheme: black & white ═══ */
+.ankipapers-card { color: #1a1a2e; }
 .ap-meta-heading { color: #111111; }
 .nightMode .ap-meta-heading,
 .night_mode .ap-meta-heading { color: #f0f0f0; }
@@ -509,21 +518,73 @@ _CRIMSON_CSS = """
 .night_mode .ankipapers-card .ap-cloze-hint { color: #d9c6fa; }
 """
 
+# Solarized in each colour scheme: the same Solarized rules, re-pointed to the
+# scheme's palette by redefining the --ap-* variables (day, then night). Each
+# block repeats Solarized's own selectors and comes after it, so it wins on
+# order. Original purple keeps the classic Solarized palette untouched.
+_SOLARIZED_NIGHT = ".card.nightMode, .card.night_mode, .nightMode .card, .night_mode .card"
+
+
+def _solarized_palette(name: str, day: dict, night: dict) -> str:
+    def block(sel, vals):
+        return sel + " {\n" + "".join(f"  --ap-{k}: {v};\n" for k, v in vals.items()) + "}\n"
+    return f"\n/* ═══ Solarized, {name} palette ═══ */\n" + block(".card", day) + block(_SOLARIZED_NIGHT, night)
+
+
+_SOLARIZED_PALETTES = {
+    "purple": "",
+    "carolina": _solarized_palette(
+        "Carolina blue",
+        # Day: a white card with pitch-black text.
+        {"bg": "#FFFFFF", "fg": "#000000", "muted": "#5D728E", "bold": "#19468D", "italic": "#B23A3A",
+         "underline": "#1D7676", "green": "#1E7A45", "cloze": "#1F6FAE", "rev": "#A8620A", "link": "#7A3FB8",
+         "code": "#A8480C", "code-bg": "#E1EAF4", "rule": "rgba(25,70,141,0.14)", "crumb": "#19468D"},
+        {"bg": "#1B2A44", "fg": "#D6E4F2", "muted": "#9FB4CC", "bold": "#9CC9EA", "italic": "#E07A7A",
+         "underline": "#5EB3B3", "green": "#4CC38A", "cloze": "#4B9CD3", "rev": "#F0B45A", "link": "#C4A5F5",
+         "code": "#F99157", "code-bg": "#24375A", "rule": "rgba(156,201,234,0.16)", "crumb": "#9FB4CC"},
+    ),
+    "crimson": _solarized_palette(
+        "crimson",
+        # Italics move off Solarized's red to slate blue, apart from the crimson bold.
+        # Day: a white card with pitch-black text.
+        {"bg": "#FFFFFF", "fg": "#000000", "muted": "#7A5A61", "bold": "#9E1B32", "italic": "#3D6A8F",
+         "underline": "#1D7676", "green": "#1E7A45", "cloze": "#7A3FB8", "rev": "#A8620A", "link": "#1D5FBF",
+         "code": "#A8480C", "code-bg": "#F2E6E8", "rule": "rgba(158,27,50,0.14)", "crumb": "#7A1426"},
+        {"bg": "#2E1C21", "fg": "#F0E2E5", "muted": "#B79CA2", "bold": "#FF8A9A", "italic": "#8FB8DE",
+         "underline": "#5EB3B3", "green": "#4CC38A", "cloze": "#C4A5F5", "rev": "#F0B45A", "link": "#7FB2FF",
+         "code": "#F99157", "code-bg": "#3D262C", "rule": "rgba(255,138,154,0.16)", "crumb": "#B79CA2"},
+    ),
+    "mono": _solarized_palette(
+        "black & white",
+        # Greyscale, keeping the answer colours; underline is a real underline.
+        {"bg": "#F7F7F7", "fg": "#222222", "muted": "#6B6B6B", "bold": "#000000", "italic": "#555555",
+         "underline": "#222222", "u-deco": "underline", "green": "#1E7A45", "cloze": "#C2306F",
+         "rev": "#A8620A", "link": "#111111", "code": "#222222", "code-bg": "#E8E8E8",
+         "rule": "rgba(0,0,0,0.12)"},
+        {"bg": "#262626", "fg": "#E4E4E4", "muted": "#A0A0A0", "bold": "#FFFFFF", "italic": "#BDBDBD",
+         "underline": "#E4E4E4", "u-deco": "underline", "green": "#4CC38A", "cloze": "#FF8FB3",
+         "rev": "#F0B45A", "link": "#EEEEEE", "code": "#E4E4E4", "code-bg": "#363636",
+         "rule": "rgba(255,255,255,0.12)"},
+    ),
+}
+
 COLOR_SCHEMES = ("carolina", "purple", "mono", "crimson")
 _SCHEME_CSS = {"carolina": "", "purple": _PURPLE_CSS, "mono": _MONO_CSS, "crimson": _CRIMSON_CSS}
 
 
 def card_css(style: Optional[str] = "basic", color_scheme: Optional[str] = "carolina") -> str:
-    """The stylesheet for a card style in a colour scheme: "basic" is the
-    built-in look, coloured by the scheme; "solarized" layers Solarized
-    Styling on top, which looks the same in every scheme. Anything
-    unrecognised falls back to basic / carolina, so a bad config value can
-    never break the cards."""
+    """The stylesheet for a card style in a colour scheme. "basic" is the
+    built-in look coloured by the scheme; "solarized" layers Solarized Styling
+    on top, in the scheme's Solarized palette (original purple keeps the
+    classic one). Anything unrecognised falls back to basic / carolina, so a
+    bad config value can never break the cards."""
     style = (style or "basic").strip().lower()
     scheme = (color_scheme or "carolina").strip().lower()
-    css = _ANKIPAPERS_CSS + _SCHEME_CSS.get(scheme, "")
+    if scheme not in _SCHEME_CSS:
+        scheme = "carolina"
+    css = _ANKIPAPERS_CSS + _SCHEME_CSS[scheme]
     if style == "solarized":
-        return css + "\n" + _SOLARIZED_CSS
+        return css + "\n" + _SOLARIZED_CSS + _SOLARIZED_PALETTES[scheme]
     return css
 
 
@@ -1573,6 +1634,108 @@ def _create_note(col, card: ParsedCard, paper: Paper, deck_id: int) -> Optional[
     except Exception as e:
         print(f"[Anki Papers] Error creating note: {e}")
         return None
+
+
+# ═══ Review stats for weak-spot markers ══════════════════════════════════
+# Read-only: how each line's cards are doing in Anki, so the editor can mark
+# lines you keep missing. A note is "weak" once any of its cards has lapsed
+# WEAK_LAPSES times, and a "leech" when Anki has tagged it leech and
+# suspended it.
+
+WEAK_LAPSES = 3
+
+
+def classify_note(lapses: int, tags: str, suspended: bool) -> Optional[str]:
+    """'leech', 'weak' or None for a note, from its worst card's lapses, its
+    tags (Anki's space-separated tag string) and whether a card is suspended."""
+    tagset = {t.lower() for t in (tags or "").split()}
+    if "leech" in tagset and suspended:
+        return "leech"
+    if lapses >= WEAK_LAPSES:
+        return "weak"
+    return None
+
+
+def note_review_stats(col, note_ids: List[int]) -> Dict[str, Dict[str, Any]]:
+    """Per note: worst lapses, Again presses / reviews, ease, last review,
+    next due, suspended and status ('weak' / 'leech' / None). Keyed by the
+    note id as a string (JSON object keys)."""
+    nids = sorted({int(n) for n in note_ids if n})
+    if not nids:
+        return {}
+    nid_list = ",".join(str(n) for n in nids)
+    today = col.sched.today
+    cards = col.db.all(
+        f"select id, nid, lapses, factor, queue, type, due from cards where nid in ({nid_list})"
+    )
+    by_note: Dict[int, List[tuple]] = {}
+    for row in cards:
+        by_note.setdefault(row[1], []).append(row)
+    cids = [r[0] for r in cards]
+    reviews: Dict[int, Tuple[int, int, int, int]] = {}  # cid -> (reviews, again, last_id, last_ease)
+    if cids:
+        cid_list = ",".join(str(c) for c in cids)
+        for cid, n, again, last_id in col.db.all(
+            f"select cid, count(), sum(case when ease = 1 then 1 else 0 end), max(id) "
+            f"from revlog where cid in ({cid_list}) and ease > 0 group by cid"
+        ):
+            reviews[cid] = (n or 0, again or 0, last_id or 0, 0)
+        last_ids = [v[2] for v in reviews.values() if v[2]]
+        if last_ids:
+            for cid, ease in col.db.all(
+                f"select cid, ease from revlog where id in ({','.join(str(i) for i in last_ids)})"
+            ):
+                n, again, last_id, _ = reviews[cid]
+                reviews[cid] = (n, again, last_id, ease)
+    tags_by_note = dict(col.db.all(f"select id, tags from notes where id in ({nid_list})"))
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for nid in nids:
+        rows = by_note.get(nid)
+        if not rows:
+            continue
+        lapses = max(r[2] for r in rows)
+        suspended = any(r[4] == -1 for r in rows)
+        n_reviews = sum(reviews.get(r[0], (0, 0, 0, 0))[0] for r in rows)
+        n_again = sum(reviews.get(r[0], (0, 0, 0, 0))[1] for r in rows)
+        factors = [r[3] for r in rows if r[3]]
+        last = max((reviews[r[0]] for r in rows if r[0] in reviews), key=lambda v: v[2], default=None)
+        # Next due across cards still in rotation: review cards count days
+        # from today, learning cards are due within the day, new cards wait.
+        next_due: Optional[int] = None
+        is_new = False
+        for _cid, _nid, _lapses, _factor, queue, _ctype, due in rows:
+            if queue == 2 or queue == 3:
+                days = int(due) - today
+            elif queue == 1:
+                days = 0
+            elif queue == 0:
+                is_new = True
+                continue
+            else:
+                continue
+            next_due = days if next_due is None else min(next_due, days)
+        out[str(nid)] = {
+            "status": classify_note(lapses, tags_by_note.get(nid, ""), suspended),
+            "lapses": lapses,
+            "reviews": n_reviews,
+            "again": n_again,
+            "ease": round(min(factors) / 10) if factors else None,  # percent; None under FSRS-only
+            "last_review": (last[2] // 1000) if last else None,      # epoch seconds
+            "last_ease": last[3] if last else None,                  # 1 Again … 4 Easy
+            "next_due_days": next_due,
+            "is_new": is_new and next_due is None,
+            "suspended": suspended,
+        }
+    return out
+
+
+def unsuspend_note(col, note_id: int) -> int:
+    """Unsuspend every card of a note; returns how many cards were suspended."""
+    cids = col.db.list(f"select id from cards where nid = {int(note_id)} and queue = -1")
+    if cids:
+        col.sched.unsuspend_cards(cids)
+    return len(cids)
 
 
 def remove_paper_cards(paper: Paper, col) -> int:

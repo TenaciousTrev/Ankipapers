@@ -10,5 +10,6 @@
     "basic_separator": ">>",
     "text_replacements_enabled": true,
     "card_style": "basic",
-    "color_scheme": "carolina"
+    "color_scheme": "carolina",
+    "weak_spot_markers": true
 }

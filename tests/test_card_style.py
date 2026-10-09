@@ -116,10 +116,58 @@ class ColourSchemes(unittest.TestCase):
         self.assertNotIn("ap-answer-basic", cm._CRIMSON_CSS)
         self.assertNotIn("ap-answer-reversible", cm._CRIMSON_CSS)
 
-    def test_solarized_comes_after_the_scheme(self):
+    def test_solarized_layers_its_scheme_palette_last(self):
         for scheme in cm.COLOR_SCHEMES:
             css = cm.card_css("solarized", scheme)
-            self.assertTrue(css.endswith(cm._SOLARIZED_CSS), scheme)
+            expected = (cm._ANKIPAPERS_CSS + cm._SCHEME_CSS[scheme] + "\n"
+                        + cm._SOLARIZED_CSS + cm._SOLARIZED_PALETTES[scheme])
+            self.assertEqual(css, expected, scheme)
+
+    def test_purple_solarized_is_the_classic_solarized(self):
+        # The original scheme keeps the original Solarized palette untouched.
+        self.assertEqual(cm._SOLARIZED_PALETTES["purple"], "")
+        self.assertTrue(cm.card_css("solarized", "purple").endswith(cm._SOLARIZED_CSS))
+
+    def test_each_solarized_palette_sets_day_and_night(self):
+        for scheme in ("carolina", "crimson", "mono"):
+            pal = cm._SOLARIZED_PALETTES[scheme]
+            self.assertIn(".card {", pal, scheme)
+            self.assertIn(cm._SOLARIZED_NIGHT + " {", pal, scheme)
+            for var in ("--ap-bg", "--ap-fg", "--ap-bold", "--ap-cloze", "--ap-rev", "--ap-link"):
+                self.assertEqual(pal.count(var + ":"), 2, (scheme, var))
+
+    def test_classic_solarized_slots_default_to_its_own_colours(self):
+        # Cloze stays green, reversible answers and links blue, underline
+        # coloured rather than drawn, unless a palette re-points them.
+        for decl in ("--ap-cloze: var(--ap-green)", "--ap-rev: var(--ap-blue)",
+                     "--ap-link: var(--ap-blue)", "--ap-u-deco: none"):
+            self.assertIn(decl, cm._SOLARIZED_CSS)
+
+    def test_carolina_and_crimson_solarized_have_dark_day_breadcrumbs(self):
+        self.assertIn("--ap-crumb: var(--ap-muted)", cm._SOLARIZED_CSS)  # classic unchanged
+        for scheme, day in (("carolina", "#19468D"), ("crimson", "#7A1426")):
+            pal = cm._SOLARIZED_PALETTES[scheme]
+            day_block, night_block = pal.split(cm._SOLARIZED_NIGHT)
+            self.assertIn(f"--ap-crumb: {day};", day_block, scheme)
+            # Night sets its own (soft) crumb so the dark day colour can't carry over.
+            self.assertIn("--ap-crumb:", night_block, scheme)
+            self.assertNotIn(day, night_block, scheme)
+
+    def test_carolina_and_crimson_solarized_day_is_black_on_white(self):
+        for scheme in ("carolina", "crimson"):
+            day_block = cm._SOLARIZED_PALETTES[scheme].split(cm._SOLARIZED_NIGHT)[0]
+            self.assertIn("--ap-bg: #FFFFFF;", day_block, scheme)
+            self.assertIn("--ap-fg: #000000;", day_block, scheme)
+
+    def test_basic_text_is_black_in_carolina_and_crimson_only(self):
+        self.assertIn("color: #000000;", cm._ANKIPAPERS_CSS.split(".ankipapers-card {")[1].split("}")[0])
+        # Crimson has no day-mode text rule of its own, so it inherits black.
+        self.assertNotIn("\n.ankipapers-card { color:", cm._CRIMSON_CSS)
+        for layer in (cm._PURPLE_CSS, cm._MONO_CSS):                     # keep dark navy
+            self.assertIn("\n.ankipapers-card { color: #1a1a2e; }", layer)
+
+    def test_mono_solarized_draws_a_real_underline(self):
+        self.assertIn("--ap-u-deco: underline", cm._SOLARIZED_PALETTES["mono"])
 
     def test_unknown_scheme_falls_back_to_carolina(self):
         for scheme in (None, "", "nope"):
