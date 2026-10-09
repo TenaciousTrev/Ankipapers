@@ -32,6 +32,7 @@
   --green-light: #82e0aa;
   --pink: #fd79a8;
   --pink-hint: #ffa8cd;   /* cloze hint, dark mode: light pink */
+  --pink-rgb: 253, 121, 168;  /* cloze highlight wash */
   --orange: #f39c12;
   --red: #e74c3c;
   --reversible: #f0b45a;  /* reversible cards: amber, apart from the blues */
@@ -544,7 +545,7 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
 .fmt-btn.accent-green { color: var(--green); }
 .fmt-btn.accent-green:hover { color: var(--green-light); }
 .fmt-btn.accent-pink { color: var(--pink); }
-.fmt-btn.accent-pink:hover { color: #ff8ac4; }
+.fmt-btn.accent-pink:hover { color: var(--pink); filter: brightness(1.2); }
 .fmt-btn.accent-blue { color: var(--reversible); }
 .fmt-btn.accent-blue:hover { color: var(--reversible); filter: brightness(1.2); }
 .fmt-sep { width: 1px; height: 20px; background: var(--border); margin: 0 5px; flex-shrink: 0; }
@@ -1273,8 +1274,8 @@ textarea.block-input.block-input-textarea {
 /* Styles the new CLOZE bubble to match your pink cloze theme */
 .block-card-type.cloze-type span {
   color: var(--pink);
-  background: rgba(253, 121, 168, 0.12);
-  border-color: rgba(253, 121, 168, 0.3);
+  background: rgba(var(--pink-rgb), 0.12);
+  border-color: rgba(var(--pink-rgb), 0.3);
 }
 
 .block-cloze-browser-btn {
@@ -1292,7 +1293,7 @@ textarea.block-input.block-input-textarea {
 .block-cloze strong { color: inherit; font-weight: 700; }
 
 .cloze-badge { display: none; }
-.cloze-text { background: linear-gradient(transparent 60%, rgba(253,121,168,0.12) 60%); color: var(--pink); font-weight: 600; padding: 0 2px; }
+.cloze-text { background: linear-gradient(transparent 60%, rgba(var(--pink-rgb), 0.12) 60%); color: var(--pink); font-weight: 600; padding: 0 2px; }
 /* The optional "::hint" tail of a cloze, shown in brackets the way Anki shows
    it while reviewing. */
 .cloze-hint { color: var(--pink-hint); font-weight: 600; }
@@ -2321,6 +2322,8 @@ sub, sup { line-height: 0; }
    re-point the same variables, keyed on <html data-scheme> and data-theme;
    the extra attribute makes each block outrank the base ones regardless of
    order. Source view is black on white in every scheme. */
+/* (Crimson is at the end: cloze turns violet and links blue there, so
+   neither reads as part of the red, and warnings move to orange-red.) */
 
 /* ── Original purple ── */
 [data-scheme="purple"]:not([data-theme="light"]) {
@@ -2463,4 +2466,80 @@ sub, sup { line-height: 0; }
   --tab-strip-bg: #e6e6e6;
   --doc-bg: #ffffff;   /* actual white */
   --code-bg: #f0f0f0;
+}
+
+/* ── Crimson & white ── */
+[data-scheme="crimson"]:not([data-theme="light"]) {
+  --bg-primary: #0f0809;
+  --bg-secondary: #150b0d;
+  --bg-tertiary: #1a0e11;
+  --bg-surface: #221316;
+  --tint-rgb: 224, 71, 95;
+  --bg-hover: rgba(var(--tint-rgb), 0.12);
+  --bg-active: rgba(var(--tint-rgb), 0.22);
+  --border: #3a1d23;
+  --border-hover: #e0475f;
+  --text-primary: #f5eced;
+  --text-secondary: #cdb5b9;
+  --text-muted: #8f6f75;
+  --text-accent: #ff8a9a;
+  --accent: #e0475f;
+  --accent-light: #ff8a9a;
+  --accent-glow: rgba(224, 71, 95, 0.3);
+  --on-accent: #ffffff;
+  --brand-deep: #9e1b32;
+  --heading-1: #ff8a9a;
+  --heading-2: #e0475f;
+  --heading-3: #f3b2bc;
+  --pink: #c4a5f5;          /* cloze: violet, apart from the reds */
+  --pink-hint: #d9c6fa;
+  --pink-rgb: 196, 165, 245;
+  --red: #ff7a45;           /* warnings: orange-red, apart from the accent */
+  --link-rgb: 127, 178, 255;
+  --ap-link: #7fb2ff;       /* links: blue */
+  --hm-0: rgba(224, 71, 95, 0.10);
+  --hm-1: #5c1020;
+  --hm-2: #9e1b32;
+  --hm-3: #e0475f;
+  --hm-4: #ffb3bf;
+  --hm-future: rgba(224, 71, 95, 0.04);
+  --hero-bg: linear-gradient(135deg, rgba(158, 27, 50, 0.55), rgba(158, 27, 50, 0.18));
+}
+[data-scheme="crimson"][data-theme="light"] {
+  --bg-primary: #faf6f7;
+  --bg-secondary: #f4eeef;
+  --bg-tertiary: #efe7e8;
+  --tint-rgb: 158, 27, 50;
+  --bg-hover: rgba(var(--tint-rgb), 0.07);
+  --bg-active: rgba(var(--tint-rgb), 0.13);
+  --border: #e6d6d9;
+  --border-hover: #9e1b32;
+  --text-primary: #2a0f15;
+  --text-secondary: #5c3a41;
+  --text-muted: #94767c;
+  --text-accent: #9e1b32;
+  --accent: #9e1b32;
+  --accent-light: #c8314b;
+  --accent-glow: rgba(158, 27, 50, 0.2);
+  --on-accent: #ffffff;
+  --brand-deep: #9e1b32;
+  --heading-1: #9e1b32;
+  --heading-2: #b52a42;
+  --heading-3: #c94a5e;
+  --pink: #7a3fb8;
+  --pink-hint: #5b2a91;
+  --pink-rgb: 122, 63, 184;
+  --red: #d9480f;
+  --link-rgb: 29, 95, 191;
+  --ap-link: #1d5fbf;
+  --hm-0: rgba(158, 27, 50, 0.07);
+  --hm-1: #f2c4cb;
+  --hm-2: #e07a8b;
+  --hm-3: #c8314b;
+  --hm-4: #7a1426;
+  --hm-future: rgba(158, 27, 50, 0.03);
+  --hero-bg: linear-gradient(135deg, rgba(158, 27, 50, 0.10), rgba(158, 27, 50, 0.03));
+  --tab-strip-bg: #efe4e6;
+  --doc-bg: #ffffff;   /* white page */
+  --code-bg: #f7eef0;
 }

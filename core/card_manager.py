@@ -477,8 +477,40 @@ _MONO_CSS = """
 .night_mode .ankipapers-card .ap-link { color: #eeeeee; text-decoration-color: rgba(255, 255, 255, 0.6); }
 """
 
-COLOR_SCHEMES = ("carolina", "purple", "mono")
-_SCHEME_CSS = {"carolina": "", "purple": _PURPLE_CSS, "mono": _MONO_CSS}
+# Crimson & white. Cloze turns violet and links blue, so neither reads as
+# part of the red; basic (green) and reversible (amber) are unchanged.
+_CRIMSON_CSS = """
+/* ═══ Colour scheme: crimson & white ═══ */
+.ap-meta-heading { color: #9e1b32; }
+.nightMode .ap-meta-heading,
+.night_mode .ap-meta-heading { color: #ff8a9a; }
+.cloze { color: #7a3fb8; }
+.nightMode .cloze { color: #c4a5f5; }
+.ap-supplement { background: rgba(158, 27, 50, 0.05); border-left-color: #9e1b32; }
+.nightMode .ap-supplement { background: rgba(158, 27, 50, 0.3); border-left-color: #e0475f; }
+.ap-divider { background: linear-gradient(90deg, transparent, rgba(158, 27, 50, 0.4), transparent); }
+.ap-direction { color: #9e1b32; background: rgba(158, 27, 50, 0.08); }
+.ap-jump { border-color: rgba(158, 27, 50, 0.25); color: #9e1b32; }
+.ap-jump:hover { background: rgba(158, 27, 50, 0.07); border-color: #9e1b32; }
+.ankipapers-md-table th { border-bottom-color: rgba(158, 27, 50, 0.3); color: #9e1b32; }
+.nightMode .ankipapers-card,
+.night_mode .ankipapers-card { color: #f5eced; }
+.nightMode .ap-direction,
+.night_mode .ap-direction,
+.nightMode .ap-jump,
+.night_mode .ap-jump,
+.nightMode .ankipapers-md-table th,
+.night_mode .ankipapers-md-table th { color: #ff8a9a; }
+.ankipapers-card .ap-link { color: #1d5fbf; text-decoration-color: rgba(29, 95, 191, 0.85); }
+.nightMode .ankipapers-card .ap-link,
+.night_mode .ankipapers-card .ap-link { color: #7fb2ff; text-decoration-color: rgba(127, 178, 255, 0.75); }
+.ankipapers-card .ap-cloze-hint { color: #5b2a91; }
+.nightMode .ankipapers-card .ap-cloze-hint,
+.night_mode .ankipapers-card .ap-cloze-hint { color: #d9c6fa; }
+"""
+
+COLOR_SCHEMES = ("carolina", "purple", "mono", "crimson")
+_SCHEME_CSS = {"carolina": "", "purple": _PURPLE_CSS, "mono": _MONO_CSS, "crimson": _CRIMSON_CSS}
 
 
 def card_css(style: Optional[str] = "basic", color_scheme: Optional[str] = "carolina") -> str:

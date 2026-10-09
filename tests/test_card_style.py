@@ -92,7 +92,8 @@ class ColourSchemes(unittest.TestCase):
         self.assertEqual(cm.card_css("basic", "carolina"), cm._ANKIPAPERS_CSS)
 
     def test_other_schemes_layer_after_the_base(self):
-        for scheme, layer in (("purple", cm._PURPLE_CSS), ("mono", cm._MONO_CSS)):
+        for scheme, layer in (("purple", cm._PURPLE_CSS), ("mono", cm._MONO_CSS),
+                              ("crimson", cm._CRIMSON_CSS)):
             css = cm.card_css("basic", scheme)
             self.assertEqual(css, cm._ANKIPAPERS_CSS + layer, scheme)
 
@@ -106,6 +107,14 @@ class ColourSchemes(unittest.TestCase):
         self.assertNotIn("ap-answer-basic", cm._MONO_CSS)
         self.assertNotIn("ap-answer-reversible", cm._MONO_CSS)
         self.assertNotIn(".cloze", cm._MONO_CSS)
+
+    def test_crimson_moves_cloze_and_links_off_red(self):
+        # Cloze becomes violet and links blue in day and night mode, so
+        # neither blends into the crimson; basic / reversible stay as they are.
+        for colour in ("#7a3fb8", "#c4a5f5", "#1d5fbf", "#7fb2ff"):
+            self.assertIn(colour, cm._CRIMSON_CSS)
+        self.assertNotIn("ap-answer-basic", cm._CRIMSON_CSS)
+        self.assertNotIn("ap-answer-reversible", cm._CRIMSON_CSS)
 
     def test_solarized_comes_after_the_scheme(self):
         for scheme in cm.COLOR_SCHEMES:

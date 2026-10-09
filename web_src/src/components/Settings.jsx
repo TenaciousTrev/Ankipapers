@@ -9,6 +9,7 @@ const COLOR_SCHEMES = [
   { id: 'purple', label: 'Original purple', swatch: 'linear-gradient(135deg, #6c5ce7, #a855f7)' },
   { id: 'mono', label: 'Black & white', swatch: 'linear-gradient(135deg, #111111 50%, #ffffff 50%)' },
   { id: 'carolina', label: 'Carolina blue', swatch: 'linear-gradient(135deg, #4b9cd3 50%, #19468d 50%)' },
+  { id: 'crimson', label: 'Crimson', swatch: 'linear-gradient(135deg, #9e1b32 50%, #ffffff 50%)' },
 ]
 
 export default function Settings({ settings, onSave, onClose, onConvertEmphasis }) {

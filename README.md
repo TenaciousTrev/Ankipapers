@@ -41,7 +41,7 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
-**Three colour schemes.** Settings → Colour scheme picks **Original purple**, **Black & white** (greyscale, keeping the green / amber / pink card-type colours) or **Carolina blue** (the default), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
+**Three colour schemes.** Settings → Colour scheme picks **Original purple**, **Black & white** (greyscale, keeping the green / amber / pink card-type colours), **Carolina blue** (the default) or **Crimson** (crimson & white, with violet cloze and blue links so neither blends into the red), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
 
 **Carolina blue and #19468D.** A Carolina blue (#4B9CD3) and #19468D colourway in both themes: deep #19468D-tinted navy with Carolina accents in dark mode, and #19468D accents on pale blue-white in light mode. Reversible cards are now amber and document links violet, so neither blends into the blues. The **Basic** card style follows suit — #19468D headings (pale Carolina in night mode), a Carolina bar beside `&&` notes, amber reversible answers and violet links — and reaches every existing card the next time you Generate. The Solarized card style is unchanged.
 
@@ -485,7 +485,7 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `font_family` / `font_size` | Editor typeface |
 | `editor_theme` | `dark`, `light`, or `auto` |
 | `show_card_indicators` | Card markers in the left margin |
-| `color_scheme` | `carolina` (default), `purple` or `mono`: colours the app and the Basic card style |
+| `color_scheme` | `carolina` (default), `purple`, `mono` or `crimson`: colours the app and the Basic card style |
 | `show_line_numbers` | Line numbers down the left of the editor and Source view (on by default) |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
 | `card_style` | `basic` (built-in) or `solarized` (Solarized Styling) — restyles every card when changed |
