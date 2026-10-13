@@ -486,7 +486,7 @@ def _collect_subtree_folder_paths(node: Dict[str, Any]) -> List[str]:
 
 
 def move_folder_structure(
-    folder_path: str, new_parent_path: str, max_depth: int = 3
+    folder_path: str, new_parent_path: str, max_depth: int = 10
 ) -> Optional[str]:
     """
     Move a folder under new_parent_path (empty string = root).

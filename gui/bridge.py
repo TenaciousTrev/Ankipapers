@@ -51,7 +51,7 @@ from ..core.card_manager import (
     unsuspend_note,
 )
 
-MAX_FOLDER_DEPTH = 3  # Maximum nesting level for sub-folders
+MAX_FOLDER_DEPTH = 10  # Maximum nesting level for sub-folders
 
 
 # ─── D4 test seam ─────────────────────────────────────

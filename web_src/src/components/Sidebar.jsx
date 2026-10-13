@@ -13,7 +13,7 @@ const FOLDER_CHEVRON_SIZE = 16
 import { openUrl, searchPapers } from '../bridge'
 import { searchPapersAdvanced } from '../searchQuery'
 
-const MAX_FOLDER_DEPTH = 3
+const MAX_FOLDER_DEPTH = 10
 
 const DND_MIME = 'application/x-ankipapers-drag'
 
