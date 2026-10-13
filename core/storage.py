@@ -552,6 +552,9 @@ def move_folder_structure(
     dest_children.append(node)
 
     _remap_subtree_after_rename(node, folder_path, new_path)
+    # Move the directory itself, with everything in it (sub-folders, pictures,
+    # files you added in Finder), before the papers are re-saved below.
+    move_folder_dir(folder_path, new_path)
 
     for paper in list_papers():
         fp = paper.folder_path or ""
@@ -652,6 +655,7 @@ def rename_folder_structure(old_path: str, new_name: str) -> Optional[str]:
 
     target["name"] = new_name
     _remap_subtree_after_rename(target, old_path, new_path)
+    move_folder_dir(old_path, new_path)   # rename the directory itself, contents and all
 
     for paper in list_papers():
         fp = paper.folder_path or ""
@@ -794,6 +798,7 @@ def _render_paper_meta(paper) -> str:
         "tags": list(getattr(paper, "tags", []) or []),
         "created_at": getattr(paper, "created_at", None),
         "modified_at": getattr(paper, "modified_at", None),
+        "show_chapter_bar": bool(getattr(paper, "show_chapter_bar", False)),
         "card_refs": refs,
     }
     return json.dumps(meta, indent=2, ensure_ascii=False) + "\n"
@@ -1024,6 +1029,7 @@ def _read_paper_from_files(md_path: str, root: str = None) -> Optional[Paper]:
         paper_id=paper_id,
     )
     paper.tags = list(meta.get("tags") or [])
+    paper.show_chapter_bar = bool(meta.get("show_chapter_bar", False))
     if meta.get("created_at"):
         paper.created_at = meta["created_at"]
     if meta.get("modified_at"):
@@ -1118,6 +1124,63 @@ def ensure_folder_dir(folder_path: str, root: str = None) -> str:
     except Exception:
         pass
     return path
+
+
+def move_folder_dir(old_path: str, new_path: str, root: str = None) -> bool:
+    """Move or rename a folder's directory on disk, with everything inside it.
+
+    Moving papers one by one (save_paper) leaves behind whatever isn't a
+    paper -- emptied sub-folders, Finder's .DS_Store, files you put there
+    yourself -- and the leftover directory then shows up again in the sidebar.
+    So the directory moves as a whole first. If the destination already exists
+    (two folders being merged), each entry is moved across and anything that
+    would overwrite something is left where it was. Never deletes a file.
+    """
+    root = os.path.abspath(root or get_storage_dir())
+    src = os.path.abspath(folder_dir_path(old_path, root))
+    dst = os.path.abspath(folder_dir_path(new_path, root))
+    inside = lambda p: p != root and p.startswith(root + os.sep)
+    if not (inside(src) and inside(dst)) or src == dst or not os.path.isdir(src):
+        return False
+    if dst.startswith(src + os.sep):
+        return False  # into itself
+    try:
+        same = os.path.exists(dst) and os.path.samefile(src, dst)  # case-only rename on macOS
+        if not os.path.exists(dst) or same:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.replace(src, dst)
+            return True
+        _merge_dir(src, dst)
+        try:
+            os.rmdir(src)  # only if the merge emptied it; its parent is left alone
+        except OSError:
+            pass
+        return True
+    except Exception:
+        try:
+            import traceback
+            traceback.print_exc()
+        except Exception:
+            pass
+        return False
+
+
+def _merge_dir(src: str, dst: str) -> None:
+    for name in os.listdir(src):
+        s, d = os.path.join(src, name), os.path.join(dst, name)
+        if not os.path.exists(d):
+            os.replace(s, d)
+        elif os.path.isdir(s) and os.path.isdir(d):
+            _merge_dir(s, d)
+            try:
+                os.rmdir(s)
+            except OSError:
+                pass  # something stayed behind rather than overwrite; keep it
+        elif name == ".DS_Store":
+            try:
+                os.remove(s)  # Finder's view settings; the destination has its own
+            except OSError:
+                pass
 
 
 def prune_folder_dir(folder_path: str, root: str = None) -> bool:

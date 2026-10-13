@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMe
 import { GripVertical, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { openInBrowser, pasteImage, getClipboardText } from '../bridge'
 import WeakSpotHover from './WeakSpotHover'
+import DraftGroup from './DraftGroup'
 import { buildCardRefIndex, resolveNoteIdFromIndex } from '../crossLink'
 import {
   formatInlineRaw,
@@ -445,6 +446,7 @@ function BlockContextMenu({
   canCreateLink,
   createLinkHint,
   selectionCount,
+  onDraftCards,
 }) {
   const multi = selectionCount > 1
   useEffect(() => {
@@ -511,6 +513,17 @@ function BlockContextMenu({
           onClick={onCreateLink}
         >
           Create link…
+        </button>
+      )}
+      {onDraftCards && (
+        <button
+          type="button"
+          className="block-context-menu-item ai"
+          role="menuitem"
+          onClick={onDraftCards}
+          title="Turn the selected lines into card drafts you can accept or discard"
+        >
+          {multi ? `Draft cards from ${selectionCount} lines` : 'Draft cards from this line'}
         </button>
       )}
       {canEditTable && (
@@ -755,7 +768,7 @@ function getBlockRangeAndIndent(lines, idx) {
 }
 
 // ─── Block Editor ───────────────────────────────────
-const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [], textReplacements = null, onHistoryCheckpoint, noteStats = null, weakOnly = false, onUnsuspendNote, onVisibleLineChange }, ref) {
+const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardCountChange, settings, mediaDir, cardRefs, onTableEditRequest, onGoToSource, onOpenDocLink, onRequestCreateLink, onNotify, papers = [], textReplacements = null, onHistoryCheckpoint, noteStats = null, weakOnly = false, onUnsuspendNote, onVisibleLineChange, draftGroup = null, onRequestDraft, onDraftAccept, onDraftDiscard, onDraftRedo, onDraftEdit, onDraftRedraft, onDraftCancel, onOpenAiSettings }, ref) {
   const [focusedIndex, setFocusedIndex] = useState(null)
   const [selectedIndices, setSelectedIndices] = useState(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState(null)
@@ -1535,6 +1548,99 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   useEffect(() => () => { clearTimeout(revealTimerRef.current); clearTimeout(revealStepRef.current) }, [])
 
   const closeBlockMenu = useCallback(() => setBlockMenu(null), [])
+
+  // ── Draft cards ──────────────────────────────────────────────────
+  // The lines to draft from: the multi-selection, else the line being edited
+  // or right-clicked. A heading on its own means "this whole section".
+  const draftContext = useCallback((indices) => {
+    const lines = contentRef.current.split('\n')
+    let idx = [...(indices || [])].filter((i) => i >= 0 && i < lines.length).sort((a, b) => a - b)
+    if (!idx.length) return null
+    const levelOf = (l) => { const m = stripApBlockId(l).trim().match(/^(#{1,6})\s/); return m ? m[1].length : 0 }
+    if (idx.length === 1 && levelOf(lines[idx[0]])) {
+      const lvl = levelOf(lines[idx[0]])
+      let end = idx[0]
+      while (end + 1 < lines.length && !(levelOf(lines[end + 1]) && levelOf(lines[end + 1]) <= lvl)) end++
+      idx = Array.from({ length: end - idx[0] + 1 }, (_, k) => idx[0] + k)
+    }
+    const first = idx[0], last = idx[idx.length - 1]
+    // Heading path above the first line, outermost first.
+    const path = []
+    for (let i = first - 1; i >= 0; i--) {
+      const lv = levelOf(lines[i])
+      if (lv && (!path.length || lv < path[0].lv)) path.unshift({ lv, t: stripApBlockId(lines[i]).trim().replace(/^#+\s*/, '') })
+      if (lv === 1) break
+    }
+    const text = idx.map((i) => stripApBlockId(lines[i])).filter((l) => l.trim()).join('\n')
+    // Cards already written in the same section, so drafts don't repeat them.
+    let s0 = first, s1 = last
+    while (s0 > 0 && !levelOf(lines[s0])) s0--
+    while (s1 + 1 < lines.length && !levelOf(lines[s1 + 1])) s1++
+    const existing = []
+    for (let i = s0; i <= s1; i++) {
+      const t = getBlockType(lines[i])
+      if ((t === 'basic' || t === 'reversible' || t === 'cloze') && !idx.includes(i)) existing.push(stripApBlockId(lines[i]).trim())
+    }
+    const end = getBlockRangeAndIndent(lines, last).end
+    return {
+      text,
+      headingPath: path.map((p) => p.t),
+      existing,
+      anchorId: lineIdsRef.current.ids[end],
+      label: first === last ? `line ${first + 1}` : `lines ${first + 1}–${last + 1}`,
+    }
+  }, [])
+
+  const onRequestDraftRef = useRef(onRequestDraft)
+  onRequestDraftRef.current = onRequestDraft
+  const draftAtMenu = useCallback(() => {
+    const sel = blockMenu?.selection
+    closeBlockMenu()
+    const ctx = draftContext(sel)
+    if (ctx) onRequestDraftRef.current?.(ctx)
+  }, [blockMenu, closeBlockMenu, draftContext])
+
+  // Where a draft group sits: under the line with this id. Accepting moves it
+  // down past the lines just inserted, so the next accepted card goes below.
+  const [movedDraftAnchor, setMovedDraftAnchor] = useState({ key: null, id: null })
+  const draftAnchorId = (movedDraftAnchor.key === draftGroup?.family && movedDraftAnchor.id) || draftGroup?.anchorId || null
+  const pendingDraftAnchorRef = useRef(null)
+  useEffect(() => {
+    const pending = pendingDraftAnchorRef.current
+    if (pending == null) return
+    pendingDraftAnchorRef.current = null
+    if (lineIds[pending.index]) setMovedDraftAnchor({ key: pending.key, id: lineIds[pending.index] })
+  }, [lineIds])
+
+  const acceptDrafts = useCallback((ids, overrides = {}) => {
+    const group = draftGroup
+    if (!group || !ids?.length) return
+    const items = group.items.filter((it) => ids.includes(it.id) && !it.busy)
+    if (!items.length) return
+    const lines = contentRef.current.split('\n')
+    let at = idToIndexRef.current.get(draftAnchorId)
+    if (at === undefined) at = lines.length - 1
+    const end = getBlockRangeAndIndent(lines, at).end
+    const indent = (stripApBlockId(lines[at] || '').match(/^[ \t]*/) || [''])[0]
+    const isHeading = /^\s*#{1,6}\s/.test(stripApBlockId(lines[at] || ''))
+    const prefix = isHeading ? '' : indent
+    const inserted = items.map((it) => {
+      const text = prefix + (overrides[it.id] ?? it.text)
+      // Lines drafted from an attached source get an anchor, so App can
+      // remember which page they came from ("Go to source").
+      if (group.source) {
+        const a = ensureApBlockId(text)
+        return { id: it.id, line: a.line, blockId: a.blockId, text: overrides[it.id] ?? it.text }
+      }
+      return { id: it.id, line: text, blockId: null, text: overrides[it.id] ?? it.text }
+    })
+    lines.splice(end + 1, 0, ...inserted.map((x) => x.line))
+    pendingDraftAnchorRef.current = { key: group.family, index: end + inserted.length }
+    onChange(lines.join('\n'))
+    onDraftAccept?.(inserted)
+  }, [draftGroup, draftAnchorId, onChange, onDraftAccept])
+
+  const draftAnchorIndex = draftGroup ? idToIndex.get(draftAnchorId) : undefined
 
   const handleBlockContextMenu = useCallback((e, blockId) => {
     const index = idToIndexRef.current.get(blockId)
@@ -2375,7 +2481,45 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     },
     revealBlock,
     insertDocLink,
-  }), [applyFormat, content, focusedIndex, revealBlock, insertDocLink])
+    // What "Draft cards" (toolbar / Ctrl+Shift+D) works on right now.
+    getDraftContext: () => {
+      if (selectedIndices.size) return draftContext([...selectedIndices])
+      if (focusedIndex != null) return draftContext([focusedIndex])
+      return null
+    },
+    // Insert lines under the line with this id (end of its block), giving each
+    // an anchor so a source link can be saved for it. Returns their block ids.
+    insertLinesAfter: (anchorId, newLines) => {
+      const lines = contentRef.current.split('\n')
+      let at = idToIndexRef.current.get(anchorId)
+      if (at === undefined) at = lines.length - 1
+      const end = getBlockRangeAndIndent(lines, at).end
+      const anchored = newLines.map((l) => ensureApBlockId(l))
+      lines.splice(end + 1, 0, ...anchored.map((a) => a.line))
+      onChange(lines.join('\n'))
+      return anchored.map((a) => a.blockId)
+    },
+    // Anchor for a known line (an Ask answer that cites [line N]).
+    getAnchorForLine: (index) => {
+      const lines = content.split('\n')
+      if (index == null || index < 0 || index >= lines.length) return null
+      return { anchorId: lineIdsRef.current.ids[getBlockRangeAndIndent(lines, index).end], headingPath: draftContext([index])?.headingPath || [] }
+    },
+    // Where text drafted from a source panel selection should land: under the
+    // line being edited, else at the end of the section in view.
+    getDraftAnchor: (visibleLine) => {
+      const lines = content.split('\n')
+      if (focusedIndex != null) return { anchorId: lineIdsRef.current.ids[getBlockRangeAndIndent(lines, focusedIndex).end], headingPath: draftContext([focusedIndex])?.headingPath || [] }
+      let i = Math.max(0, Math.min(visibleLine ?? 0, lines.length - 1))
+      const levelOf = (l) => { const m = stripApBlockId(l).trim().match(/^(#{1,6})\s/); return m ? m[1].length : 0 }
+      // A heading with nothing under it before the next heading (a title over
+      // its first section): use that first section instead.
+      while (levelOf(lines[i]) && i + 1 < lines.length && levelOf(lines[i + 1])) i++
+      while (i + 1 < lines.length && !levelOf(lines[i + 1])) i++
+      while (i > 0 && !stripApBlockId(lines[i]).trim()) i--
+      return { anchorId: lineIdsRef.current.ids[i], headingPath: draftContext([i])?.headingPath || [] }
+    },
+  }), [applyFormat, content, focusedIndex, selectedIndices, revealBlock, insertDocLink, draftContext, onChange])
 
   const multiSelectCount = selectedIndices.size
 
@@ -2550,9 +2694,19 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
                  />
               )}
             </div>
+            {draftGroup && draftAnchorIndex === i && (
+              <DraftGroup group={draftGroup} settings={settings}
+                onAccept={acceptDrafts} onDiscard={onDraftDiscard} onRedo={onDraftRedo}
+                onEdit={onDraftEdit} onRedraft={onDraftRedraft} onCancel={onDraftCancel} onOpenSettings={onOpenAiSettings} />
+            )}
           </div>
         )
       })}
+      {draftGroup && draftAnchorIndex === undefined && (
+        <DraftGroup group={draftGroup} settings={settings}
+          onAccept={acceptDrafts} onDiscard={onDraftDiscard} onRedo={onDraftRedo}
+          onEdit={onDraftEdit} onRedraft={onDraftRedraft} onCancel={onDraftCancel} onOpenSettings={onOpenAiSettings} />
+      )}
       <div className="block-editor-pad" />
       {hover && weakOf(blocks[hover.index]) && (
         <WeakSpotHover
@@ -2595,6 +2749,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
               : 'Click into the line, highlight a phrase, then right-click it'
           }
           selectionCount={blockMenu.selection?.length ?? 1}
+          onDraftCards={onRequestDraft ? draftAtMenu : null}
         />
       )}
       {lasso && (

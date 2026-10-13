@@ -26,6 +26,7 @@ from aqt import mw
 from ..core.paper import Paper
 from ..core.emphasis import convert_emphasis_to_tags
 from .text_replacements import get_text_replacements
+from .ai_sources import AISourcesMixin
 from ..core.search_query import search_papers_advanced
 from ..core.storage import (
     save_paper,
@@ -114,7 +115,7 @@ def _select_note_card_in_browser_table(browser, note_id: int) -> dict:
     return out
 
 
-class AnkiPapersBridge:
+class AnkiPapersBridge(AISourcesMixin):
     """Bridge object exposed to JavaScript via AnkiWebView's pycmd() channel."""
 
     def __init__(self, window=None):
@@ -167,6 +168,7 @@ class AnkiPapersBridge:
             "get_text_replacements": self.get_text_replacements,
             "convert_emphasis_to_tags": self.convert_emphasis_to_tags,
         }
+        self._dispatch.update(self._ai_sources_dispatch())
 
     def handle(self, cmd: str):
         """Entry point wired to AnkiWebView.set_bridge_command().
@@ -213,15 +215,20 @@ class AnkiPapersBridge:
         try:
             data = args.get("paper") or {}
             paper = load_paper(data.get("id", ""))
+            before = (paper.title, paper.folder_path) if paper else None
             if paper:
                 paper.title = data.get("title", paper.title)
                 paper.content = data.get("content", paper.content)
                 paper.deck_name = data.get("deck_name", paper.deck_name)
                 paper.folder_path = data.get("folder_path", paper.folder_path)
                 paper.tags = data.get("tags", paper.tags)
+                paper.show_chapter_bar = bool(data.get("show_chapter_bar", paper.show_chapter_bar))
             else:
                 paper = Paper.from_dict(data)
             save_paper(paper)
+            # Renamed or moved: it may now match a chapter waiting for a paper.
+            if before is None or before != (paper.title, paper.folder_path):
+                self._sources_after_paper_created(paper)
             return {"ok": True}
         except Exception as e:
             traceback.print_exc()
@@ -248,6 +255,9 @@ class AnkiPapersBridge:
             paper = Paper(title=title, folder_path=folder_path)
             paper.content = f"# {title}\n\nStart writing your notes here...\n"
             save_paper(paper)
+            # A chapter of a folder's book or course waiting for this title
+            # gets linked to the new paper.
+            self._sources_after_paper_created(paper)
             return paper.to_dict()
         except Exception as e:
             traceback.print_exc()
@@ -261,6 +271,7 @@ class AnkiPapersBridge:
                 remove_paper_cards(paper, mw.col)
                 mw.reset()
             delete_paper(paper_id)
+            self._sources_after_paper_deleted(paper_id)
             return {"ok": True}
         except Exception as e:
             traceback.print_exc()
@@ -272,6 +283,7 @@ class AnkiPapersBridge:
             if paper:
                 paper.folder_path = args.get("folder_path", "")
                 save_paper(paper)
+                self._sources_after_paper_created(paper)
                 return {"ok": True}
             return {"error": "Paper not found"}
         except Exception as e:
@@ -371,9 +383,11 @@ class AnkiPapersBridge:
 
     def delete_folder(self, args):
         try:
-            err = delete_folder_structure(args.get("folder_path", "") or "")
+            path = args.get("folder_path", "") or ""
+            err = delete_folder_structure(path)
             if err:
                 return {"error": err}
+            self._sources_after_folder_deleted(path)
             return {"ok": True}
         except Exception as e:
             traceback.print_exc()
@@ -381,11 +395,13 @@ class AnkiPapersBridge:
 
     def rename_folder(self, args):
         try:
-            err = rename_folder_structure(
-                args.get("old_path", "") or "", args.get("new_name", "") or ""
-            )
+            old_path = args.get("old_path", "") or ""
+            new_name = args.get("new_name", "") or ""
+            err = rename_folder_structure(old_path, new_name)
             if err:
                 return {"error": err}
+            parent = old_path.rsplit("/", 1)[0] if "/" in old_path else ""
+            self._sources_after_folder_moved(old_path, f"{parent}/{new_name}" if parent else new_name)
             return {"ok": True}
         except Exception as e:
             traceback.print_exc()
@@ -393,13 +409,13 @@ class AnkiPapersBridge:
 
     def move_folder(self, args):
         try:
-            err = move_folder_structure(
-                args.get("folder_path", "") or "",
-                args.get("new_parent_path", "") or "",
-                max_depth=MAX_FOLDER_DEPTH,
-            )
+            folder_path = args.get("folder_path", "") or ""
+            new_parent = args.get("new_parent_path", "") or ""
+            err = move_folder_structure(folder_path, new_parent, max_depth=MAX_FOLDER_DEPTH)
             if err:
                 return {"error": err}
+            name = folder_path.rsplit("/", 1)[-1]
+            self._sources_after_folder_moved(folder_path, f"{new_parent}/{name}" if new_parent else name)
             return {"ok": True}
         except Exception as e:
             traceback.print_exc()
@@ -1473,6 +1489,9 @@ Generated by Anki Papers
                 "card_style": "basic",
                 "color_scheme": "carolina",
                 "weak_spot_markers": True,
+                "toolbar_scroll": False,
+                "show_waiting_chapters": False,
+                "show_chapter_bar": False,
             }
             for key, value in defaults.items():
                 config.setdefault(key, value)

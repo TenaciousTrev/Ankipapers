@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Save, Zap, AlertTriangle } from 'lucide-react'
 
-export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, weakCount = 0, weakOnly = false, onToggleWeakOnly, onSave, onGenerate, isSaving: externalIsSaving }) {
+export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, draftCount = 0, weakCount = 0, weakOnly = false, onToggleWeakOnly, onSave, onGenerate, isSaving: externalIsSaving }) {
   // Local state to track if an operation is currently running
   const [localIsSaving, setLocalIsSaving] = useState(false)
   const [localIsGenerating, setLocalIsGenerating] = useState(false)
@@ -70,6 +70,11 @@ export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, weakCo
           <span className="no-cards">No cards detected</span>
         )}
       </span>
+      {draftCount > 0 && (
+        <span className="draft-count" title="Drafted cards waiting to be accepted. They aren't saved and Generate skips them.">
+          +{draftCount} draft{draftCount === 1 ? '' : 's'}
+        </span>
+      )}
       {/* Only there when this paper has weak spots: click to show just those
           lines (and the headings they sit under), click again for all. */}
       {weakCount > 0 && (

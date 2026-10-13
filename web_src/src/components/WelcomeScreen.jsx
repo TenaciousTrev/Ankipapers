@@ -18,6 +18,8 @@ import {
   Layers,
   CalendarDays,
   History,
+  MessageCircle,
+  Paperclip,
 } from 'lucide-react'
 
 function formatRelativeTime(modifiedAt) {
@@ -64,6 +66,8 @@ const GUIDE_TOPICS = [
   { id: 'linking', icon: Link2, label: 'Linking papers' },
   { id: 'graph', icon: Share2, label: 'The graph' },
   { id: 'tabs', icon: Layers, label: 'Tabs and search' },
+  { id: 'ai', icon: MessageCircle, label: 'Draft cards and Ask' },
+  { id: 'sources', icon: Paperclip, label: 'Sources, books and courses' },
   { id: 'keys', icon: Keyboard, label: 'Keys' },
   { id: 'disk', icon: HardDrive, label: 'Papers on disk' },
 ]
@@ -397,6 +401,14 @@ export default function WelcomeScreen({
                   the paper opens fully unfolded, with that line in the middle of the
                   screen and briefly highlighted.
                 </Ref>
+                <Ref code="Drag and drop" tone="key">
+                  Drag a paper onto a folder to move it there, or a folder onto another
+                  folder (or the empty space below the list) to move it with everything
+                  inside. Folders can sit up to ten deep, so a course can be a folder,
+                  each learning path a folder inside it, and each module a paper. These
+                  are real folders on your disk, and moving one in the sidebar moves it
+                  there too.
+                </Ref>
                 <Ref code="Right-click a folder" tone="key">
                   Choose “Generate all cards in folder” to make the cards for every paper in
                   that folder and its subfolders in one go. You confirm once, answer one
@@ -491,10 +503,117 @@ export default function WelcomeScreen({
                   you can chase a chain of links and find your way back. A mouse's back
                   and forward buttons do the same.
                 </Ref>
+                <Ref code="Toolbar" tone="key">
+                  On a narrow window the toolbar wraps onto a second line. If you'd rather
+                  it stayed on one line, choose <b>Settings → Toolbar → Scroll sideways</b>;
+                  then a trackpad, a mouse wheel or the thin bar under it scrolls it.
+                </Ref>
                 <Ref code="●" tone="key">
                   A dot on the active tab means that paper has edits not yet saved to
                   disk. It clears when you press Ctrl+S, when autosave runs, and whenever
                   you switch papers, since switching always saves first.
+                </Ref>
+              </RefGroup>
+          )}
+          {guide === 'ai' && (
+              <RefGroup
+                icon={MessageCircle}
+                title="Draft cards and Ask"
+                blurb="An AI model can suggest cards from your notes and answer questions about them. Nothing it writes goes into your paper or into Anki until you say so. Set it up once in Settings → AI."
+              >
+                <Ref code="Settings → AI" tone="key">
+                  Choose Claude, Gemini or an OpenAI-compatible service (OpenAI, OpenRouter,
+                  or a model running on your own Mac in Ollama or LM Studio). Paste your key,
+                  press <b>Save key</b>, then <b>Test connection</b> and pick a model. On a
+                  Mac the key goes into your Keychain, not into the add-on's settings. You
+                  can also set the card rules sent with every draft, which card types it may
+                  write, and the language. Turning AI off hides every AI button.
+                </Ref>
+                <Ref code="Draft cards" tone="key">
+                  Click into a line, or select several (or a heading for its whole
+                  section), then press <b>Draft cards</b> on the toolbar, right-click and
+                  choose it, or press Ctrl+Shift+D. Suggested cards appear under the
+                  passage as dashed lines. They aren't saved and Generate skips them.
+                </Ref>
+                <Ref code="✓  ✗  ↻" tone="muted">
+                  ✓ accepts a draft, so it becomes an ordinary card line. ✗ throws it away.
+                  ↻ asks for that one card again. Click a draft to edit it first: Enter
+                  saves and accepts, Esc stops editing. <b>Accept all</b>, <b>Discard
+                  all</b> and <b>Redraft</b> work on the whole group, and the bottom bar
+                  counts the drafts still waiting.
+                </Ref>
+                <Ref code="Ask" tone="key">
+                  The speech-bubble button (or Ctrl+Shift+A) opens a chat about the open
+                  paper. The chips at the top choose what it reads: this paper, the source
+                  open in the Sources panel, the whole chapter, the papers this one links
+                  to. Answers point to <code>line N</code> or a source page; click one to go
+                  there. With <b>Stick to my sources</b> on, it tells you when your material
+                  doesn't cover something.
+                </Ref>
+                <Ref code="Use an answer" tone="muted">
+                  Under each answer, <b>Insert as &amp;&amp; supplement</b> adds it to the paper
+                  as background for the card above, and <b>Draft cards from this</b> turns
+                  it into drafts. Nothing goes into Anki directly.
+                </Ref>
+              </RefGroup>
+          )}
+          {guide === 'sources' && (
+              <RefGroup
+                icon={Paperclip}
+                title="Sources, books and courses"
+                blurb="Keep the slides, chapter or web page you're studying open beside the paper you're writing. Sources work without AI."
+              >
+                <Ref code="Sources panel" tone="key">
+                  The paperclip on the toolbar opens the Sources panel. Use + to attach a
+                  PDF, Word, PowerPoint, HTML or text file, or a web page, to the open paper.
+                  Files are copied into your Anki Papers folder and stay with the paper.
+                  PowerPoint and Word open as easy-to-read pages, slides with their speaker
+                  notes; web pages are saved so you can read them offline.
+                </Ref>
+                <Ref code="Select text in a source" tone="key">
+                  A small bar offers <b>Add to notes</b> (copies it into the paper),
+                  <b> Draft cards</b> and <b>Ask</b>. Lines added this way remember where
+                  they came from: right-click one and choose <b>Go to source</b> to reopen
+                  that page with the passage highlighted.
+                </Ref>
+                <Ref code="Right-click a folder" tone="key">
+                  <b>Attach a book…</b> (a PDF), <b>Attach a web source…</b> (a Microsoft
+                  Learn course or learning path, a docs site, or any page that links to its
+                  chapters) or <b>Attach a file…</b>. Every paper in that folder, at any
+                  depth, sees it in its Sources panel, marked “from” the folder.
+                </Ref>
+                <Ref code="A book" tone="muted">
+                  Attaching a book shows the PDF's whole outline: parts, chapters and the
+                  sections inside them. Next to each, choose the paper that covers it.
+                  Papers whose names match are filled in for you; anything set to “Not a
+                  chapter” is left out. Page numbers follow the book's printed numbers.
+                </Ref>
+                <Ref code="A course" tone="muted">
+                  Paste the course's address and its modules are listed, grouped by
+                  learning path. If a learning path has its own sub-folder, choose it (one
+                  whose name matches is picked for you). Modules are matched to your papers
+                  by name.
+                </Ref>
+                <Ref code="Chapters" tone="key">
+                  A paper that is a chapter opens the source at its own pages or module.
+                  Naming
+                  a new paper after a chapter links it. To see the chapters that don't have
+                  a paper yet, faded in the sidebar inside the folder they belong in, turn
+                  on <b>Settings → Chapters waiting for a paper</b>; click one to create its
+                  paper, already linked.
+                </Ref>
+                <Ref code="Chapter bar" tone="key">
+                  A line above a chapter paper showing its book and chapter, with steps to
+                  the previous and next chapter. It's hidden by default to keep one
+                  toolbar. Press the book button in the toolbar to show it on that paper
+                  (it remembers), or turn on <b>Settings → Chapter Bar</b> to show it on
+                  every chapter paper; while that's on, the toolbar button is greyed out.
+                </Ref>
+                <Ref code="Remove a source" tone="muted">
+                  Right-click the folder and choose <b>Remove “…”</b>, or use the bin icon in
+                  the Sources panel. <b>Learning paths and sources…</b> in the same menu
+                  changes which sub-folder a learning path uses. Your papers and their cards
+                  are never changed.
                 </Ref>
               </RefGroup>
           )}
@@ -537,6 +656,10 @@ export default function WelcomeScreen({
                     back. Turn it off in Settings.
                   </Ref>
                 )}
+                <Ref code="Ctrl+Shift+D" tone="key">
+                  Draft cards from the lines you've selected, or the line you're on.
+                </Ref>
+                <Ref code="Ctrl+Shift+A" tone="key">Open or close Ask, the chat about this paper.</Ref>
                 <Ref code="Ctrl+," tone="key">Open Settings.</Ref>
                 <Ref code="Ctrl+Tab / Ctrl+Shift+Tab" tone="key">
                   Step to the next or previous tab.
@@ -583,7 +706,7 @@ export default function WelcomeScreen({
               <RefGroup
                 icon={HardDrive}
                 title="Your papers are files on your computer"
-                blurb="Every paper is an ordinary markdown file kept in your Anki profile folder, arranged in the same folders you see in the sidebar. You can open them in any editor, put them in Dropbox, or track them with git. The editor reads those files directly, so what is on your disk is what you see here. A copy still goes into your Anki collection and travels to AnkiWeb with the rest of your sync, as a backup."
+                blurb="Every paper is an ordinary markdown file kept in your Anki profile folder, arranged in the same folders you see in the sidebar. You can open them in any editor, put them in Dropbox, or track them with git. The editor reads those files directly, so what is on your disk is what you see here. Moving or renaming a paper or a folder in the app moves or renames it on disk, folder contents and all; anything you put in a folder yourself goes with it. A copy still goes into your Anki collection and travels to AnkiWeb with the rest of your sync, as a backup."
               >
                 <p className="welcome-ref-blurb">
                   <b>Already been using Anki Papers?</b> Papers you wrote before this

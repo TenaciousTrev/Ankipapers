@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
-import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap, ListTree } from 'lucide-react'
+import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap, ListTree, BookOpen, Globe, Paperclip } from 'lucide-react'
 import OutlinePanel from './OutlinePanel'
 
 // Hovering the rail slides the tree out; both numbers are deliberate. 260ms in
@@ -60,7 +60,7 @@ function SearchMatchBadges({ result }) {
   )
 }
 
-export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse, outline = null, outlineTitle = '', outlineCurrentLine = 0, onJumpToHeading, currentPaper = null }) {
+export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse, outline = null, outlineTitle = '', outlineCurrentLine = 0, onJumpToHeading, currentPaper = null, folderSources = {}, onFolderSource, onCreateWaitingChapter, showWaiting = false }) {
   // Papers (the folder tree) or Outline (the open paper's headings).
   const [tab, setTab] = useState('papers')
   const [peeking, setPeeking] = useState(false)
@@ -321,8 +321,13 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
   )
 
   // ─── Paper Item ───────────────────────────────────
-  const PaperItem = ({ paper, depth = 0 }) => (
+  // A render function, not a component: a component defined in here is a new
+  // type on every render, so React would replace the row's DOM each time --
+  // including the row being dragged, the moment a dragover re-renders the
+  // sidebar, which makes Chromium cancel the drag.
+  const renderPaperItem = (paper, depth = 0) => (
     <div
+      key={paper.id}
       className={`tree-item ${activePaperId === paper.id ? 'active' : ''}`}
       style={{ paddingLeft: 12 + depth * 16 }}
       onClick={() => onSelectPaper(paper.id)}
@@ -348,7 +353,11 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
         const isExpanded = expandedFolders.has(folder.path)
         const isSelected = selectedFolder === folder.path
         const folderPapers = papersByFolder[folder.path] || []
-        const hasChildren = (folder.children?.length || 0) > 0 || folderPapers.length > 0
+        // Chapters of a folder book or course still waiting for a paper, shown
+        // in the folder their paper belongs in (a learning path's sub-folder).
+        // Settings → Sources → "Show chapters waiting for a paper" (off by default).
+        const waiting = showWaiting ? (folderSources.waiting?.[folder.path] || []) : []
+        const hasChildren = (folder.children?.length || 0) > 0 || folderPapers.length > 0 || waiting.length > 0
         const isDragOver = dragOverTarget === folder.path
 
         return (
@@ -376,6 +385,11 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
               ) : <span style={{ width: FOLDER_CHEVRON_SIZE, flexShrink: 0 }} />}
               {isExpanded ? <FolderOpen size={FOLDER_ICON_SIZE} className="tree-icon folder-icon active" /> : <Folder size={FOLDER_ICON_SIZE} className="tree-icon folder-icon" />}
               <span className="tree-item-label">{folder.name}</span>
+              {folderSources.folders?.[folder.path] && (() => {
+                const k = folderSources.folders[folder.path].kinds || []
+                const SrcIcon = k.includes('web') ? Globe : k.includes('pdf') ? BookOpen : Paperclip
+                return <SrcIcon size={12} className="folder-src-icon" title="This folder has sources" />
+              })()}
               <span className="tree-item-count">{folderPapers.length}</span>
               <div className="tree-item-actions" draggable={false} onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
                 <button className="tree-action-btn" title="New paper" onClick={() => onCreatePaper('Untitled', folder.path)}>
@@ -392,7 +406,16 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
               <div className="tree-children-inner">
                 {renderFolderTree(folder, depth + 1)}
                 <CreateInline parentPath={folder.path} />
-                {folderPapers.map(p => <PaperItem key={p.id} paper={p} depth={depth + 1} />)}
+                {folderPapers.map(p => renderPaperItem(p, depth + 1))}
+                {onCreateWaitingChapter && waiting.map((w) => (
+                  <div key={w.source_id + w.key} className="tree-item sidebar-ghost" style={{ paddingLeft: 12 + (depth + 1) * 16 }}
+                    title={`Waiting for a paper. Click to create “${w.title}”, already linked to its chapter.`}
+                    onClick={() => onCreateWaitingChapter(w.folder, w)}>
+                    <span className="tree-chevron-spacer" style={{ width: FOLDER_CHEVRON_SIZE, flexShrink: 0 }} aria-hidden />
+                    <FilePlus size={14} className="tree-icon" />
+                    <span className="tree-item-label">{w.title}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -693,7 +716,7 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
           onDrop={e => handleItemDrop(e, '__root__')}
         >
           <CreateInline parentPath="" />
-          {(papersByFolder[''] || []).map(p => <PaperItem key={p.id} paper={p} />)}
+          {(papersByFolder[''] || []).map(p => renderPaperItem(p))}
           {papers.length === 0 && (
             <div className="tree-empty">No papers yet. Click "+ Paper" to start.</div>
           )}
@@ -743,6 +766,40 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
                       <Zap size={13} />
                       <span>Generate all cards in folder</span>
                     </div>
+                    <div className="context-menu-sep" />
+                  </>
+                )}
+                {onFolderSource && (
+                  <>
+                    <div className="context-menu-hint">Attach to everything in “{contextMenu.folder.name}”</div>
+                    <div className="context-item" onClick={() => { const f = contextMenu.folder; setContextMenu(null); onFolderSource('book', f.path) }}>
+                      <BookOpen size={13} />
+                      <span>Attach a book…</span>
+                    </div>
+                    <div className="context-item" onClick={() => { const f = contextMenu.folder; setContextMenu(null); onFolderSource('web', f.path) }}>
+                      <Globe size={13} />
+                      <span>Attach a web source…</span>
+                    </div>
+                    <div className="context-item" onClick={() => { const f = contextMenu.folder; setContextMenu(null); onFolderSource('file', f.path) }}>
+                      <Paperclip size={13} />
+                      <span>Attach a file…</span>
+                    </div>
+                    {(folderSources.folders?.[contextMenu.folder.path]?.sources || []).length > 0 && (
+                      <>
+                        <div className="context-menu-sep" />
+                        <div className="context-item" onClick={() => { const f = contextMenu.folder; setContextMenu(null); onFolderSource('manage', f.path) }}>
+                          <Paperclip size={13} />
+                          <span>Learning paths and sources…</span>
+                        </div>
+                        {folderSources.folders[contextMenu.folder.path].sources.map((src) => (
+                          <div key={src.id} className="context-item danger" title="Your papers aren't changed"
+                            onClick={() => { const f = contextMenu.folder; setContextMenu(null); onFolderSource('remove', f.path, src) }}>
+                            <Trash2 size={13} />
+                            <span className="context-item-ellipsis">Remove “{src.title}”</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
                     <div className="context-menu-sep" />
                   </>
                 )}

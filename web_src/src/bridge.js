@@ -10,6 +10,7 @@
  */
 
 import { searchPapersAdvanced } from './searchQuery.js';
+import { createAiSourcesMock } from './aiBridge.js';
 
 const CMD_PREFIX = 'ankipapers:';
 const PYCMD_POLL_MS = 25;
@@ -274,8 +275,43 @@ function createMockBridge() {
       card_refs: [4, 6, 8, 10, 22].map((line_index, i) => ({ line_index, card_type: ['basic', 'reversible', 'cloze', 'cloze', 'basic'][i], anki_note_id: 1001 + i, content_hash: '', synced: true })),
       created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
     },
+    // Dev-only papers for the draft-cards, sources and chat screens.
+    {
+      id: 'demo-hf', title: 'Cardiology',
+      content: '# Heart failure\n## HFrEF\nFirst-line drugs in HFrEF >> ACEi/ARB/ARNI, β-blocker, MRA, SGLT2i\nEjection fraction cut-off for HFrEF >> ≤ 40%\nSacubitril/valsartan (an ARNI) reduces mortality in HFrEF compared with enalapril.\nNever start it within 36 hours of the last ACE inhibitor dose (angioedema risk).\n## HFpEF\nSGLT2 inhibitors in HFpEF >> fewer HF hospitalisations\n',
+      deck_name: 'Medicine', folder_path: 'Medicine', tags: [], card_refs: [],
+      created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
+    },
+    ...['1. Getting Started', '2. Variable & Simple Data Types', '3. Lists', '4. Working With Lists', '5. If Statements'].map((title, i) => ({
+      id: 'demo-py' + i, title, content: `# ${title}\n`, deck_name: 'Default', folder_path: 'Software Engineering/Python/Fundamentals',
+      tags: [], card_refs: [], created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
+    })),
+    ...['1. Introduction to AI Concept', '2. Introduction to Generative AI and Agents', 'Exam tips'].map((title, i) => ({
+      id: 'demo-ai' + i, title,
+      content: `# ${title}\n## What is AI\nArtificial intelligence <> software that imitates human behaviour and capabilities\n`,
+      deck_name: 'Default', folder_path: i < 2 ? 'Software Engineering/Azure/AI-901/1. AI Concepts' : 'Software Engineering/Azure/AI-901', tags: [], card_refs: [],
+      created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
+    })),
   ];
+  const folderTree = { name: 'Root', children: [
+    { type: 'folder', name: 'Biology', path: 'Biology', children: [] },
+    { type: 'folder', name: 'Medicine', path: 'Medicine', children: [] },
+    { type: 'folder', name: 'Software Engineering', path: 'Software Engineering', children: [
+      { type: 'folder', name: 'Azure', path: 'Software Engineering/Azure', children: [
+        { type: 'folder', name: 'AI-901', path: 'Software Engineering/Azure/AI-901', children: [
+          { type: 'folder', name: '1. AI Concepts', path: 'Software Engineering/Azure/AI-901/1. AI Concepts', children: [] },
+          { type: 'folder', name: '2. AI Apps & Agents', path: 'Software Engineering/Azure/AI-901/2. AI Apps & Agents', children: [] },
+        ] },
+        { type: 'folder', name: 'AZ-104', path: 'Software Engineering/Azure/AZ-104', children: [] },
+      ] },
+      { type: 'folder', name: 'Python', path: 'Software Engineering/Python', children: [
+        { type: 'folder', name: 'Fundamentals', path: 'Software Engineering/Python/Fundamentals', children: [] },
+      ] },
+    ] },
+  ] };
+  const sourceLinks = {};
   return {
+    ...createAiSourcesMock(papers),
     list_papers: () => papers,
     load_paper: ({ paper_id }) => papers.find(x => x.id === paper_id) || { error: 'not found' },
     save_paper: ({ paper }) => {
@@ -305,7 +341,7 @@ function createMockBridge() {
     generate_cards: () => new Promise((r) => setTimeout(() => r({ created: 3, updated: 1, deleted: 0 }), 250)),
     check_anki_edit_conflicts: () => ({ conflicts: [] }),
     get_decks: () => ['Default', 'Biology', 'Medicine'],
-    get_folders: () => ({ name: 'Root', children: [{ type: 'folder', name: 'Biology', path: 'Biology', children: [] }] }),
+    get_folders: () => folderTree,
     create_folder: () => ({ ok: true }),
     delete_folder: () => ({ ok: true }),
     rename_folder: () => ({ ok: true }),
@@ -394,12 +430,13 @@ function createMockBridge() {
     ] }),
     open_url: ({ url }) => { console.log('Mock: Open URL', url); return { ok: true }; },
     pick_pdf_file: () => ({ cancelled: true }),
-    pdf_viewer_url: () => ({ error: 'not implemented' }),
+    // The viewer from public/, and a test book under web_src/.devtest/ if one is there.
+    pdf_viewer_url: () => ({ url: '/pdf_viewer.html' }),
     pdf_url: () => ({ error: 'not implemented' }),
     extract_pdf_text: ({ pdf_path, page }) => ({ ok: true, title: 'Demo PDF', text: `Extracted text from page ${page}`, path: pdf_path, page }),
     extract_web_text: ({ url }) => ({ ok: true, title: url, text: 'Extracted web content demo', url }),
-    save_source_link: () => ({ ok: true }),
-    load_source_link: () => ({ error: 'Source link not found' }),
+    save_source_link: ({ paper_id, block_id, link }) => { sourceLinks[`${paper_id}:${block_id}`] = link; return { ok: true } },
+    load_source_link: ({ paper_id, block_id }) => sourceLinks[`${paper_id}:${block_id}`] || { error: 'Source link not found' },
     open_source_at_location: () => ({ ok: true }),
   };
 }

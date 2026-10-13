@@ -4,7 +4,7 @@ import {
   generateCards, checkAnkiEditConflicts, getDecks, createFolder, getFolders, movePaperToFolder,
   deleteFolder, renameFolder, moveFolder,
   pickImage, pasteImage, exportPdf, exportMarkdown, importMarkdown, getSettings, saveSettings as saveSettingsBridge,
-  getMediaDir, getTextReplacements, convertEmphasisToTags, openInBrowser, moveCardsToDeck, extractPdfText, extractWebText, saveSourceLink, loadSourceLink, openSourceAtLocation,
+  getMediaDir, getTextReplacements, convertEmphasisToTags, openInBrowser, moveCardsToDeck, saveSourceLink, loadSourceLink, openUrl,
   getNoteStats, unsuspendNote,
 } from './bridge'
 import { buildOutline } from './outline'
@@ -28,7 +28,17 @@ import Settings from './components/Settings'
 import GenerateConflictModal from './components/GenerateConflictModal'
 import FolderGenerateDialog from './components/FolderGenerateDialog'
 import TableDialog from './components/TableDialog'
-import SourcePanel from './components/SourcePanel'
+import SourcesPanel from './components/SourcesPanel'
+import { sourceKey } from './sourceKeys'
+import ChapterStrip from './components/ChapterStrip'
+import FolderSourceDialog from './components/FolderSourceDialog'
+import AskPanel from './components/AskPanel'
+import {
+  srcForPaper, srcAttachPaperFile, srcAttachPaperWeb, srcDetachPaper, srcCreateChapterPaper,
+  srcFoldersSummary, srcFolderAttachFile, srcFolderDetach,
+} from './aiBridge'
+import { getApBlockId } from './docLinks'
+import useDrafts from './useDrafts'
 
 // Sidebar sizing. SNAP is the width below which a drag stops resizing and
 // collapses to the icon rail instead, so you can put the tree away with the
@@ -54,13 +64,6 @@ const SIDEBAR_SNAP_WIDTH = 120
 const clampSidebarWidth = (w) =>
   Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(w)))
 
-const BLOCK_ID_RE = /\s*$/i
-const randomId = () => (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-const withBlockId = (line) => BLOCK_ID_RE.test(line || '') ? line : `${line || ''} `
-const getBlockIdFromLine = (line) => {
-  const m = (line || '').match(BLOCK_ID_RE)
-  return m ? m[1] : null
-}
 
 function folderPathAfterRename(oldPath, newName) {
   const p = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/')) : ''
@@ -143,7 +146,6 @@ export default function App() {
   // they load, so the layout you left behind is the one you come back to.
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [sourceState, setSourceState] = useState({ type: 'pdf', path: '', url: '', page: 1, jumpQuote: null })
   
   // ─── UI Operation Lock ───────────────────────────
   const [isBusy, setIsBusy] = useState(false)
@@ -168,6 +170,13 @@ export default function App() {
   // anywhere that writes to storage.
   const paperRef = useRef(null)
   paperRef.current = paper
+
+  // Draft cards (AI). showToast is defined further down; read it through a ref.
+  const toastRef = useRef(null)
+  const aiOnRef = useRef(true)
+  const drafts = useDrafts({ paperRef, onError: (m) => toastRef.current?.(m, 'error') })
+  const [settingsSection, setSettingsSection] = useState(null)
+  const openAiSettings = useCallback(() => { setSettingsSection('ai'); setShowSettings(true) }, [])
   const viewModeRef = useRef(viewMode)
   viewModeRef.current = viewMode
 
@@ -601,6 +610,7 @@ export default function App() {
   // that target has a stable anchor, then let BlockEditor write the link.
   const [linkRequest, setLinkRequest] = useState(null)
   const [showLinksPanel, setShowLinksPanel] = useState(false)
+  const [showAskPanel, setShowAskPanel] = useState(false)
   const [showGraph, setShowGraph] = useState(false)
 
   // Open a document and reveal one of its lines. Used by the backlinks panel,
@@ -785,11 +795,12 @@ export default function App() {
 
   // ─── Tabs ───────────────────────────────────────
   const handleCloseTab = useCallback(async (id) => {
+    drafts.dropPaper(id)
     const neighbour = removeTab(id)
     if (paperRef.current?.id !== id) return
     if (neighbour) await handleSelectPaper(neighbour)
     else await handleGoHome()
-  }, [removeTab, handleSelectPaper, handleGoHome])
+  }, [removeTab, handleSelectPaper, handleGoHome, drafts])
 
   // ─── PDF Export ──────────────────────────────────
   const handleExportPdf = useCallback(async () => {
@@ -972,6 +983,20 @@ export default function App() {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
   }
+  toastRef.current = showToast
+
+  const handleDraftFromEditor = useCallback(() => {
+    if (viewModeRef.current === 'source') {
+      showToast('Switch to the Editor view to draft cards.', 'error')
+      return
+    }
+    const ctx = blockEditorRef.current?.getDraftContext?.()
+    if (!ctx) {
+      showToast('Click into a line, or select some lines, to draft cards from.', 'error')
+      return
+    }
+    drafts.startDraft(ctx)
+  }, [drafts])
 
   const handleDeleteFolder = useCallback(async (folderPath) => {
     if (paper) await persistPaper(paper)
@@ -1074,6 +1099,8 @@ export default function App() {
   const [noteStats, setNoteStats] = useState(null)
   const [weakOnly, setWeakOnly] = useState(false)
   const [visibleLine, setVisibleLine] = useState(0)
+  const visibleLineRef = useRef(0)
+  visibleLineRef.current = visibleLine
   const weakMarkersOn = settings.weak_spot_markers !== false
   const paperNoteIds = useMemo(
     () => (paper?.card_refs || []).map((r) => r.anki_note_id).filter((n) => n != null),
@@ -1252,80 +1279,240 @@ export default function App() {
   }, [folderGen, persistPaper, reconcileBacklinks, setBusy, runFolderGenerate])
 
 
-  const handleExtractFromSource = useCallback(async ({ mode, page, customText }) => {
-    if (!paper) return
-    const trimmedSelection = (customText || '').trim()
-    let extracted = null
-    if (mode === 'pdf') {
-      if (trimmedSelection) {
-        extracted = {
-          ok: true,
-          text: '',
-          path: (sourceState.path || '').replace(/\\/g, '/'),
-          page: Number(page || sourceState.page || 1),
-        }
-      } else {
-        extracted = await extractPdfText(sourceState.path || '', Number(page || sourceState.page || 1))
-      }
-    } else {
-      extracted = await extractWebText(sourceState.url || '')
-    }
-    if (!extracted || extracted.error) {
-      showToast(extracted?.error || 'Extraction failed', 'error')
+  // ─── Sources (files and web pages for this paper and its folders) ───
+  const [paperSources, setPaperSources] = useState({ paperId: null, list: [] })
+  const [sourcesLoading, setSourcesLoading] = useState(false)
+  const [activeSourceKeys, setActiveSourceKeys] = useState({}) // paperId -> key
+  const [sourceJump, setSourceJump] = useState(null) // { key, page, url, quote, nonce }
+  const [legacySource, setLegacySource] = useState(null)
+  const sourcesPanelRef = useRef(null)
+
+  const refreshSources = useCallback(async (paperId = paperRef.current?.id) => {
+    if (!paperId) return
+    setSourcesLoading(true)
+    const r = await srcForPaper(paperId)
+    setSourcesLoading(false)
+    if (paperRef.current?.id !== paperId) return
+    setPaperSources({ paperId, list: r?.sources || [] })
+  }, [])
+  useEffect(() => { setLegacySource(null); refreshSources(paper?.id) }, [paper?.id, paper?.folder_path, paper?.title, refreshSources])
+
+  const sourcesList = useMemo(() => {
+    const list = paper && paperSources.paperId === paper.id ? paperSources.list : []
+    return legacySource ? [...list, legacySource] : list
+  }, [paper, paperSources, legacySource])
+  const chapterEntry = useMemo(() => sourcesList.find((s) => s.chapter) || null, [sourcesList])
+  // The chapter bar: everywhere when Settings → Chapter bar is on; otherwise
+  // only on papers whose toolbar book button turned it on.
+  const chapterBarGlobal = settings?.show_chapter_bar === true
+  const showChapterBar = !!chapterEntry && (chapterBarGlobal || paper?.show_chapter_bar === true)
+  const toggleChapterBar = useCallback(async () => {
+    const p = paperRef.current
+    if (!p) return
+    const next = { ...p, show_chapter_bar: !p.show_chapter_bar }
+    setPaper(next)
+    setPapers((list) => list.map((x) => (x.id === next.id ? { ...x, show_chapter_bar: next.show_chapter_bar } : x)))
+    const r = await persistPaper(next)
+    if (r?.error) showToast(r.error, 'error')
+  }, [persistPaper])
+  const activeSourceKey = paper ? activeSourceKeys[paper.id] : null
+  const selectSource = useCallback((key) => {
+    const pid = paperRef.current?.id
+    if (pid) setActiveSourceKeys((m) => ({ ...m, [pid]: key }))
+  }, [])
+
+  const handleAttachFile = useCallback(async () => {
+    const p = paperRef.current
+    if (!p) return
+    const r = await srcAttachPaperFile(p.id)
+    if (r?.error) { showToast(r.error, 'error'); return }
+    if (r?.cancelled) return
+    await refreshSources(p.id)
+    selectSource(`paper::${r.source.id}`)
+    setShowSourcePanel(true)
+  }, [refreshSources, selectSource])
+
+  const handleAttachWeb = useCallback(async (url) => {
+    const p = paperRef.current
+    if (!p) return { error: 'No paper open' }
+    const r = await srcAttachPaperWeb(p.id, url)
+    if (r?.error) return r
+    await refreshSources(p.id)
+    if (r?.source) selectSource(`paper::${r.source.id}`)
+    return r
+  }, [refreshSources, selectSource])
+
+  const handleDetachSource = useCallback(async (entry) => {
+    const p = paperRef.current
+    if (!p) return
+    await srcDetachPaper(p.id, entry.source.id)
+    await refreshSources(p.id)
+  }, [refreshSources])
+
+  const handleCreateChapterPaper = useCallback(async (entry, chapter) => {
+    const r = await srcCreateChapterPaper(entry.folder, entry.source.id, chapter.key)
+    if (!r || r.error) { showToast(r?.error || 'Couldn’t create the paper', 'error'); return }
+    await refreshPapers()
+    await handleSelectPaper(r.id)
+  }, [refreshPapers, handleSelectPaper])
+
+  const handleChapterStep = useCallback(async (entry, chapter) => {
+    if (chapter.paper_id) await handleSelectPaper(chapter.paper_id)
+    else await handleCreateChapterPaper(entry, chapter)
+  }, [handleSelectPaper, handleCreateChapterPaper])
+
+  // Folder sources: books, web sources and files attached to a folder.
+  const [folderSources, setFolderSources] = useState({ folders: {}, waiting: {} })
+  const [folderDialog, setFolderDialog] = useState(null) // { mode, folder }
+  const refreshFolderSources = useCallback(async () => {
+    const r = await srcFoldersSummary()
+    if (r?.folders) setFolderSources({ folders: r.folders, waiting: r.waiting || {} })
+  }, [])
+  useEffect(() => { refreshFolderSources() }, [refreshFolderSources, folders, papers])
+
+  const handleFolderSource = useCallback(async (mode, folder, src) => {
+    if (mode === 'remove') {
+      const name = folder.split('/').pop()
+      if (!window.confirm(`Remove “${src.title}” from ${name}?\n\nYour papers and their cards aren’t changed; they just stop showing this source.`)) return
+      const r = await srcFolderDetach(folder, src.id)
+      if (r?.error) { showToast(r.error, 'error'); return }
+      await refreshFolderSources()
+      await refreshSources()
+      showToast(`Removed “${src.title}”`, 'success')
       return
     }
-    const rawNote = trimmedSelection || extracted.text || ''
-    if (!rawNote.trim()) {
-      showToast('No extracted text', 'error')
+    if (mode === 'file') {
+      const r = await srcFolderAttachFile(folder)
+      if (r?.error) { showToast(r.error, 'error'); return }
+      if (r?.cancelled) return
+      await refreshFolderSources()
+      await refreshSources()
+      showToast(`Attached to ${folder.split('/').pop()}`, 'success')
       return
     }
-    const noteText = rawNote.replace(/\r\n/g, '\n').replace(/\s*\n+\s*/g, ' ').replace(/ +/g, ' ').trim()
-    const lines = (paper.content || '').split('\n')
-    const idx = lines.length
-    lines.push(withBlockId(noteText))
-    const updated = { ...paper, content: lines.join('\n'), modified_at: Date.now() / 1000 }
-    setPaper(updated)
-    const blockId = getBlockIdFromLine(lines[idx])
-    if (blockId) {
-      await saveSourceLink(updated.id, blockId, {
-        source_type: mode,
-        source_uri: mode === 'pdf' ? (sourceState.path || extracted.path || '') : (sourceState.url || extracted.url || ''),
-        locator: mode === 'pdf' ? { page: Number(page || sourceState.page || 1) } : {},
-        captured_text: noteText,
+    setFolderDialog({ mode, folder })
+  }, [refreshFolderSources, refreshSources])
+
+  const handleFolderDialogDone = useCallback(async (result) => {
+    const mode = folderDialog?.mode
+    if (mode !== 'manage') setFolderDialog(null)
+    await refreshFolders()
+    await refreshPapers()
+    await refreshFolderSources()
+    await refreshSources()
+    if (result?.source) {
+      const made = result.created ? ` · ${result.created} new ${result.created === 1 ? 'paper' : 'papers'}` : ''
+      showToast(`Attached “${result.source.title}”${made}`, 'success')
+    }
+  }, [folderDialog, refreshFolders, refreshPapers, refreshFolderSources, refreshSources])
+
+  const handleCreateWaitingChapter = useCallback(async (folder, w) => {
+    const r = await srcCreateChapterPaper(folder, w.source_id, w.key)
+    if (!r || r.error) { showToast(r?.error || 'Couldn’t create the paper', 'error'); return }
+    await refreshPapers()
+    await refreshFolderSources()
+    await handleSelectPaper(r.id)
+  }, [refreshPapers, refreshFolderSources, handleSelectPaper])
+
+  // Text selected in the Sources panel: Add to notes / Draft cards / Ask.
+  const [askSeed, setAskSeed] = useState(null)
+  const handleSourceAction = useCallback(async (kind, info) => {
+    const p = paperRef.current
+    if (!p) return
+    const entry = info.sourceEntry
+    const flat = (info.text || '').replace(/\r\n/g, '\n').replace(/\s*\n+\s*/g, ' ').replace(/ +/g, ' ').trim()
+    const kindOf = entry.source.kind
+    const pageLabel = kindOf === 'pptx' && info.page ? `slide ${info.page}`
+      : (kindOf === 'pdf' || kindOf === 'legacy-pdf') && info.printedPage ? `p. ${info.printedPage}` : null
+    const srcMeta = {
+      source_id: entry.source.id, kind: kindOf, page: info.page || null, pageLabel,
+      url: info.url || null, quote: flat.slice(0, 400), title: entry.source.title,
+    }
+    if (kind === 'ask') {
+      setAskSeed({ quote: flat, label: info.label, nonce: Date.now() })
+      setShowAskPanel(true)
+      return
+    }
+    if (viewModeRef.current === 'source') {
+      showToast('Switch to the Editor view first.', 'error')
+      return
+    }
+    const anchor = blockEditorRef.current?.getDraftAnchor?.(visibleLineRef.current)
+    if (!anchor) return
+    if (kind === 'draft') {
+      drafts.startDraft({
+        text: flat, headingPath: anchor.headingPath, existing: [], anchorId: anchor.anchorId,
+        label: pageLabel ? `${entry.source.title}, ${pageLabel}` : info.label,
+        source: srcMeta,
+      })
+      return
+    }
+    const ids = blockEditorRef.current?.insertLinesAfter?.(anchor.anchorId, [flat]) || []
+    if (ids[0]) {
+      await saveSourceLink(p.id, ids[0], {
+        source_type: 'attached', source_uri: entry.source.id,
+        locator: { page: info.page || null, url: info.url || null }, captured_text: flat,
       })
     }
-    showToast('Extracted text added to notes', 'success')
-  }, [paper, sourceState])
+    showToast('Added to your notes', 'success')
+  }, [drafts])
+
+  // Ask panel: put an answer into the paper, or draft cards from it.
+  const answerAnchor = useCallback((lineIndex) => {
+    const ed = blockEditorRef.current
+    if (!ed || viewModeRef.current === 'source') { showToast('Switch to the Editor view first.', 'error'); return null }
+    return (lineIndex != null && ed.getAnchorForLine?.(lineIndex)) || ed.getDraftAnchor?.(visibleLineRef.current) || null
+  }, [])
+  const handleInsertSupplement = useCallback((text, lineIndex) => {
+    const anchor = answerAnchor(lineIndex)
+    if (!anchor || !text) return
+    blockEditorRef.current.insertLinesAfter(anchor.anchorId, [`&& ${text.replace(/\s*\n+\s*/g, ' ')}`])
+    showToast('Added as an && supplement', 'success')
+  }, [answerAnchor])
+  const handleDraftFromAnswer = useCallback((text, lineIndex) => {
+    const anchor = answerAnchor(lineIndex)
+    if (!anchor || !text) return
+    drafts.startDraft({ text, headingPath: anchor.headingPath, existing: [], anchorId: anchor.anchorId, label: 'the answer' })
+  }, [answerAnchor, drafts])
+  const handleOpenSourceAt = useCallback((entry, page) => {
+    const key = sourceKey(entry)
+    selectSource(key)
+    setSourceJump({ key, page: page || null, url: null, quote: null, nonce: Date.now() })
+    setShowSourcePanel(true)
+  }, [selectSource])
 
   const handleGoToSource = useCallback(async ({ lineIndex }) => {
-    if (!paper) return
-    const lines = (paper.content || '').split('\n')
-    const line = lines[lineIndex] || ''
-    const blockId = getBlockIdFromLine(line)
-    if (!blockId) {
-      showToast('No source link for this block', 'error')
-      return
-    }
-    const link = await loadSourceLink(paper.id, blockId)
+    const p = paperRef.current
+    if (!p) return
+    const line = (p.content || '').split('\n')[lineIndex] || ''
+    const blockId = getApBlockId(line)
+    const link = blockId ? await loadSourceLink(p.id, blockId) : null
     if (!link || link.error) {
-      showToast('Source link not found', 'error')
+      showToast('This line wasn’t added from a source.', 'error')
       return
     }
-    if (link.source_type === 'pdf') {
-      const cap = (link.captured_text || '').trim()
-      setSourceState({
-        type: 'pdf',
-        path: link.source_uri || '',
-        url: '',
-        page: Number(link.locator?.page || 1),
-        jumpQuote: cap.length > 0 ? cap : null,
-      })
-    } else {
-      setSourceState({ type: 'web', path: '', url: link.source_uri || '', page: 1, jumpQuote: null })
+    const quote = (link.captured_text || '').trim() || null
+    if (link.source_type === 'attached') {
+      const entry = sourcesList.find((s) => s.source.id === link.source_uri)
+      if (!entry) { showToast('That source isn’t attached to this paper any more.', 'error'); return }
+      const key = sourceKey(entry)
+      selectSource(key)
+      setSourceJump({ key, page: link.locator?.page || null, url: link.locator?.url || null, quote, nonce: Date.now() })
+      setShowSourcePanel(true)
+      return
     }
-    setShowSourcePanel(true)
-    await openSourceAtLocation(link)
-  }, [paper])
+    if (link.source_type === 'pdf' && link.source_uri) {
+      // Lines added from the old one-off PDF panel: open that file again.
+      const entry = { scope: 'legacy', folder: '', legacyPath: link.source_uri,
+        source: { id: 'legacy', kind: 'legacy-pdf', title: link.source_uri.split('/').pop(), available: true } }
+      setLegacySource(entry)
+      selectSource(sourceKey(entry))
+      setSourceJump({ key: sourceKey(entry), page: link.locator?.page || 1, quote, nonce: Date.now() })
+      setShowSourcePanel(true)
+      return
+    }
+    if (link.source_uri) await openUrl(link.source_uri)
+  }, [sourcesList, selectSource])
 
   const handleSourcePanelResizeStart = useCallback((e) => {
     e.preventDefault()
@@ -1371,6 +1558,8 @@ export default function App() {
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); handleSave() }
       else if (e.ctrlKey && e.key === 'g') { e.preventDefault(); handleGenerate() }
       else if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) { e.preventDefault(); setViewMode(v => v === 'blocks' ? 'source' : 'blocks') }
+      else if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd') && aiOnRef.current) { e.preventDefault(); handleDraftFromEditor() }
+      else if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a') && aiOnRef.current) { e.preventDefault(); setShowAskPanel((v) => !v) }
       else if (e.ctrlKey && e.key === 'b') { e.preventDefault(); handleFormat('bold') }
       else if (e.ctrlKey && e.key === 'i') { e.preventDefault(); handleFormat('italic') }
       // Underline: <u>, toggled like subscript. Control on macOS too, like Ctrl+B / Ctrl+I.
@@ -1395,7 +1584,7 @@ export default function App() {
       window.removeEventListener('keydown', handle)
       window.removeEventListener('mouseup', onMouse)
     }
-  }, [handleSave, handleGenerate, handleFormat, handleUndo, handleRedo, toggleSidebar, cycleTab, goHistory])
+  }, [handleSave, handleGenerate, handleFormat, handleUndo, handleRedo, toggleSidebar, cycleTab, goHistory, handleDraftFromEditor])
 
   // ─── External API ───────────────────────────────
   useEffect(() => {
@@ -1432,6 +1621,9 @@ export default function App() {
   }, [handleSelectPaper, papers])
 
   // ─── Render ──────────────────────────────────────
+  const aiOn = settings?.ai_enabled !== false
+  aiOnRef.current = aiOn
+  const draftGroup = paper ? drafts.groupFor(paper.id) : null
   const saved = savedRef.current
   const paperDirty = !!paper && saved.id === paper.id &&
     (paper.content !== saved.content || paper.title !== saved.title)
@@ -1458,6 +1650,10 @@ export default function App() {
         outlineTitle={paper?.title || ''}
         outlineCurrentLine={visibleLine}
         currentPaper={paper}
+        folderSources={folderSources}
+        onFolderSource={handleFolderSource}
+        onCreateWaitingChapter={handleCreateWaitingChapter}
+        showWaiting={settings?.show_waiting_chapters === true}
         onJumpToHeading={(lineIndex) => {
           if (!paper) return
           setVisibleLine(lineIndex) // short papers may not scroll, so mark it now
@@ -1501,8 +1697,16 @@ export default function App() {
               onToggleLinks={() => setShowLinksPanel((v) => !v)}
               onExportPdf={handleExportPdf} onExportMarkdown={handleExportMarkdown}
               onImportMarkdown={handleImportMarkdown}
+              aiEnabled={aiOn}
+              onDraftCards={handleDraftFromEditor}
+              sourceCount={sourcesList.length}
+              showAskPanel={showAskPanel}
+              onToggleAsk={() => setShowAskPanel((v) => !v)}
+              scrollable={!!settings?.toolbar_scroll}
+              chapterBar={chapterEntry ? { global: chapterBarGlobal, on: showChapterBar, onToggle: toggleChapterBar } : null}
             />
 
+            {showChapterBar && <ChapterStrip entry={chapterEntry} onGo={handleChapterStep} />}
             <div className="editor-area">
               {viewMode === 'source' ? (
                 <SourceEditor
@@ -1538,6 +1742,15 @@ export default function App() {
                   weakOnly={weakOnly}
                   onUnsuspendNote={handleUnsuspendNote}
                   onVisibleLineChange={setVisibleLine}
+                  draftGroup={draftGroup}
+                  onRequestDraft={aiOn ? drafts.startDraft : null}
+                  onDraftAccept={(inserted) => drafts.accept(paper.id, inserted)}
+                  onDraftDiscard={(ids) => drafts.discard(paper.id, ids)}
+                  onDraftRedo={(id) => drafts.redo(paper.id, id)}
+                  onDraftEdit={(id, text) => drafts.edit(paper.id, id, text)}
+                  onDraftRedraft={() => drafts.redraft(paper.id)}
+                  onDraftCancel={() => drafts.cancel(paper.id)}
+                  onOpenAiSettings={openAiSettings}
                 />
               )}
             </div>
@@ -1550,6 +1763,7 @@ export default function App() {
               onGenerate={handleGenerate} 
               isSaving={isBusy} // Passes lock state to toolbar UI
               weakCount={weakMarkersOn ? weakCount : 0}
+              draftCount={draftGroup?.items?.length || 0}
               weakOnly={weakOnly}
               onToggleWeakOnly={() => setWeakOnly((v) => !v)}
             />
@@ -1575,20 +1789,51 @@ export default function App() {
           onClose={() => setShowLinksPanel(false)}
         />
       )}
-      {showSourcePanel && (
+      {showAskPanel && paper && aiOn && (
+        <AskPanel
+          paper={paper}
+          papers={papers.map((p) => (p.id === paper.id ? paper : p))}
+          sourcesPanelRef={sourcesPanelRef}
+          sources={sourcesList}
+          activeKey={activeSourceKey}
+          seed={askSeed}
+          onClose={() => setShowAskPanel(false)}
+          onInsertSupplement={handleInsertSupplement}
+          onDraftFromAnswer={handleDraftFromAnswer}
+          onGoToLine={(i) => handleGoToLine(paper.id, i)}
+          onOpenSourceAt={handleOpenSourceAt}
+          onNotify={(m) => showToast(m, 'success')}
+        />
+      )}
+      {showSourcePanel && paper && (
         <>
           <div className="source-panel-resizer" onMouseDown={handleSourcePanelResizeStart} />
           <div style={{ width: sourcePanelWidth, minWidth: sourcePanelWidth }}>
-            <SourcePanel
-              source={sourceState}
-              onSourceChange={(next) => setSourceState((prev) => ({ ...prev, ...next }))}
-              onExtract={handleExtractFromSource}
+            <SourcesPanel
+              ref={sourcesPanelRef}
+              paper={paper}
+              sources={sourcesList}
+              loading={sourcesLoading}
+              activeKey={activeSourceKey}
+              onSelectKey={selectSource}
+              jump={sourceJump}
+              aiEnabled={aiOn}
+              onAttachFile={handleAttachFile}
+              onAttachWeb={handleAttachWeb}
+              onDetach={handleDetachSource}
+              onRemoveSource={(entry) => (entry.scope === 'folder'
+                ? handleFolderSource('remove', entry.folder, { id: entry.source.id, title: entry.source.title })
+                : (window.confirm(`Remove “${entry.source.title}” from this paper? Lines you added from it keep their text.`) && handleDetachSource(entry)))}
               onClose={() => setShowSourcePanel(false)}
+              onAction={handleSourceAction}
+              onOpenPaper={(id) => handleSelectPaper(id)}
+              onCreateChapterPaper={handleCreateChapterPaper}
             />
           </div>
         </>
       )}
-      {showSettings && <Settings settings={settings} onSave={handleSaveSettings} onClose={() => setShowSettings(false)}
+      {showSettings && <Settings settings={settings} onSave={handleSaveSettings} onClose={() => { setShowSettings(false); setSettingsSection(null) }}
+        initialSection={settingsSection}
         onConvertEmphasis={() => { setShowSettings(false); handleConvertEmphasis() }} />}
       <FolderGenerateDialog
         state={folderGen && folderGen.phase !== 'conflicts' ? folderGen : null}
@@ -1626,6 +1871,15 @@ export default function App() {
             onClose={() => setShowGraph(false)}
           />
         </ErrorBoundary>
+      )}
+
+      {folderDialog && (
+        <FolderSourceDialog
+          folder={folderDialog.folder}
+          mode={folderDialog.mode}
+          onClose={() => setFolderDialog(null)}
+          onDone={handleFolderDialogDone}
+        />
       )}
 
       {linkRequest && (

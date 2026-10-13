@@ -1,14 +1,30 @@
-import React from 'react'
-import { Pencil, Eye, FileDown, FileInput, FileText, PanelRight, Link2, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useEffect, useRef } from 'react'
+import { Pencil, Eye, FileDown, FileInput, FileText, Link2, ChevronLeft, ChevronRight, Sparkles, MessageCircle, Paperclip, BookOpen } from 'lucide-react'
 import FormattingButtons from './FormattingToolbar'
 
 // The one toolbar under the tabs: back/forward, deck picker and formatting
 // buttons on the left (the deck picker stretches to fill the row), view
 // mode / import-export / panel toggles pinned to the right. The paper is
 // renamed from its tab (right-click → Rename), not from here.
-export default function EditorHeader({ canBack, canForward, onBack, onForward, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onFormat, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown }) {
+export default function EditorHeader({ canBack, canForward, onBack, onForward, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onFormat, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown, aiEnabled = true, onDraftCards, showAskPanel, onToggleAsk, sourceCount = 0, scrollable = false, chapterBar = null }) {
+  // Settings → Toolbar → Scroll sideways: one row that scrolls instead of
+  // wrapping. A mouse wheel scrolls it too, like the tab strip.
+  const barRef = useRef(null)
+  useEffect(() => {
+    const bar = barRef.current
+    if (!bar || !scrollable) return
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+      if (bar.scrollWidth <= bar.clientWidth) return
+      e.preventDefault()
+      bar.scrollLeft += e.deltaY
+    }
+    bar.addEventListener('wheel', onWheel, { passive: false })
+    return () => bar.removeEventListener('wheel', onWheel)
+  }, [scrollable])
+
   return (
-    <div className="editor-toolbar">
+    <div className={`editor-toolbar ${scrollable ? 'scrollable' : ''}`} ref={barRef}>
       <button className="header-icon-btn" title="Back (Ctrl+Alt+←)" aria-label="Back"
         disabled={!canBack} onClick={onBack}>
         <ChevronLeft size={16} />
@@ -30,6 +46,16 @@ export default function EditorHeader({ canBack, canForward, onBack, onForward, d
       <div className="fmt-sep" />
 
       <FormattingButtons onFormat={onFormat} />
+
+      {aiEnabled && onDraftCards && (
+        <>
+          <div className="fmt-sep" />
+          <button className="header-ai-btn" title="Draft cards from the selected lines (Ctrl+Shift+D)" onClick={onDraftCards}>
+            <Sparkles size={14} />
+            <span>Draft cards</span>
+          </button>
+        </>
+      )}
 
       {/* margin-left: auto pushes this group to the right end, and it wraps
           as one unit when the window is too narrow for a single row. */}
@@ -71,12 +97,39 @@ export default function EditorHeader({ canBack, canForward, onBack, onForward, d
           <Link2 size={16} />
         </button>
 
+        {/* Only on a paper that is a chapter of its folder's book or course:
+            shows the chapter bar for this paper. Greyed out while Settings →
+            Chapter bar shows it on every paper. */}
+        {chapterBar && (
+          <button
+            className={`header-icon-btn ${chapterBar.on ? 'active' : ''}`}
+            disabled={chapterBar.global}
+            title={chapterBar.global
+              ? 'The chapter bar is on for every paper (Settings → Chapter Bar)'
+              : chapterBar.on ? 'Hide the chapter bar for this paper' : 'Show the chapter bar for this paper'}
+            onClick={chapterBar.onToggle}
+          >
+            <BookOpen size={16} />
+          </button>
+        )}
+
+        {aiEnabled && onToggleAsk && (
+          <button
+            className={`header-icon-btn ${showAskPanel ? 'active' : ''}`}
+            title="Ask about this paper (Ctrl+Shift+A)"
+            onClick={onToggleAsk}
+          >
+            <MessageCircle size={16} />
+          </button>
+        )}
+
         <button
           className={`header-icon-btn ${showSourcePanel ? 'active' : ''}`}
-          title="Toggle source panel"
+          title="Sources: files and web pages for this paper"
           onClick={onToggleSource}
         >
-          <PanelRight size={16} />
+          <Paperclip size={16} />
+          {sourceCount > 0 && <span className="badge">{sourceCount}</span>}
         </button>
       </div>
     </div>

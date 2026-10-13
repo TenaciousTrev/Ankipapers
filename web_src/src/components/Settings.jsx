@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Settings as SettingsIcon, Save, Sun, Moon, HardDrive } from 'lucide-react'
 import { exportPapersToDisk } from '../bridge'
+import SettingsAI from './SettingsAI'
 
 const IS_MAC = typeof navigator !== 'undefined' &&
   /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
@@ -12,9 +13,13 @@ const COLOR_SCHEMES = [
   { id: 'crimson', label: 'Crimson', swatch: 'linear-gradient(135deg, #9e1b32 50%, #ffffff 50%)' },
 ]
 
-export default function Settings({ settings, onSave, onClose, onConvertEmphasis }) {
+export default function Settings({ settings, onSave, onClose, onConvertEmphasis, initialSection = null }) {
   const [local, setLocal] = useState({ ...settings })
   const update = (key, value) => setLocal(prev => ({ ...prev, [key]: value }))
+  const aiRef = useRef(null)
+  useEffect(() => {
+    if (initialSection === 'ai') setTimeout(() => aiRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+  }, [initialSection])
 
   // ── Papers on disk (phase 1) ────────────────────────────────────────────
   // Writes a copy of every paper to the Anki profile folder. Nothing reads
@@ -77,6 +82,24 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
             </button>
           </div>
 
+          <label className="settings-label">Toolbar</label>
+          <p className="settings-field-hint">
+            On a narrow window the toolbar can either wrap onto a second line or stay on one line
+            that scrolls sideways (with the trackpad, a mouse wheel, or the thin scrollbar under it).
+          </p>
+          <div className="theme-toggle-group">
+            <button
+              className={`theme-btn ${!local.toolbar_scroll ? 'active' : ''}`}
+              onClick={() => update('toolbar_scroll', false)}>
+              Wrap onto more lines
+            </button>
+            <button
+              className={`theme-btn ${local.toolbar_scroll ? 'active' : ''}`}
+              onClick={() => update('toolbar_scroll', true)}>
+              Scroll sideways
+            </button>
+          </div>
+
           <label className="settings-label">Colour Scheme</label>
           <p className="settings-field-hint">
             Colours the whole app in both Dark and Light, and the Basic card style on your
@@ -111,6 +134,33 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
               onChange={e => update('weak_spot_markers', e.target.checked)} />
             <span className="toggle-slider" />
             <span className="toggle-text">{local.weak_spot_markers !== false ? 'Enabled' : 'Disabled'}</span>
+          </label>
+
+          <label className="settings-label">Chapter Bar</label>
+          <p className="settings-field-hint">
+            The line above a paper that is a chapter of its folder's book or course: which book,
+            which chapter, and a step to the previous or next one. On shows it on every such
+            paper. Off hides it, except on papers where you've turned it on with the book
+            button in the toolbar.
+          </p>
+          <label className="settings-toggle">
+            <input type="checkbox" checked={local.show_chapter_bar === true}
+              onChange={e => update('show_chapter_bar', e.target.checked)} />
+            <span className="toggle-slider" />
+            <span className="toggle-text">{local.show_chapter_bar === true ? 'On for every paper' : 'Only where turned on'}</span>
+          </label>
+
+          <label className="settings-label">Chapters Waiting for a Paper</label>
+          <p className="settings-field-hint">
+            When a folder has a book or course attached, list its chapters that don't have a
+            paper yet in the sidebar, faded, inside the folder they belong in. Click one to
+            create its paper, already linked.
+          </p>
+          <label className="settings-toggle">
+            <input type="checkbox" checked={local.show_waiting_chapters === true}
+              onChange={e => update('show_waiting_chapters', e.target.checked)} />
+            <span className="toggle-slider" />
+            <span className="toggle-text">{local.show_waiting_chapters === true ? 'Shown' : 'Hidden'}</span>
           </label>
 
           <label className="settings-label">Line Numbers</label>
@@ -173,6 +223,8 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
             <option value="abort">Stop generate and show error (no changes)</option>
           </select>
         </div>
+
+        <SettingsAI local={local} update={update} sectionRef={aiRef} />
 
         <div className="settings-info">
           <div className="settings-shortcuts-title">
@@ -253,6 +305,8 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis 
           <div className="settings-shortcut"><kbd>Ctrl+I</kbd> Italic</div>
           <div className="settings-shortcut"><kbd>Ctrl+Shift+E</kbd> Switch between Editor and Source</div>
           <div className="settings-shortcut"><kbd>Ctrl+Shift+V</kbd> Paste as plain text</div>
+          <div className="settings-shortcut"><kbd>Ctrl+Shift+D</kbd> Draft cards from the selected lines</div>
+          <div className="settings-shortcut"><kbd>Ctrl+Shift+A</kbd> Ask about this paper</div>
         </div>
 
         </div>

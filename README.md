@@ -41,6 +41,18 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 ## What's new
 
+**Draft cards with AI, sources beside your paper, and Ask.**
+- **Draft cards:** select some lines (or click into one) and press **Draft cards** on the toolbar, choose it from the right-click menu, or press `Ctrl+Shift+D`. Card lines written in your syntax (`>>`, `<>`, `{{c1::…}}`) appear under the passage as dashed drafts. They aren't saved and Generate skips them until you accept one (✓), which turns it into an ordinary line. Click a draft to edit it (Enter saves and accepts, Escape stops editing), ✗ discards it, ↻ redoes just that card, and Accept all / Discard all / Redraft work on the whole group. The bottom bar counts drafts apart from your cards.
+- **Sources:** the paperclip on the toolbar opens the Sources panel. Attach a PDF, Word, PowerPoint, HTML or text file, or a web page, to the open paper; files are copied into your Anki Papers folder and stay with the paper. PowerPoint and Word open in a reader view (slides with their speaker notes), and web pages are saved as a copy you can read offline. Select text in a source to **Add to notes**, **Draft cards** or **Ask**; lines added this way remember where they came from, and **Go to source** (right-click) reopens the page with the passage highlighted.
+- **Folder sources (books and courses):** right-click a folder for **Attach a book…** (a PDF), **Attach a web source…** (a Microsoft Learn course or learning path, a docs site, or any page that links to its chapters) or **Attach a file…**. Every paper in the folder sees the folder's sources, labelled "from <folder>". A book or course is split into chapters (from the PDF's bookmarks, or the course's modules), each matched to the paper that covers it; that paper then opens the source at its own chapter. The chapter bar above the paper (previous / next chapter) shows when you turn it on; see below. Name a new paper after a chapter and it links itself; turn on **Settings → Chapters waiting for a paper** to also see the chapters without a paper, faded in the sidebar, and create one with a click. A course's learning paths can stay as headings or become sub-folders.
+- **Ask:** the speech-bubble button (or `Ctrl+Shift+A`) opens a chat about the open paper. Chips choose what it reads: this paper, the source open in the Sources panel, the whole chapter, the papers this one links to. Answers cite `line N` and source pages as chips that jump there; "Stick to my sources" makes it say when your material doesn't cover something. Any answer can be inserted as an `&&` supplement or sent to Draft cards. Nothing goes into Anki directly.
+- **Settings → AI:** choose Claude, Gemini, or any OpenAI-compatible endpoint (OpenAI, OpenRouter, or a local model in Ollama or LM Studio), paste your API key and press **Test connection**. On a Mac the key is kept in the macOS Keychain, never in the add-on's settings files. Anki Papers' own Python calls the provider over HTTPS; there's no server in between, and nothing to install. Card rules, the card types it may write, and the language are yours to set. Turn AI features off and every AI button disappears; sources keep working without AI.
+- **Folders can be ten levels deep** (it was three).
+- **Learning paths in sub-folders:** when a course's learning paths have their own sub-folders (say `AI-901/1. AI Concepts` and `AI-901/2. AI Apps & Agents`), each path is matched to its sub-folder by name or by where its papers already are. With **Settings → Chapters waiting for a paper** turned on, modules that don't have a paper yet show faded inside their own learning path's folder, in course order, and a paper made for one is created there. You can change which folder a path uses when you attach the course, or later from the folder's right-click menu → **Learning paths and sources…**.
+- **Books show their whole outline:** **Attach a book…** lists every bookmark in the PDF (parts, the chapters inside them and their sections), indented, with printed page numbers. Choose the paper for each one; papers whose names match are filled in, and anything set to "Not a chapter" is left out.
+- **The chapter bar is yours to show:** the line above a chapter paper (which book, which chapter, previous / next) is off by default, keeping the single-toolbar look. Turn it on for one paper with the book button in the toolbar (the choice is saved with the paper), or for every chapter paper with **Settings → Chapter Bar**. While that setting is on, the toolbar button is greyed out.
+- **Removing a book or web source:** right-click the folder → **Remove "…"**, or use the bin icon in the Sources panel. Your papers and their cards aren't changed.
+
 **Weak spots and an outline.**
 - **Weak-spot markers:** lines whose cards you keep missing in Anki get an amber edge and a "3 lapses" tag; a leech Anki has suspended gets a red one. Rest the pointer on one and its review history opens above the line (times you pressed Again, ease, last review, next due) with **Open in Anki**, and **Unsuspend** for leeches. When a paper has weak spots, a **"⚠ N weak spots"** button appears in the bottom bar: click it to show only those lines and the headings they sit under, click again for the whole paper. It only reads Anki's review history; nothing changes unless you press Unsuspend. Settings → Weak-Spot Markers turns it off.
 - **Outline:** the sidebar has a **Papers | Outline** switch. Outline lists the open paper's H1–H3 headings with their card counts and an amber or red dot where there are weak spots; click one to jump there, and the heading you're reading stays highlighted as you scroll. The collapsed sidebar has an outline button too.
@@ -476,6 +488,8 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `Ctrl+Alt+←` / `Ctrl+Alt+→` | Back / forward through papers you have visited |
 | `Ctrl+\` | Collapse / expand the sidebar |
 | `Ctrl+,` | Settings |
+| `Ctrl+Shift+D` | Draft cards from the selected lines (AI) |
+| `Ctrl+Shift+A` | Ask about this paper (AI) |
 | `[[` | Autocomplete a link to another paper by title |
 
 > The `Ctrl` shortcuts above use the **Control** key on every platform, macOS included. The two pasting shortcuts are the exception: they follow the system paste key, so on a Mac they are `⌘V` and `⇧⌘V`. `Ctrl+Shift+↓` and `Ctrl+Shift+↑` also accept `⇧⌘↓` and `⇧⌘↑` there. On a Mac, `Ctrl+5` and `Ctrl+6` only work while macOS's "Switch to Desktop 5/6" shortcuts are off, which is the default.
@@ -495,9 +509,18 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `show_card_indicators` | Card markers in the left margin |
 | `color_scheme` | `carolina` (default), `purple`, `mono` or `crimson`: colours the app and the Basic card style |
 | `show_line_numbers` | Line numbers down the left of the editor and Source view (on by default) |
+| `show_chapter_bar` | `false` (default): the chapter bar shows only on papers where the toolbar's book button turned it on; `true`: on every paper that is a chapter of its folder's book or course |
+| `show_waiting_chapters` | `false` (default): hidden; `true`: chapters of a folder's book or course without a paper show faded in the sidebar |
+| `toolbar_scroll` | `false` (default): the toolbar wraps onto a second line on a narrow window; `true`: one row that scrolls sideways |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
 | `card_style` | `basic` (built-in) or `solarized` (Solarized Styling), each in the colour scheme's own version — restyles every card when changed |
 | `text_replacements_enabled` | Mac only: apply your macOS Text Replacements as you type (on by default) |
+| `ai_enabled` | Show the AI features (Draft cards, Ask). On by default |
+| `ai_provider` | `anthropic` (Claude), `gemini`, or `openai` (any OpenAI-compatible endpoint) |
+| `ai_model_<provider>` | The model for that provider, e.g. `ai_model_anthropic` |
+| `ai_base_url` | OpenAI-compatible endpoint address (empty means OpenAI) |
+| `ai_card_types` / `ai_card_rules` / `ai_language` | What Draft cards may write, the rules sent with every draft, and the language of cards and answers |
+| API keys | Not in the config: kept in the macOS Keychain (Settings → AI → Save key) |
 | Papers on disk | Preview / Write, for the one-time migration above |
 
 ---
@@ -552,6 +575,13 @@ Or double-click `build_ankiaddon.bat`. The script bundles `__init__.py`, `manife
 | `user_files/` | Local cache/fallback only (gitignored) |
 | `tests/` | Python tests — run `python3 -m unittest discover -s tests` |
 | `gui/text_replacements.py` | Reads your macOS Text Replacements for the editor |
+| `core/ai.py` | AI providers (Claude, Gemini, OpenAI-compatible), Keychain key storage, background jobs, draft parsing |
+| `core/sources.py` | Attached files and web sources, the chapter map, Word/PowerPoint/HTML reader views, web snapshots |
+| `gui/ai_sources.py` | Bridge commands for AI and sources |
+| `web_src/src/components/SourcesPanel.jsx` | The Sources panel |
+| `web_src/src/components/FolderSourceDialog.jsx` | Attach a book / web source to a folder |
+| `web_src/src/components/AskPanel.jsx` | Ask |
+| `web_src/src/components/DraftGroup.jsx` | Draft cards in the editor |
 | `_build.ps1` / `build_ankiaddon.bat` | Pack `Ankipapers.ankiaddon` |
 
 ---

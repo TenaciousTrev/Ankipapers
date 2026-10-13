@@ -94,6 +94,18 @@ class AnkiPapersWindow(QMainWindow):
 
     def _on_page_load_finished(self, ok):
         self.webview.set_open_links_externally(True)
+        self._allow_drops()
+
+    def _allow_drops(self):
+        # AnkiWebView ignores every drop unless allow_drops is set, and
+        # load_url() resets it to False -- which silently broke dragging
+        # papers and folders in the sidebar (the drag starts, the drop never
+        # reaches the page). The page itself stops dropped files from
+        # navigating the window (see main.jsx).
+        try:
+            self.webview.allow_drops = True
+        except Exception:
+            pass
 
     def _load_ui(self):
         """Load the React frontend, served by Anki's media server from web/."""
@@ -109,6 +121,7 @@ class AnkiPapersWindow(QMainWindow):
             # the webview (see fact 4 in the migration brief).
             self.webview.set_open_links_externally(False)
             self.webview.load_url(url)
+            self._allow_drops()
         else:
             # Fallback: show error message. AnkiWebView.setHtml() takes no
             # base URL (unlike QWebEngineView.setHtml()).
