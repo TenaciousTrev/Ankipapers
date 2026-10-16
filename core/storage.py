@@ -400,7 +400,7 @@ def load_folder_structure() -> Dict[str, Any]:
     """Load the folder tree structure.
 
     Phase 3: what the sidebar shows is the shape of the papers/ directory. The
-    stored tree is materialised as directories first, so a folder that only
+    stored tree is materialized as directories first, so a folder that only
     ever existed in the collection — an empty one, say — cannot disappear when
     the display switches to disk.
     """
@@ -721,7 +721,7 @@ def load_source_link(paper_id: str, block_id: str) -> Optional[Dict[str, Any]]:
 # a file be renamed or moved without breaking the ap:// links that point at it.
 #
 # The .ap.json beside it carries what markdown cannot: the deck, the tags, the
-# true (unsanitised) title and folder path, and the map from each line to its
+# true (unsanitized) title and folder path, and the map from each line to its
 # Anki note. That map is what stops Generate from destroying cards, so it has
 # to be stored — just not in the middle of the prose.
 #

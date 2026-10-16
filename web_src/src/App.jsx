@@ -5,7 +5,7 @@ import {
   deleteFolder, renameFolder, moveFolder,
   pickImage, pasteImage, exportPdf, exportMarkdown, importMarkdown, getSettings, saveSettings as saveSettingsBridge,
   getMediaDir, getTextReplacements, convertEmphasisToTags, openInBrowser, moveCardsToDeck, saveSourceLink, loadSourceLink, openUrl,
-  getNoteStats, unsuspendNote,
+  getNoteStats, unsuspendNote, setWebBrowser, getWebBrowser,
 } from './bridge'
 import { buildOutline } from './outline'
 import { buildCardRefIndex, resolveNoteIdFromIndex } from './crossLink'
@@ -51,7 +51,7 @@ const SIDEBAR_DEFAULT_WIDTH = 260
 // Let the folder-Generate progress dialog paint before the next paper: each
 // Generate holds Anki's main thread until it returns. Never waits on animation
 // frames alone -- browsers stop them entirely while the window is hidden
-// (minimised), which froze the whole run until the window came back. Whichever
+// (minimized), which froze the whole run until the window came back. Whichever
 // comes first: two frames, or 120ms.
 const letPaint = () => Promise.race([
   new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
@@ -63,6 +63,14 @@ const SIDEBAR_SNAP_WIDTH = 120
 
 const clampSidebarWidth = (w) =>
   Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(w)))
+
+// The Sources panel can take up to half the window, so a PDF can be read at
+// a useful size while the editor keeps the other half.
+const SOURCE_PANEL_MIN_WIDTH = 280
+const clampSourcePanelWidth = (w) => {
+  const max = Math.max(SOURCE_PANEL_MIN_WIDTH, Math.floor(window.innerWidth / 2))
+  return Math.max(SOURCE_PANEL_MIN_WIDTH, Math.min(max, Math.round(w)))
+}
 
 
 function folderPathAfterRename(oldPath, newName) {
@@ -205,7 +213,7 @@ export default function App() {
       tabsLoadedRef.current = true
       if (Number.isFinite(s.sidebar_width)) setSidebarWidth(clampSidebarWidth(s.sidebar_width))
       setSidebarCollapsed(!!s.sidebar_collapsed)
-      // Apply theme and colour scheme
+      // Apply theme and color scheme
       document.documentElement.dataset.theme = s.editor_theme || 'dark'
       document.documentElement.dataset.scheme = s.color_scheme || 'carolina'
       const md = await getMediaDir()
@@ -380,7 +388,7 @@ export default function App() {
   }, [refreshPapers, addTab, persistPaper, reconcileBacklinks, pushNav, markSaved])
 
   // Removes a tab from the strip and returns the tab that should take its
-  // place when it was the active one (the right-hand neighbour, else the
+  // place when it was the active one (the right-hand neighbor, else the
   // left), or null when it was the last tab.
   const removeTab = useCallback((id) => {
     const tabs = openTabsRef.current
@@ -394,7 +402,7 @@ export default function App() {
 
   const handleDeletePaper = useCallback(async (id) => {
     await deletePaper(id)
-    const neighbour = removeTab(id)
+    const neighbor = removeTab(id)
     const nav = navRef.current
     nav.stack = nav.stack.filter((e) => e.paperId !== id)
     nav.index = Math.min(nav.index, nav.stack.length - 1)
@@ -403,7 +411,7 @@ export default function App() {
       setPaper(null); setActivePaperId(null)
       // The deleted paper must not be saved on the way out — that would
       // quietly recreate it.
-      if (neighbour) await handleSelectPaper(neighbour, { skipSave: true })
+      if (neighbor) await handleSelectPaper(neighbor, { skipSave: true })
     }
     await refreshPapers()
     showToast('Paper deleted', 'success')
@@ -613,6 +621,37 @@ export default function App() {
   const [showAskPanel, setShowAskPanel] = useState(false)
   const [showGraph, setShowGraph] = useState(false)
 
+  // ─── Web browser ─────────────────────────────────
+  // A native Qt view docked to the right of this whole page (see
+  // gui/web_browser.py), so the page only switches it and sends it colors.
+  // The pane's own close button reports back through
+  // window.ankiPapersSetWebBrowserOpen.
+  const [showWebBrowser, setShowWebBrowser] = useState(false)
+  useEffect(() => {
+    window.ankiPapersSetWebBrowserOpen = (open) => setShowWebBrowser(!!open)
+    // A reloaded page (after a renderer crash) finds the pane already open.
+    getWebBrowser().then((r) => { if (r?.open) setShowWebBrowser(true) })
+    return () => { delete window.ankiPapersSetWebBrowserOpen }
+  }, [])
+  const toggleWebBrowser = useCallback(() => {
+    setShowWebBrowser((v) => !v)
+  }, [])
+  const webBrowserUsedRef = useRef(false)
+  useEffect(() => {
+    // Nothing to tell the pane until it has been opened once.
+    if (showWebBrowser) webBrowserUsedRef.current = true
+    if (!webBrowserUsedRef.current) return
+    const css = getComputedStyle(document.documentElement)
+    const v = (name) => css.getPropertyValue(name).trim()
+    const theme = {
+      bg: v('--bg-secondary'), field: v('--bg-tertiary'), fg: v('--text-primary'),
+      muted: v('--text-muted'), border: v('--border'), hover: v('--bg-hover'), accent: v('--accent'),
+    }
+    setWebBrowser(showWebBrowser, theme).then((r) => {
+      if (r && !r.error && !!r.open !== showWebBrowser) setShowWebBrowser(!!r.open)
+    })
+  }, [showWebBrowser, settings?.editor_theme, settings?.color_scheme])
+
   // Open a document and reveal one of its lines. Used by the backlinks panel,
   // the graph and sidebar search, so all of them land the same way a link
   // does — in Source view too, where the caret moves to that line. Search
@@ -769,7 +808,7 @@ export default function App() {
 
     if (action === 'insertImage') {
       const result = await pickImage()
-      if (!result.cancelled && result.markdown) {
+      if (!result.canceled && result.markdown) {
         if (viewMode === 'source' && editorRef.current) {
           editorRef.current.applyFormat('insertImageMd', result.markdown)
         } else if (viewMode === 'blocks' && blockEditorRef.current) {
@@ -796,9 +835,9 @@ export default function App() {
   // ─── Tabs ───────────────────────────────────────
   const handleCloseTab = useCallback(async (id) => {
     drafts.dropPaper(id)
-    const neighbour = removeTab(id)
+    const neighbor = removeTab(id)
     if (paperRef.current?.id !== id) return
-    if (neighbour) await handleSelectPaper(neighbour)
+    if (neighbor) await handleSelectPaper(neighbor)
     else await handleGoHome()
   }, [removeTab, handleSelectPaper, handleGoHome, drafts])
 
@@ -819,7 +858,7 @@ export default function App() {
         console.error('[Anki Papers] print rendering failed', e)
       }
       const result = await exportPdf(paper.id, html)
-      if (result.cancelled) return
+      if (result.canceled) return
       if (result.ok) showToast('PDF exported successfully', 'success')
       else if (result.error) showToast(`Export failed: ${result.error}`, 'error')
     } finally {
@@ -830,7 +869,7 @@ export default function App() {
   // ─── Markdown Import/Export ─────────────────────
   const handleImportMarkdown = useCallback(async () => {
     const result = await importMarkdown()
-    if (result.cancelled) return
+    if (result.canceled) return
     if (result.error) { showToast(`Import failed: ${result.error}`, 'error'); return }
     await refreshPapers()
     setPaper(result)
@@ -844,7 +883,7 @@ export default function App() {
     try {
       await persistPaper(paper)
       const result = await exportMarkdown(paper.id)
-      if (result.cancelled) return
+      if (result.canceled) return
       if (result.ok) showToast('Markdown exported', 'success')
       else if (result.error) showToast(`Export failed: ${result.error}`, 'error')
     } finally {
@@ -910,7 +949,7 @@ export default function App() {
     document.documentElement.dataset.theme = newSettings.editor_theme || 'dark'
     document.documentElement.dataset.scheme = newSettings.color_scheme || 'carolina'
     if (res?.card_style_error) showToast(`Settings saved, but the card style could not be applied: ${res.card_style_error}`, 'error')
-    else if (res?.card_style_applied) showToast('Settings saved — card colours and style applied to all your cards', 'success')
+    else if (res?.card_style_applied) showToast('Settings saved — card colors and style applied to all your cards', 'success')
     else showToast('Settings saved', 'success')
   }, [])
 
@@ -1326,7 +1365,7 @@ export default function App() {
     if (!p) return
     const r = await srcAttachPaperFile(p.id)
     if (r?.error) { showToast(r.error, 'error'); return }
-    if (r?.cancelled) return
+    if (r?.canceled) return
     await refreshSources(p.id)
     selectSource(`paper::${r.source.id}`)
     setShowSourcePanel(true)
@@ -1384,7 +1423,7 @@ export default function App() {
     if (mode === 'file') {
       const r = await srcFolderAttachFile(folder)
       if (r?.error) { showToast(r.error, 'error'); return }
-      if (r?.cancelled) return
+      if (r?.canceled) return
       await refreshFolderSources()
       await refreshSources()
       showToast(`Attached to ${folder.split('/').pop()}`, 'success')
@@ -1519,16 +1558,27 @@ export default function App() {
     const startX = e.clientX
     const startWidth = sourcePanelWidth
     const onMove = (ev) => {
-      const next = Math.max(280, Math.min(700, startWidth - (ev.clientX - startX)))
-      setSourcePanelWidth(next)
+      setSourcePanelWidth(clampSourcePanelWidth(startWidth - (ev.clientX - startX)))
     }
     const onUp = () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      document.body.classList.remove('is-resizing-sources')
     }
+    // The class stops the PDF / web frames taking the pointer mid-drag: a
+    // frame keeps its mouse events to itself, so narrowing the panel stalled
+    // as soon as the cursor crossed onto the page.
+    document.body.classList.add('is-resizing-sources')
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }, [sourcePanelWidth])
+
+  // Shrinking the window pulls the panel back to half of it.
+  useEffect(() => {
+    const onResize = () => setSourcePanelWidth((w) => clampSourcePanelWidth(w))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   // ─── Keyboard Shortcuts ──────────────────────────
   useEffect(() => {
@@ -1702,6 +1752,8 @@ export default function App() {
               sourceCount={sourcesList.length}
               showAskPanel={showAskPanel}
               onToggleAsk={() => setShowAskPanel((v) => !v)}
+              showWebBrowser={showWebBrowser}
+              onToggleWebBrowser={toggleWebBrowser}
               scrollable={!!settings?.toolbar_scroll}
               chapterBar={chapterEntry ? { global: chapterBarGlobal, on: showChapterBar, onToggle: toggleChapterBar } : null}
             />

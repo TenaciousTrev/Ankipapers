@@ -419,6 +419,34 @@ document.addEventListener('mouseup', function() {
   }, 10);
 });
 
+/*
+ * Copy as one line. pdf.js ends every rendered line with a <br>, so a plain
+ * copy carries a hard break wherever the PDF wrapped, and pasting it into the
+ * editor made one block per printed line. Same rules as normalizePastedText in
+ * BlockEditor.jsx: words hyphenated across a break are rejoined, a hyphen
+ * that only happened to wrap is kept, and every other break becomes a space.
+ */
+function flattenCopiedText(raw) {
+  return String(raw || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/­/g, '')
+    // "propa-" + break + "gation" -> "propagation" (lowercase both sides only)
+    .replace(/([a-z])[-‐‑]\n\s*([a-z])/g, '$1$2')
+    // "ST-" + break + "elevation" -> "ST-elevation"
+    .replace(/([A-Za-z])([-‐‑])\n\s*([A-Za-z])/g, '$1$2$3')
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/[ \t  - ]+/g, ' ')
+    .trim();
+}
+
+document.addEventListener('copy', function(e) {
+  var sel = window.getSelection();
+  var text = flattenCopiedText(sel ? sel.toString() : '');
+  if (!text || !e.clipboardData) return;
+  e.clipboardData.setData('text/plain', text);
+  e.preventDefault();
+});
+
 var resizeTimer;
 window.addEventListener('resize', function() {
   clearTimeout(resizeTimer);

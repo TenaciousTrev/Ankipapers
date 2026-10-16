@@ -58,8 +58,8 @@ class AIError(Exception):
     """A provider call failed in a way worth showing to the user."""
 
 
-class Cancelled(Exception):
-    """The job was cancelled while the request was streaming."""
+class Canceled(Exception):
+    """The job was canceled while the request was streaming."""
 
 
 # ─── HTTP ─────────────────────────────────────────────────────────────
@@ -123,11 +123,11 @@ def _get_json(url: str, headers: Dict[str, str], timeout: float = 20.0) -> Any:
         return json.loads(r.read().decode("utf-8", errors="replace"))
 
 
-def _iter_sse(resp, cancelled: Callable[[], bool]):
+def _iter_sse(resp, canceled: Callable[[], bool]):
     """Yield the JSON payload of each `data:` line in a server-sent-event stream."""
     for raw in resp:
-        if cancelled():
-            raise Cancelled()
+        if canceled():
+            raise Canceled()
         line = raw.decode("utf-8", errors="replace").strip()
         if not line.startswith("data:"):
             continue
@@ -178,7 +178,7 @@ DEFAULT_MAX_TOKENS = {"anthropic": 16000, "gemini": 8192, "openai": 4096}
 def complete(provider: str, key: str, model: str, system: str, messages: List[Dict[str, str]],
              base_url: str = "", max_tokens: Optional[int] = None,
              on_delta: Optional[Callable[[str], None]] = None,
-             cancelled: Callable[[], bool] = lambda: False,
+             canceled: Callable[[], bool] = lambda: False,
              temperature: Optional[float] = None) -> Tuple[str, Dict[str, int]]:
     """Run one chat completion, streaming text to on_delta as it arrives.
 
@@ -210,7 +210,7 @@ def complete(provider: str, key: str, model: str, system: str, messages: List[Di
         stop_reason = None
         with _request("POST", f"{ANTHROPIC_URL}/messages",
                       {"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION}, body, 300) as r:
-            for ev in _iter_sse(r, cancelled):
+            for ev in _iter_sse(r, canceled):
                 t = ev.get("type")
                 if t == "message_start":
                     usage["input"] = ((ev.get("message") or {}).get("usage") or {}).get("input_tokens", 0)
@@ -242,7 +242,7 @@ def complete(provider: str, key: str, model: str, system: str, messages: List[Di
 
         def run_gemini(b):
             with _request("POST", url, {"x-goog-api-key": key}, b, 300) as r:
-                for ev in _iter_sse(r, cancelled):
+                for ev in _iter_sse(r, canceled):
                     for cand in ev.get("candidates") or []:
                         for part in ((cand.get("content") or {}).get("parts") or []):
                             if not part.get("thought"):
@@ -264,7 +264,7 @@ def complete(provider: str, key: str, model: str, system: str, messages: List[Di
 
         def run_openai(b):
             with _request("POST", f"{_openai_base(base_url)}/chat/completions", headers, b, 300) as r:
-                for ev in _iter_sse(r, cancelled):
+                for ev in _iter_sse(r, canceled):
                     for ch in ev.get("choices") or []:
                         emit((ch.get("delta") or {}).get("content") or "")
                     u = ev.get("usage") or {}
@@ -394,7 +394,7 @@ class JobManager:
         self._lock = threading.Lock()
 
     def start(self, work: Callable[[Callable[[str], None], Callable[[], bool]], Any]) -> str:
-        """work(on_delta, cancelled) -> result (JSON-serialisable)."""
+        """work(on_delta, canceled) -> result (JSON-serializable)."""
         self._prune()
         job_id = uuid.uuid4().hex
         job = {"status": "running", "text": "", "result": None, "error": None,
@@ -406,21 +406,21 @@ class JobManager:
             with self._lock:
                 job["text"] += t
 
-        def cancelled() -> bool:
+        def canceled() -> bool:
             return job["cancel"]
 
         def run():
             try:
-                result = work(on_delta, cancelled)
+                result = work(on_delta, canceled)
                 with self._lock:
                     if job["cancel"]:
-                        job["status"] = "cancelled"
+                        job["status"] = "canceled"
                     else:
                         job["status"] = "done"
                         job["result"] = result
-            except Cancelled:
+            except Canceled:
                 with self._lock:
-                    job["status"] = "cancelled"
+                    job["status"] = "canceled"
             except AIError as e:
                 with self._lock:
                     job["status"] = "error"

@@ -7,7 +7,7 @@ import { buildTargetIndex, searchTargets, targetBreadcrumb } from '../docLinks'
  *
  * Targets are headers (1st/2nd/3rd degree, shown with their full ancestor
  * chain so duplicates like "Typical" are distinguishable) and whole documents.
- * The index is built from the papers already loaded in memory and memoised on
+ * The index is built from the papers already loaded in memory and memoized on
  * the papers array, so reopening the picker is free.
  */
 export default function LinkPicker({ phrase, papers, onPick, onClose }) {

@@ -27,7 +27,14 @@
 // line was redrawn — so on any line carrying an anchor the space bar appeared
 // to do nothing at all. ensureApBlockId writes the anchor flush against the
 // text, so there is no whitespace of its own here to remove.
-export const AP_BLOCK_ID_TAIL = /<!--ap:[0-9a-f-]{36}-->[ \t]*$/i
+//
+// A run of the SAME anchor repeated ("…<!--ap:X--><!--ap:X-->") counts as one.
+// Tab / Shift+Tab used to re-append the anchor without removing it first, so
+// lines indented or outdented before that fix carry copies; only the last was
+// hidden and the rest showed up as raw text. Treating the run as a single
+// anchor hides them all, and extractApBlockSuffix returns just one copy, so the
+// line heals the next time it is edited.
+export const AP_BLOCK_ID_TAIL = /<!--ap:([0-9a-f-]{36})-->(?:<!--ap:\1-->)*([ \t]*)$/i
 
 export function stripApBlockId(line) {
   return (line ?? '').replace(AP_BLOCK_ID_TAIL, '')
@@ -35,7 +42,18 @@ export function stripApBlockId(line) {
 
 export function extractApBlockSuffix(line) {
   const m = (line ?? '').match(AP_BLOCK_ID_TAIL)
-  return m ? m[0] : ''
+  return m ? `<!--ap:${m[1]}-->${m[2]}` : ''
+}
+
+/**
+ * Change a line's indentation without disturbing its anchor: `shift` gets the
+ * line with the anchor taken off, and the anchor goes back on exactly once.
+ * Re-appending it to the unstripped line added a copy on every Tab press.
+ */
+export function reindentKeepingAnchor(line, shift) {
+  const suf = extractApBlockSuffix(line)
+  const shifted = shift(stripApBlockId(line))
+  return suf ? shifted.replace(/\s+$/, '') + suf : shifted
 }
 
 export function mergeEditedWithApSuffix(editedBody, originalLine) {
@@ -233,7 +251,7 @@ export function targetBreadcrumb(t) {
 }
 
 /**
- * Rank targets against a query. Ordering favours, in order: an exact match,
+ * Rank targets against a query. Ordering favors, in order: an exact match,
  * then a match at the start of the header, then any match; headers outrank
  * whole documents, and shallower headers outrank deeper ones, so searching
  * "atrial flutter" surfaces the H1 before its sub-sub-headers.

@@ -199,7 +199,7 @@ function BookDialog({ folder, onClose, onDone }) {
   const pick = useCallback(async () => {
     const r = await srcPickFile('Choose the book (a PDF)')
     setError(null)
-    if (!r || r.cancelled) return
+    if (!r || r.canceled) return
     if (r.error) { setError(r.error); return }
     if (!/\.pdf$/i.test(r.path)) { setError('A book has to be a PDF.'); return }
     setFile(r)

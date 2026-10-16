@@ -9,6 +9,7 @@ connects it to the Python backend via AnkiWebView's own pycmd() bridge.
 import os
 from aqt.qt import (
     QMainWindow,
+    QSplitter,
     QUrl,
     QWidget,
     QVBoxLayout,
@@ -20,6 +21,7 @@ from aqt import mw
 from aqt.webview import AnkiWebView
 
 from .bridge import AnkiPapersBridge
+from . import web_browser
 
 
 class AnkiPapersWebView(AnkiWebView):
@@ -62,7 +64,16 @@ class AnkiPapersWindow(QMainWindow):
 
         # Create the web view
         self.webview = AnkiPapersWebView(self, title="Anki Papers")
-        self.setCentralWidget(self.webview)
+
+        # The editor and the web browser share the window side by side. The
+        # browser pane is built on first use (see set_web_browser_open).
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(1)
+        self.splitter.addWidget(self.webview)
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+        self.setCentralWidget(self.splitter)
+        self.browser_pane = None
 
         # Setup the bridge
         self.bridge = AnkiPapersBridge(window=self)
@@ -91,6 +102,62 @@ class AnkiPapersWindow(QMainWindow):
 
         # Load the React app
         self._load_ui()
+
+    # ─── Web browser pane ────────────────────────────
+
+    def web_browser_open(self):
+        return self.browser_pane is not None and self.browser_pane.isVisible()
+
+    def set_web_browser_open(self, open_, theme=None):
+        """Show or hide the docked browser; returns whether it is now open."""
+        if open_ and self.browser_pane is None:
+            self.browser_pane = web_browser.WebBrowserPane(
+                self.splitter, on_close=self._close_web_browser_from_pane
+            )
+            self.splitter.addWidget(self.browser_pane)
+            self.splitter.setStretchFactor(0, 1)
+            self.splitter.setStretchFactor(1, 0)
+            self.browser_pane.hide()
+        if self.browser_pane is None:
+            return False
+        if theme:
+            self.browser_pane.apply_theme(theme)
+            border = theme.get("border") or "#1c335c"
+            self.splitter.setStyleSheet(f"QSplitter::handle {{ background: {border}; }}")
+        if open_ and not self.browser_pane.isVisible():
+            self.browser_pane.show()
+            self._size_web_browser()
+            self.browser_pane.ensure_loaded()
+        elif not open_ and self.browser_pane.isVisible():
+            self._remember_web_browser_width()
+            self.browser_pane.hide()
+        return self.browser_pane.isVisible()
+
+    def _size_web_browser(self):
+        total = sum(self.splitter.sizes()) or self.width()
+        width = web_browser.load_state().get("width")
+        if not isinstance(width, int):
+            width = web_browser.DEFAULT_WIDTH
+        # Leave the editor at least half the window whatever was saved.
+        width = max(web_browser.MIN_WIDTH, min(width, total // 2))
+        self.splitter.setSizes([max(total - width, 1), width])
+
+    def _remember_web_browser_width(self):
+        if self.web_browser_open():
+            web_browser.save_state(width=self.splitter.sizes()[1])
+
+    def _on_splitter_moved(self, _pos, _index):
+        self._remember_web_browser_width()
+
+    def _close_web_browser_from_pane(self):
+        """The pane's own close button: hide it and tell the toolbar."""
+        self.set_web_browser_open(False)
+        try:
+            self.webview.eval(
+                "window.ankiPapersSetWebBrowserOpen && window.ankiPapersSetWebBrowserOpen(false)"
+            )
+        except Exception:
+            pass
 
     def _on_page_load_finished(self, ok):
         self.webview.set_open_links_externally(True)

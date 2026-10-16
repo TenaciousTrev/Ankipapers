@@ -41,13 +41,13 @@ export default function SourcePanel({ source, onSourceChange, onExtract, onClose
   const [viewerUrl, setViewerUrl] = useState(null)
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     getPdfViewerUrl().then((r) => {
-      if (cancelled) return
+      if (canceled) return
       if (r?.url) setViewerUrl(r.url)
       else console.error('[AnkiPapers] getPdfViewerUrl failed', r)
     })
-    return () => { cancelled = true }
+    return () => { canceled = true }
   }, [])
 
   // Track when the iframe is ready

@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react'
-import { Pencil, Eye, FileDown, FileInput, FileText, Link2, ChevronLeft, ChevronRight, Sparkles, MessageCircle, Paperclip, BookOpen } from 'lucide-react'
+import { Pencil, Eye, FileDown, FileInput, FileText, Link2, ChevronLeft, ChevronRight, Sparkles, MessageCircle, Paperclip, BookOpen, Globe } from 'lucide-react'
 import FormattingButtons from './FormattingToolbar'
 
 // The one toolbar under the tabs: back/forward, deck picker and formatting
 // buttons on the left (the deck picker stretches to fill the row), view
 // mode / import-export / panel toggles pinned to the right. The paper is
 // renamed from its tab (right-click → Rename), not from here.
-export default function EditorHeader({ canBack, canForward, onBack, onForward, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onFormat, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown, aiEnabled = true, onDraftCards, showAskPanel, onToggleAsk, sourceCount = 0, scrollable = false, chapterBar = null }) {
+export default function EditorHeader({ canBack, canForward, onBack, onForward, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onFormat, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown, aiEnabled = true, onDraftCards, showAskPanel, onToggleAsk, showWebBrowser = false, onToggleWebBrowser, sourceCount = 0, scrollable = false, chapterBar = null }) {
   // Settings → Toolbar → Scroll sideways: one row that scrolls instead of
   // wrapping. A mouse wheel scrolls it too, like the tab strip.
   const barRef = useRef(null)
@@ -98,7 +98,7 @@ export default function EditorHeader({ canBack, canForward, onBack, onForward, d
         </button>
 
         {/* Only on a paper that is a chapter of its folder's book or course:
-            shows the chapter bar for this paper. Greyed out while Settings →
+            shows the chapter bar for this paper. Grayed out while Settings →
             Chapter bar shows it on every paper. */}
         {chapterBar && (
           <button
@@ -131,6 +131,16 @@ export default function EditorHeader({ canBack, canForward, onBack, onForward, d
           <Paperclip size={16} />
           {sourceCount > 0 && <span className="badge">{sourceCount}</span>}
         </button>
+
+        {onToggleWebBrowser && (
+          <button
+            className={`header-icon-btn ${showWebBrowser ? 'active' : ''}`}
+            title={showWebBrowser ? 'Close the web browser' : 'Open a web browser beside the editor'}
+            onClick={onToggleWebBrowser}
+          >
+            <Globe size={16} />
+          </button>
+        )}
       </div>
     </div>
   )

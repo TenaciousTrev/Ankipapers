@@ -100,9 +100,9 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis,
             </button>
           </div>
 
-          <label className="settings-label">Colour Scheme</label>
+          <label className="settings-label">Color Scheme</label>
           <p className="settings-field-hint">
-            Colours the whole app in both Dark and Light, and the Basic card style on your
+            Colors the whole app in both Dark and Light, and the Basic card style on your
             Anki cards. Source view stays black on white in every scheme.
           </p>
           <div className="theme-toggle-group scheme-toggle-group">
@@ -189,7 +189,7 @@ export default function Settings({ settings, onSave, onClose, onConvertEmphasis,
 
           <label className="settings-label">Card Style</label>
           <p className="settings-field-hint">
-            How your Anki cards look, in the colour scheme chosen above: each scheme has its
+            How your Anki cards look, in the color scheme chosen above: each scheme has its
             own Basic and Solarized version (Original purple keeps the classic Solarized).
             Solarized is light when Anki is in light mode and dark in dark mode. Saving
             restyles every Anki Papers card at once.

@@ -150,7 +150,7 @@ class AISourcesMixin:
         key = (args.get("key") or "").strip() or KEYS.get(provider)
         base_url = args.get("base_url") or ""
 
-        def work(_delta, _cancelled):
+        def work(_delta, _canceled):
             if provider != "openai" and not key:
                 raise AI.AIError("Paste a key first.")
             return {"models": AI.list_models(provider, key, base_url)}
@@ -176,9 +176,9 @@ class AISourcesMixin:
             args.get("existing") or [], args.get("redo_of") or "",
         )
 
-        def work(delta, cancelled):
+        def work(delta, canceled):
             text, usage = AI.complete(provider, key, model, system, [{"role": "user", "content": user}],
-                                      base_url=s["base_url"], on_delta=delta, cancelled=cancelled,
+                                      base_url=s["base_url"], on_delta=delta, canceled=canceled,
                                       temperature=0.2)
             USAGE.add("drafts", usage)
             cards = AI.parse_cards(text, s)
@@ -196,9 +196,9 @@ class AISourcesMixin:
         messages = [m for m in (args.get("messages") or [])
                     if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()]
 
-        def work(delta, cancelled):
+        def work(delta, canceled):
             text, usage = AI.complete(provider, key, model, system, messages, base_url=s["base_url"],
-                                      on_delta=delta, cancelled=cancelled, temperature=0.3)
+                                      on_delta=delta, canceled=canceled, temperature=0.3)
             USAGE.add("chats", usage)
             return {"text": text, "model": model}
 
@@ -216,12 +216,12 @@ class AISourcesMixin:
             for s in out:
                 ch = s.get("chapter")
                 if ch:
-                    nb = REGISTRY.chapter_neighbours(s["folder"], s["source"]["id"], ch["key"])
+                    nb = REGISTRY.chapter_neighbors(s["folder"], s["source"]["id"], ch["key"])
                     for side in ("prev", "next"):
                         c = nb.get(side)
                         if c:
                             c["paper_title"] = titles.get(c.get("paper_id"))
-                    s["neighbours"] = nb
+                    s["neighbors"] = nb
                 if s["scope"] == "folder" and not ch:
                     entry = next((e for e in REGISTRY.for_folder(s["folder"])
                                   if e["source_id"] == s["source"]["id"]), {})
@@ -240,7 +240,7 @@ class AISourcesMixin:
         try:
             path = args.get("path") or self._pick("Attach a file to this paper")
             if not path:
-                return {"cancelled": True}
+                return {"canceled": True}
             item = REGISTRY.add_file(path)
             REGISTRY.attach_to_paper(args.get("paper_id") or "", item["id"])
             return {"ok": True, "source": REGISTRY._public(item)}
@@ -278,7 +278,7 @@ class AISourcesMixin:
         try:
             path = self._pick(args.get("caption") or "Choose a file")
             if not path:
-                return {"cancelled": True}
+                return {"canceled": True}
             out = {"path": path, "name": os.path.basename(path)}
             if path.lower().endswith(".pdf"):
                 out["url"] = self._pdf_server().register(path)
@@ -298,7 +298,7 @@ class AISourcesMixin:
         try:
             path = args.get("path") or self._pick("Attach a file to this folder")
             if not path:
-                return {"cancelled": True}
+                return {"canceled": True}
             item = REGISTRY.add_file(path)
             REGISTRY.attach_to_folder(args.get("folder") or "", item["id"], [], {})
             return {"ok": True, "source": REGISTRY._public(item)}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
-import { GripVertical, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
+import { GripVertical, ExternalLink, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
 import { openInBrowser, pasteImage, getClipboardText } from '../bridge'
 import WeakSpotHover from './WeakSpotHover'
 import DraftGroup from './DraftGroup'
@@ -17,7 +17,6 @@ import {
   BASIC_CARD_RE,
   toggleTagSegment,
   findTextReplacement,
-  isInsideCodeFence,
 } from '../blockFormat'
 
 const TABLE_SIZE_LABELS = { s: '40%', m: '60%', l: '80%', full: 'full width' }
@@ -28,7 +27,21 @@ import {
   mergeEditedWithApSuffix,
   ensureApBlockId,
   buildApUrl,
+  reindentKeepingAnchor,
 } from '../docLinks'
+
+import {
+  ARROW,
+  ARROWS_RE,
+  codeLineMap,
+  splitCodeLine,
+  codePrefix,
+  outlineIndent,
+  highlightLines,
+  isFenceOpenLine,
+  isFenceCloseLine,
+  arrowsFromSpaces,
+} from '../codeBlocks'
 
 // Shown next to "Paste blocks" and used in its error message.
 const IS_MAC = typeof navigator !== 'undefined' &&
@@ -450,9 +463,9 @@ function BlockContextMenu({
 }) {
   const multi = selectionCount > 1
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     const onDocPointer = (e) => {
-      if (cancelled) return
+      if (canceled) return
       if (menuRef.current && !menuRef.current.contains(e.target)) onClose()
     }
     const onKey = (e) => {
@@ -462,13 +475,13 @@ function BlockContextMenu({
       }
     }
     const raf = requestAnimationFrame(() => {
-      if (!cancelled) {
+      if (!canceled) {
         document.addEventListener('pointerdown', onDocPointer, true)
         document.addEventListener('keydown', onKey, true)
       }
     })
     return () => {
-      cancelled = true
+      canceled = true
       cancelAnimationFrame(raf)
       document.removeEventListener('pointerdown', onDocPointer, true)
       document.removeEventListener('keydown', onKey, true)
@@ -581,6 +594,55 @@ function BlockContextMenu({
 }
 
 // ─── Single Block Component ─────────────────────────
+// ─── Code blocks ───────────────────────────────────
+// A ``` block is drawn as one panel across its rows. With the caret outside
+// it the fences fold into a header (language, Copy) and a bottom edge; with
+// the caret inside, the fences show as text so the language or the end of
+// the block can be edited. Code lines never show their ➵: each one is drawn
+// as an indent step of the language (codeBlocks.js).
+function copyToClipboard(text) {
+  const fallback = () => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy') } catch { /* nothing else to try */ }
+    ta.remove()
+  }
+  try {
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(fallback)
+    else fallback()
+  } catch { fallback() }
+}
+
+function CodeRow({ type, info, active, text, depth }) {
+  const [copied, setCopied] = useState(false)
+  if (type === 'code-open') {
+    if (active) return <div className="code-fence-text">{text}</div>
+    return (
+      <div className="code-head">
+        <span className="code-head-label">{info.label || 'Code'}</span>
+        <button type="button" className="code-copy" title="Copy the code"
+          onClick={(e) => {
+            e.stopPropagation()
+            copyToClipboard(info.copyText || '')
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1200)
+          }}>
+          {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    )
+  }
+  if (type === 'code-close') return active ? <div className="code-fence-text">{text}</div> : <div className="code-foot" />
+  return (
+    <div className="code-line" style={{ paddingLeft: `calc(8px + ${depth * info.step}ch)` }}
+      dangerouslySetInnerHTML={{ __html: info.html || '\u200b' }} />
+  )
+}
+
 function syncBlockTextareaHeight(el) {
   if (!el || el.tagName !== 'TEXTAREA') return
   el.style.height = 'auto'
@@ -620,6 +682,8 @@ const Block = React.memo(function Block({
   onZettelSearch,
   weakStatus = null,
   weakLapses = 0,
+  codeInfo = null,
+  codeActive = false,
 }) {
   const inputRef = useRef(null)
 
@@ -649,14 +713,18 @@ const Block = React.memo(function Block({
 
   const rawDisplay = stripApBlockId(line)
   const spacesMatch = type !== 'table' ? rawDisplay.match(/^[ \t]*/) : null
-  const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+  const outlineSpaces = spacesMatch ? spacesMatch[0] : ''
+  // A code line hides its run of ➵ along with the outline's spaces: the
+  // textarea holds only the code, drawn at the indent the ➵ stand for.
+  const codeSplit = type === 'code-line' && codeInfo ? splitCodeLine(rawDisplay, codeInfo.fenceIndent) : null
+  const leadingSpaces = codeSplit ? codeSplit.prefix : outlineSpaces
   const actualText = type !== 'table' ? rawDisplay.slice(leadingSpaces.length) : rawDisplay
-  const indentLevel = Math.floor(leadingSpaces.replace(/\t/g, '    ').length / 4)
+  const indentLevel = Math.floor((codeSplit ? codeInfo.fenceIndent : outlineSpaces).replace(/\t/g, '    ').length / 4)
   const indentPx = indentLevel * 24
 
   return (
     <div
-      className={`block-row ${isDragOver ? 'drag-over' : ''} ${isSelected && !focused ? 'block-row-selected' : ''} ${isRevealed ? 'block-row-revealed' : ''} ${weakStatus ? `block-row-${weakStatus}` : ''}`}
+      className={`block-row ${isDragOver ? 'drag-over' : ''} ${isSelected && !focused ? 'block-row-selected' : ''} ${isRevealed ? 'block-row-revealed' : ''} ${weakStatus ? `block-row-${weakStatus}` : ''} ${codeInfo ? `block-row-code block-row-${type}${codeActive ? ' block-row-code-active' : ''}` : ''}`}
       style={{ marginLeft: indentPx }}
       data-block-id={blockId}
       draggable={!focused && !dragDisabled}
@@ -722,15 +790,25 @@ const Block = React.memo(function Block({
         {focused ? (
           <textarea
             ref={inputRef}
-            className="block-input block-input-textarea"
+            className={`block-input block-input-textarea${codeInfo ? ' block-input-code' : ''}`}
+            style={codeSplit ? { paddingLeft: `calc(8px + ${codeSplit.depth * codeInfo.step}ch)` } : undefined}
             value={actualText}
             rows={1}
             wrap="soft"
-            spellCheck={true}
+            spellCheck={!codeInfo}
             autoComplete="off"
             onChange={e => {
               const val = type !== 'table' ? leadingSpaces + e.target.value : e.target.value
               onChange(blockId, mergeEditedWithApSuffix(val, line))
+              if (codeSplit) {
+                // A ➵ typed or pasted at the start turns into indentation and
+                // leaves the textarea; keep the caret on the same character.
+                const absorbed = (e.target.value.match(ARROWS_RE) || [''])[0].length
+                if (absorbed) {
+                  const at = Math.max(0, e.target.selectionStart - absorbed)
+                  scheduleRestoreSelection(inputRef, at, at)
+                }
+              }
               if (onZettelSearch) {
                 const selStart = e.target.selectionStart
                 const textBefore = e.target.value.slice(0, selStart)
@@ -746,6 +824,8 @@ const Block = React.memo(function Block({
             onInput={(e) => syncBlockTextareaHeight(e.target)}
             onKeyDown={e => onKeyDown(e, blockId)}
           />
+        ) : codeInfo ? (
+          <CodeRow type={type} info={codeInfo} active={codeActive} text={actualText} depth={codeSplit ? codeSplit.depth : 0} />
         ) : (
           <RenderBlock line={actualText} type={type} mediaDir={mediaDir} onResize={(w) => onImageResize(blockId, w)} onTableResize={(sz) => onTableResize?.(blockId, sz)} noteId={noteId} weakStatus={weakStatus} weakLapses={weakLapses} />
         )}
@@ -756,15 +836,39 @@ const Block = React.memo(function Block({
 
 
 function getBlockRangeAndIndent(lines, idx) {
+  // Any line of a ``` block stands for the whole block (and the cards under
+  // its closing fence): moving one fence or code line alone would break it.
+  const code = codeLineMap(lines).get(idx)
+  if (code) idx = code.open
   const spaces = (lines[idx].match(/^[ \t]*/) || [''])[0]
   const indent = Math.floor(spaces.replace(/\t/g, '    ').length / 4)
-  let end = idx
+  let end = code ? code.close : idx
   while (end + 1 < lines.length) {
     const nextIndent = Math.floor((lines[end + 1].match(/^[ \t]*/) || [''])[0].replace(/\t/g, '    ').length / 4)
     if (nextIndent > indent) end++
     else break
   }
   return { start: idx, end, indent }
+}
+
+/**
+ * Where accepted draft cards go, given the line they were drafted at.
+ *
+ * A blank line is filled in place: it is usually the empty line you opened
+ * for the cards. Any other line gets them after it and everything nested
+ * under it, so they don't adopt its children. Either way the cards take THAT
+ * line's indent (none under a heading) — not the indent of its last nested
+ * line, which used to drop them one or more levels too deep.
+ *
+ * `after` is the line the cards (and the draft box) sit below; when filling,
+ * it is the blank line itself.
+ */
+function draftPlacement(lines, at) {
+  const display = stripApBlockId(lines[at] || '')
+  const indent = (display.match(/^[ \t]*/) || [''])[0]
+  if (!display.trim()) return { fill: true, after: at, indent }
+  const isHeading = /^\s*#{1,6}\s/.test(display)
+  return { fill: false, after: getBlockRangeAndIndent(lines, at).end, indent: isHeading ? '' : indent }
 }
 
 // ─── Block Editor ───────────────────────────────────
@@ -774,40 +878,98 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   const [selectionAnchor, setSelectionAnchor] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
   const [blockMenu, setBlockMenu] = useState(null)
-  // ── Collapse-by-default: compute which keys should start collapsed ──────────
+  // ── Stable per-line identity for React keys ──────────────────────────
+  // Keying blocks by array position means that inserting or deleting a line
+  // hands every block below it a DIFFERENT line's text, forcing them all to
+  // re-render (and re-parse their HTML). Instead, give each line an id that
+  // survives edits above it: match the unchanged prefix and suffix of the
+  // document against the previous version, and reuse ids positionally in the
+  // changed middle. Typing reuses the id for the edited line (so the focused
+  // textarea is never remounted and never loses the cursor), and pressing
+  // Enter reuses every id below the insertion point.
+  const lineIdsRef = useRef({ lines: [], ids: [] })
+  const nextLineIdRef = useRef(1)
+  const lineIds = useMemo(() => {
+    const newLines = content.split('\n')
+    const { lines: oldLines, ids: oldIds } = lineIdsRef.current
+    const n = newLines.length
+    const m = oldLines.length
+    // Longest common prefix, then longest common suffix of what remains.
+    // Bounding the suffix by (n - p) and (m - p) keeps the two regions from
+    // overlapping, which guarantees no id is reused twice.
+    let p = 0
+    while (p < n && p < m && newLines[p] === oldLines[p]) p++
+    let suf = 0
+    while (suf < (n - p) && suf < (m - p) && newLines[n - 1 - suf] === oldLines[m - 1 - suf]) suf++
+    const ids = new Array(n)
+    for (let i = 0; i < p; i++) ids[i] = oldIds[i]
+    for (let i = 0; i < suf; i++) ids[n - 1 - i] = oldIds[m - 1 - i]
+    const newMid = n - p - suf
+    const oldMid = m - p - suf
+    // In the changed middle, a line whose text is unchanged keeps its own id
+    // first, so a block that is dragged or moved takes its id -- and with it
+    // its folded state -- along. Whatever is left is matched by position, so
+    // the line being typed in keeps its id.
+    const byText = new Map()
+    for (let k = 0; k < oldMid; k++) {
+      const t = oldLines[p + k]
+      if (!byText.has(t)) byText.set(t, [])
+      byText.get(t).push(oldIds[p + k])
+    }
+    const used = new Set()
+    for (let i = 0; i < newMid; i++) {
+      const q = byText.get(newLines[p + i])
+      if (q && q.length) { ids[p + i] = q.shift(); used.add(ids[p + i]) }
+    }
+    for (let i = 0; i < newMid; i++) {
+      if (ids[p + i]) continue
+      const pos = i < oldMid ? oldIds[p + i] : null
+      ids[p + i] = pos && !used.has(pos) ? pos : 'L' + (nextLineIdRef.current++)
+      used.add(ids[p + i])
+    }
+    lineIdsRef.current = { lines: newLines, ids }
+    return ids
+  }, [content])
+
+  // ── Collapse-by-default: compute which lines should start collapsed ─────────
+  // Folding is remembered per LINE (its id, above), not per line text. Keyed
+  // by "indent:text", every closing ``` fence at the same level -- and any two
+  // identical lines, like two "Treatment" bullets -- shared one fold state,
+  // so opening one opened them all.
+  //
   // A block is auto-collapsed on mount if it has at least one child (i.e. the
-  // next line is indented deeper).  We only re-run this initialiser when the
+  // next line is indented deeper).  We only re-run this initializer when the
   // *identity* of the content prop changes (new document loaded), not on every
   // keystroke — that's why we track a stable "document id" via useRef so the
   // reset effect below can distinguish a real document swap from an edit.
   const computeInitialCollapsed = useCallback((rawContent) => {
     const lines = rawContent.split('\n')
+    const ids = lineIdsRef.current.ids
     const initial = new Set()
     for (let i = 0; i < lines.length - 1; i++) {
       const line = lines[i]
       const rawDisplay = stripApBlockId(line)
       const spacesMatch = rawDisplay.match(/^[ \t]*/)
       const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
-      const actualText = rawDisplay.slice(leadingSpaces.length)
       const indentLevel = Math.floor(leadingSpaces.replace(/\t/g, '    ').length / 4)
       const nextLine = lines[i + 1]
       const nextSpacesMatch = stripApBlockId(nextLine).match(/^[ \t]*/)
       const nextLeading = nextSpacesMatch ? nextSpacesMatch[0] : ''
       const nextIndent = Math.floor(nextLeading.replace(/\t/g, '    ').length / 4)
-      if (nextIndent > indentLevel) {
-        initial.add(`${indentLevel}:${actualText.trim()}`)
+      if (nextIndent > indentLevel && ids[i]) {
+        initial.add(ids[i])
       }
     }
     return initial
   }, [])
 
-  const [collapsedKeys, setCollapsedKeys] = useState(() => computeInitialCollapsed(content))
+  const [collapsedIds, setCollapsedIds] = useState(() => computeInitialCollapsed(content))
 
-  // Collapse-by-default is applied ONCE, by the useState initialiser above.
+  // Collapse-by-default is applied ONCE, by the useState initializer above.
   //
   // There is deliberately no effect here that re-applies it when `content`
   // changes. App renders this component with key={paper.id}, so opening a
-  // different paper unmounts and remounts it and the initialiser runs again
+  // different paper unmounts and remounts it and the initializer runs again
   // against the new document -- which is the only moment collapse-by-default
   // should ever be applied. Every change that keeps the same paper open is an
   // edit (typing, undo/redo, pasting, the anchors Generate writes back), and an
@@ -874,7 +1036,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         // Passing an empty Set clears all collapsed states globally
-        setCollapsedKeys(new Set())
+        setCollapsedIds(new Set())
         return
       }
 
@@ -886,7 +1048,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         e.preventDefault()
         // Focus would otherwise be stranded inside a row that just got hidden.
         setFocusedIndex(null)
-        setCollapsedKeys(computeInitialCollapsed(contentRef.current))
+        setCollapsedIds(computeInitialCollapsed(contentRef.current))
       }
     }
 
@@ -898,13 +1060,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     }
   }, [computeInitialCollapsed])
 
-  const toggleCollapse = useCallback((e, key) => {
+  const toggleCollapse = useCallback((e, id) => {
     e.stopPropagation()
     setFocusedIndex(null)
-    setCollapsedKeys((prev) => {
+    setCollapsedIds((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }, [])
@@ -915,40 +1077,6 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   // every card line in the document. See crossLink.js for details.
   const cardRefIndex = useMemo(() => buildCardRefIndex(cardRefs), [cardRefs])
 
-  // ── Stable per-line identity for React keys ──────────────────────────
-  // Keying blocks by array position means that inserting or deleting a line
-  // hands every block below it a DIFFERENT line's text, forcing them all to
-  // re-render (and re-parse their HTML). Instead, give each line an id that
-  // survives edits above it: match the unchanged prefix and suffix of the
-  // document against the previous version, and reuse ids positionally in the
-  // changed middle. Typing reuses the id for the edited line (so the focused
-  // textarea is never remounted and never loses the cursor), and pressing
-  // Enter reuses every id below the insertion point.
-  const lineIdsRef = useRef({ lines: [], ids: [] })
-  const nextLineIdRef = useRef(1)
-  const lineIds = useMemo(() => {
-    const newLines = content.split('\n')
-    const { lines: oldLines, ids: oldIds } = lineIdsRef.current
-    const n = newLines.length
-    const m = oldLines.length
-    // Longest common prefix, then longest common suffix of what remains.
-    // Bounding the suffix by (n - p) and (m - p) keeps the two regions from
-    // overlapping, which guarantees no id is reused twice.
-    let p = 0
-    while (p < n && p < m && newLines[p] === oldLines[p]) p++
-    let suf = 0
-    while (suf < (n - p) && suf < (m - p) && newLines[n - 1 - suf] === oldLines[m - 1 - suf]) suf++
-    const ids = new Array(n)
-    for (let i = 0; i < p; i++) ids[i] = oldIds[i]
-    for (let i = 0; i < suf; i++) ids[n - 1 - i] = oldIds[m - 1 - i]
-    const newMid = n - p - suf
-    const oldMid = m - p - suf
-    for (let i = 0; i < newMid; i++) {
-      ids[p + i] = i < oldMid ? oldIds[p + i] : 'L' + (nextLineIdRef.current++)
-    }
-    lineIdsRef.current = { lines: newLines, ids }
-    return ids
-  }, [content])
 
   // id -> current line index. Callbacks below take a stable blockId and look
   // the index up here at event time, so they never need the index as a prop
@@ -994,6 +1122,23 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       return { line, type, key, indentLevel, actualText, noteId, id: lineIds[i] }
     })
 
+    // ``` blocks: their lines are code, not cards or headings, whatever they
+    // look like. Highlight each block as a whole (a comment or string can run
+    // across lines) and hand every row its own slice.
+    for (const blk of new Set(codeLineMap(lines).values())) {
+      const fenceIndent = outlineIndent(stripApBlockId(lines[blk.open]))
+      const parts = []
+      for (let i = blk.open + 1; i < blk.close; i++) parts.push(splitCodeLine(stripApBlockId(lines[i]), fenceIndent))
+      const html = highlightLines(parts.map((p) => p.text).join('\n'), blk.lang)
+      const base = { open: blk.open, close: blk.close, lang: blk.lang, label: blk.label, step: blk.step, fenceIndent }
+      const copyText = parts.map((p) => ' '.repeat(p.depth * blk.step) + p.text).join('\n')
+      parsed[blk.open] = { ...parsed[blk.open], type: 'code-open', noteId: null, code: { ...base, copyText } }
+      parsed[blk.close] = { ...parsed[blk.close], type: 'code-close', noteId: null, code: base }
+      for (let i = blk.open + 1; i < blk.close; i++) {
+        parsed[i] = { ...parsed[i], type: 'code-line', noteId: null, code: { ...base, html: html[i - blk.open - 1] } }
+      }
+    }
+
     const hiddenIndices = new Set()
     for (let i = 0; i < parsed.length; i++) {
         const current = parsed[i]
@@ -1007,7 +1152,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
         }
         current.hasChildren = hasChildren
 
-        if (hasChildren && collapsedKeys.has(current.key)) {
+        if (hasChildren && collapsedIds.has(current.id)) {
             for (let j = i + 1; j < parsed.length; j++) {
                 if (parsed[j].indentLevel <= current.indentLevel) break
                 hiddenIndices.add(j)
@@ -1018,7 +1163,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     parsed.forEach((b, i) => { b.isHidden = hiddenIndices.has(i) })
     
     return parsed
-  }, [content, collapsedKeys, cardRefIndex, lineIds])
+  }, [content, collapsedIds, cardRefIndex, lineIds])
 
   // Update card counts
   useEffect(() => {
@@ -1071,6 +1216,13 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       lines.splice(b.start, b.end - b.start + 1, ...newValue.split('\n'))
     } else {
       lines[index] = newValue
+      // Typing the closing ``` of a block whose closing fence Enter added
+      // for you leaves that one behind, unpaired, right below: drop it.
+      if (isFenceCloseLine(newValue) && isFenceCloseLine(lines[index + 1] ?? '')) {
+        const map = codeLineMap(lines)
+        const blk = map.get(index)
+        if (blk && blk.close === index && !map.has(index + 1)) lines.splice(index + 1, 1)
+      }
     }
     onChange(lines.join('\n'))
   }, [onChange])
@@ -1171,7 +1323,15 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     const currentApSuf = extractApBlockSuffix(currentLine)
     const currentDisplay = stripApBlockId(currentLine)
     const currentSpacesMatch = currentDisplay.match(/^[ \t]*/)
-    const leadingSpaces = currentSpacesMatch ? currentSpacesMatch[0] : ''
+    // In a ``` block a code line's hidden prefix is the outline's spaces plus
+    // its run of ➵, exactly as Block draws it, so the generic paths below
+    // (Enter, text replacements) keep the code's indent without knowing it.
+    const codeMap = codeLineMap(lines)
+    const codeBlk = codeMap.get(index) || null
+    const codeRole = codeBlk ? (index === codeBlk.open ? 'open' : index === codeBlk.close ? 'close' : 'line') : null
+    const codeFi = codeBlk ? outlineIndent(stripApBlockId(lines[codeBlk.open])) : ''
+    const codeSplitK = codeRole === 'line' ? splitCodeLine(currentDisplay, codeFi) : null
+    const leadingSpaces = codeSplitK ? codeSplitK.prefix : (currentSpacesMatch ? currentSpacesMatch[0] : '')
     const actualText = currentDisplay.slice(leadingSpaces.length)
 
     if (zettelSearch && zettelSearch.index === index) {
@@ -1227,13 +1387,130 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     // ── macOS Text Replacements ──────────────────────
     // Space or Return right after a shortcut swaps in its phrase, as macOS
     // does in its own apps. Plain keys only (Shift is fine with Space), no
-    // input-method composition, nothing selected, and never in a table or a
-    // fenced code block. Rules for what counts as a shortcut: findTextReplacement.
+    // input-method composition, nothing selected. Rules for what counts as a
+    // shortcut: findTextReplacement.
     const isSpaceKey = e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey
     const isReturnKey = e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
     const replacements = textReplacementsRef.current
-    if ((isSpaceKey || isReturnKey) && replacements && !inTable && !e.nativeEvent?.isComposing
-        && e.target.selectionStart === e.target.selectionEnd && !isInsideCodeFence(lines, index)) {
+    const canReplace = (isSpaceKey || isReturnKey) && replacements && !e.nativeEvent?.isComposing
+      && e.target.selectionStart === e.target.selectionEnd
+    // Set when a shortcut is expanded in a table on Return, so the table's own
+    // Return below works on the expanded text rather than the stale textarea.
+    let tableText = null
+    let tableCaret = null
+
+    // A table's textarea holds every row joined by newlines, so the shortcut
+    // is looked for in the caret's row of that text, not in lines[index].
+    if (canReplace && inTable) {
+      const full = e.target.value ?? ''
+      const caret = e.target.selectionStart
+      const rowStart = full.lastIndexOf('\n', caret - 1) + 1
+      const hit = findTextReplacement(full.slice(rowStart, caret), caret - rowStart, replacements)
+      if (hit) {
+        e.preventDefault()
+        onHistoryCheckpointRef.current?.()
+        // A line break would split the row and break the table, so a phrase
+        // written on several lines goes in as one.
+        const insert = hit.phrase.replace(/\s*\n\s*/g, ' ') + (isSpaceKey ? ' ' : '')
+        const at = rowStart + hit.start
+        tableText = full.slice(0, at) + insert + full.slice(caret)
+        tableCaret = at + insert.length
+        lines.splice(tableBounds.start, tableBounds.end - tableBounds.start + 1, ...tableText.split('\n'))
+        if (isSpaceKey) {
+          onChange(lines.join('\n'))
+          scheduleRestoreSelection(activeBlockInputRef, tableCaret, tableCaret)
+          return
+        }
+      }
+    }
+
+    // ── Code blocks ──────────────────────────────────
+    if (codeRole === 'line') {
+      const selS = e.target.selectionStart
+      const selE = e.target.selectionEnd
+      const withDepth = (d) => codePrefix(codeFi, Math.max(0, d)) + actualText + currentApSuf
+
+      // The ➵ text replacement at the start of the code indents the line; no
+      // ➵ is ever left showing.
+      if (canReplace) {
+        const hit = findTextReplacement(actualText, selS, replacements)
+        if (hit && hit.start === 0 && new RegExp(`^(?:${ARROW}\\s*)+$`).test(hit.phrase)) {
+          e.preventDefault()
+          onHistoryCheckpointRef.current?.()
+          const add = (hit.phrase.match(new RegExp(ARROW, 'g')) || []).length
+          const rest = actualText.slice(hit.end).replace(/^[ \t]+/, '')
+          lines[index] = codePrefix(codeFi, codeSplitK.depth + add) + rest + currentApSuf
+          onChange(lines.join('\n'))
+          scheduleRestoreSelection(activeBlockInputRef, 0, 0)
+          return
+        }
+      }
+
+      // Tab / Shift+Tab indent the code, one step of its language.
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        if (e.shiftKey && codeSplitK.depth === 0) return
+        lines[index] = withDepth(codeSplitK.depth + (e.shiftKey ? -1 : 1))
+        onChange(lines.join('\n'))
+        scheduleRestoreSelection(activeBlockInputRef, selS, selE)
+        return
+      }
+
+      if (e.key === 'Backspace' && selS === 0 && selE === 0) {
+        e.preventDefault()
+        // Out one step, as in a code editor.
+        if (codeSplitK.depth > 0) {
+          lines[index] = withDepth(codeSplitK.depth - 1)
+          onChange(lines.join('\n'))
+          scheduleRestoreSelection(activeBlockInputRef, 0, 0)
+          return
+        }
+        // Never join code onto the opening fence; an empty first line just goes.
+        if (index - 1 === codeBlk.open) {
+          if (!actualText) {
+            lines.splice(index, 1)
+            onChange(lines.join('\n'))
+            setFocusedIndex(index - 1)
+          }
+          return
+        }
+        // Join onto the code line above.
+        const prevDisplay = stripApBlockId(lines[index - 1])
+        const prevSuf = extractApBlockSuffix(lines[index - 1])
+        const joinAt = splitCodeLine(prevDisplay, codeFi).text.length
+        lines[index - 1] = prevDisplay + actualText + prevSuf
+        lines.splice(index, 1)
+        onChange(lines.join('\n'))
+        setFocusedIndex(index - 1)
+        scheduleRestoreSelection(activeBlockInputRef, joinAt, joinAt)
+        return
+      }
+    }
+
+    if (codeRole === 'open' || codeRole === 'close') {
+      // Backspace at the start of a fence would join it onto the line above
+      // or pull it out of line with its code.
+      if (e.key === 'Backspace' && e.target.selectionStart === 0 && e.target.selectionEnd === 0) {
+        e.preventDefault()
+        return
+      }
+      // Tab on a fence moves the whole block, and the cards under it, one
+      // outline level -- never a fence on its own.
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        const { start, end } = getBlockRangeAndIndent(lines, index)
+        const levelOf = (l) => Math.floor(outlineIndent(stripApBlockId(l)).replace(/\t/g, '    ').length / 4)
+        const fenceLevel = levelOf(lines[start])
+        if (e.shiftKey ? fenceLevel === 0 : fenceLevel >= (start > 0 ? levelOf(lines[start - 1]) : -1) + 1) return
+        for (let i = start; i <= end; i++) {
+          lines[i] = reindentKeepingAnchor(lines[i], (l) => (e.shiftKey ? l.replace(/^( {1,4}|\t)/, '') : '    ' + l))
+        }
+        onChange(lines.join('\n'))
+        return
+      }
+    }
+
+    if (canReplace && !inTable) {
       const hit = findTextReplacement(actualText, e.target.selectionStart, replacements)
       if (hit) {
         e.preventDefault()
@@ -1269,8 +1546,8 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
 
     if (inTable && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      const full = e.target.value ?? ''
-      const caret = e.target.selectionStart ?? full.length
+      const full = tableText ?? e.target.value ?? ''
+      const caret = tableCaret ?? e.target.selectionStart ?? full.length
       // Everything added here inherits the table's own indentation. The
       // generic Enter path below does this via `leadingSpaces + after`; a
       // table has no single "current line" to take it from, so read it off
@@ -1311,6 +1588,30 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       return
     }
 
+    // Enter at the end of a ``` line that nothing closes yet: open the block
+    // and close it, with the caret on its first code line.
+    if (!codeRole && e.key === 'Enter' && !e.shiftKey && isFenceOpenLine(currentDisplay)
+        && e.target.selectionStart === actualText.length) {
+      e.preventDefault()
+      lines.splice(index + 1, 0, leadingSpaces, leadingSpaces + '```')
+      onChange(lines.join('\n'))
+      setTimeout(() => setFocusedIndex(index + 1), 10)
+      return
+    }
+
+    // Backspace at the start of the line under a block would join it onto
+    // the closing fence. An empty line just goes.
+    if (!codeRole && e.key === 'Backspace' && e.target.selectionStart === 0 && e.target.selectionEnd === 0
+        && !leadingSpaces.length && index > 0 && codeMap.has(index - 1)) {
+      e.preventDefault()
+      if (!actualText) {
+        lines.splice(index, 1)
+        onChange(lines.join('\n'))
+        setFocusedIndex(index - 1)
+      }
+      return
+    }
+
     if (e.key === 'Enter') {
       if (e.shiftKey) return
       e.preventDefault()
@@ -1330,7 +1631,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     if (e.key === 'Backspace' && e.target.selectionStart === 0 && e.target.selectionEnd === 0) {
       if (leadingSpaces.length > 0) {
         e.preventDefault()
-        lines[index] = currentApSuf ? (lines[index].replace(/^( {1,4}|\t)/, '')).replace(/\s+$/, '') + currentApSuf : lines[index].replace(/^( {1,4}|\t)/, '')
+        lines[index] = reindentKeepingAnchor(lines[index], (l) => l.replace(/^( {1,4}|\t)/, ''))
         onChange(lines.join('\n'))
         return
       }
@@ -1386,7 +1687,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       const maxAllowed = prevIndent + 1
       
       // A line with text carries its children: it and everything nested under
-      // it move together, which is what makes Tab useful for reorganising.
+      // it move together, which is what makes Tab useful for reorganizing.
       //
       // A blank line has no children. It is not the parent of what follows —
       // it just happens to sit above it, usually at indent 0, which made the
@@ -1411,16 +1712,10 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       
       if (e.shiftKey) {
         if (currentIndent === 0) return
-        toIndent.forEach(i => {
-           const iApSuf = extractApBlockSuffix(lines[i])
-           lines[i] = iApSuf ? (lines[i].replace(/^( {1,4}|\t)/, '')).replace(/\s+$/, '') + iApSuf : lines[i].replace(/^( {1,4}|\t)/, '')
-        })
+        toIndent.forEach(i => { lines[i] = reindentKeepingAnchor(lines[i], (l) => l.replace(/^( {1,4}|\t)/, '')) })
       } else {
         if (currentIndent >= maxAllowed) return
-        toIndent.forEach(i => {
-           const iApSuf = extractApBlockSuffix(lines[i])
-           lines[i] = iApSuf ? ('    ' + lines[i]).replace(/\s+$/, '') + iApSuf : '    ' + lines[i]
-        })
+        toIndent.forEach(i => { lines[i] = reindentKeepingAnchor(lines[i], (l) => '    ' + l) })
       }
       onChange(lines.join('\n'))
     }
@@ -1505,7 +1800,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     let unfolding = false
     if (expandAll) {
       unfolding = all.some((b) => b.isHidden)
-      setCollapsedKeys(new Set())
+      setCollapsedIds(new Set())
     } else if (all[index].isHidden) {
       // Walk up collecting each enclosing line (the nearest one above with a
       // smaller indent), the same parent rule the folding itself uses.
@@ -1513,12 +1808,12 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       let indent = all[index].indentLevel
       for (let j = index - 1; j >= 0 && indent > 0; j--) {
         if (all[j].indentLevel < indent) {
-          parents.push(all[j].key)
+          parents.push(all[j].id)
           indent = all[j].indentLevel
         }
       }
       unfolding = true
-      setCollapsedKeys((prev) => {
+      setCollapsedIds((prev) => {
         const next = new Set(prev)
         parents.forEach((k) => next.delete(k))
         return next
@@ -1581,12 +1876,19 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       const t = getBlockType(lines[i])
       if ((t === 'basic' || t === 'reversible' || t === 'cloze') && !idx.includes(i)) existing.push(stripApBlockId(lines[i]).trim())
     }
-    const end = getBlockRangeAndIndent(lines, last).end
+    // Drafts land after the shallowest line drafted from (the last one, if
+    // several share that depth), so a selection of a line and its children
+    // gets cards at the line's level, and a heading's section gets them after
+    // the section. Blank lines don't count: an empty line reads as indent 0.
+    const indentOf = (l) => (stripApBlockId(l).match(/^[ \t]*/) || [''])[0].replace(/\t/g, '    ').length
+    const filled = idx.filter((i) => stripApBlockId(lines[i]).trim())
+    const minIndent = Math.min(...filled.map((i) => indentOf(lines[i])))
+    const anchorLine = [...filled].reverse().find((i) => indentOf(lines[i]) === minIndent) ?? last
     return {
       text,
       headingPath: path.map((p) => p.t),
       existing,
-      anchorId: lineIdsRef.current.ids[end],
+      anchorId: lineIdsRef.current.ids[anchorLine],
       label: first === last ? `line ${first + 1}` : `lines ${first + 1}–${last + 1}`,
     }
   }, [])
@@ -1620,12 +1922,12 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     const lines = contentRef.current.split('\n')
     let at = idToIndexRef.current.get(draftAnchorId)
     if (at === undefined) at = lines.length - 1
-    const end = getBlockRangeAndIndent(lines, at).end
-    const indent = (stripApBlockId(lines[at] || '').match(/^[ \t]*/) || [''])[0]
-    const isHeading = /^\s*#{1,6}\s/.test(stripApBlockId(lines[at] || ''))
-    const prefix = isHeading ? '' : indent
-    const inserted = items.map((it) => {
-      const text = prefix + (overrides[it.id] ?? it.text)
+    const place = draftPlacement(lines, at)
+    // A blank line being filled may be a link target: its anchor moves onto
+    // the card that replaces it rather than being lost.
+    const fillSuf = place.fill ? extractApBlockSuffix(lines[at]) : ''
+    const inserted = items.map((it, k) => {
+      const text = place.indent + (overrides[it.id] ?? it.text) + (k === 0 ? fillSuf : '')
       // Lines drafted from an attached source get an anchor, so App can
       // remember which page they came from ("Go to source").
       if (group.source) {
@@ -1634,13 +1936,19 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       }
       return { id: it.id, line: text, blockId: null, text: overrides[it.id] ?? it.text }
     })
-    lines.splice(end + 1, 0, ...inserted.map((x) => x.line))
-    pendingDraftAnchorRef.current = { key: group.family, index: end + inserted.length }
+    const first = place.fill ? at : place.after + 1
+    lines.splice(first, place.fill ? 1 : 0, ...inserted.map((x) => x.line))
+    pendingDraftAnchorRef.current = { key: group.family, index: first + inserted.length - 1 }
     onChange(lines.join('\n'))
     onDraftAccept?.(inserted)
   }, [draftGroup, draftAnchorId, onChange, onDraftAccept])
 
   const draftAnchorIndex = draftGroup ? idToIndex.get(draftAnchorId) : undefined
+  // The draft box sits where accepted cards will land.
+  const draftBoxIndex = useMemo(
+    () => (draftAnchorIndex === undefined ? undefined : draftPlacement(content.split('\n'), draftAnchorIndex).after),
+    [content, draftAnchorIndex],
+  )
 
   const handleBlockContextMenu = useCallback((e, blockId) => {
     const index = idToIndexRef.current.get(blockId)
@@ -1881,7 +2189,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   // ── Shift+Ctrl/Cmd+V — paste as plain text, flattened onto one line ──────
   //
   // This deliberately does NOT wait for a `paste` event. Only a chord the
-  // engine recognises as paste fires one, and on macOS that is Cmd+V alone:
+  // engine recognizes as paste fires one, and on macOS that is Cmd+V alone:
   // Cmd+Shift+V produces a keydown and nothing else. The previous approach
   // armed a flag here and read it back inside the paste handler, which made
   // the whole feature a silent no-op on macOS — the flag armed, no event ever
@@ -1987,7 +2295,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
   }, [blockMenu, closeBlockMenu, pasteLinesBelow])
 
   // Same as Shift+Ctrl/Cmd+V, reached from the menu instead of the keyboard —
-  // so the behaviour stays available whatever a platform does with the chord.
+  // so the behavior stays available whatever a platform does with the chord.
   const pastePlainAtMenu = useCallback(async () => {
     const sel = blockMenu?.selection
     const idx = focusedIndexRef.current
@@ -2179,21 +2487,40 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     const apSuf = extractApBlockSuffix(full)
     const display = stripApBlockId(full)
     const spacesMatch = display.match(/^[ \t]*/)
-    const leadingSpaces = spacesMatch ? spacesMatch[0] : ''
+    const codeBlkP = codeLineMap(lines).get(focusedIndex)
+    const inCodeLine = !!codeBlkP && focusedIndex !== codeBlkP.open && focusedIndex !== codeBlkP.close
+    const codeFiP = inCodeLine ? outlineIndent(stripApBlockId(lines[codeBlkP.open])) : ''
+    const codeSplitP = inCodeLine ? splitCodeLine(display, codeFiP) : null
+    const leadingSpaces = codeSplitP ? codeSplitP.prefix : (spacesMatch ? spacesMatch[0] : '')
     const actualText = display.slice(leadingSpaces.length)
 
     const beforeCursor = actualText.slice(0, cursorPos)
     const afterCursor = actualText.slice(cursorEnd)
 
-    const pastedLines = pastedText.split('\n')
+    // Code pasted into a code line: its leading spaces become ➵, measured in
+    // the pasted code's own step and added to this line's depth. Pasted
+    // Markdown with ``` blocks gets the same conversion inside each block.
+    let pastedLines
+    let linePrefixes
+    if (inCodeLine) {
+      const raw = pastedText.replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/\t/g, ' '.repeat(codeBlkP.step)))
+      const widths = raw.slice(1).filter((l) => l.trim()).map((l) => l.length - l.replace(/^ +/, '').length).filter((w) => w > 0)
+      const step = widths.length ? Math.min(...widths) : codeBlkP.step
+      pastedLines = raw.map((l, k) => (k === 0 ? l : l.replace(/^ +/, '')))
+      linePrefixes = raw.map((l) => codePrefix(codeFiP, codeSplitP.depth + Math.floor((l.length - l.replace(/^ +/, '').length) / step)))
+    } else {
+      pastedLines = arrowsFromSpaces(pastedText.replace(/\r\n?/g, '\n')).split('\n')
+      linePrefixes = pastedLines.map(() => leadingSpaces)
+    }
+    const lastK = pastedLines.length - 1
     // First pasted segment is appended to the current block's text before cursor
     const firstSegment = leadingSpaces + beforeCursor + pastedLines[0]
     // Last pasted segment gets the text that was after the cursor
-    const lastSegment = leadingSpaces + pastedLines[pastedLines.length - 1] + afterCursor
+    const lastSegment = linePrefixes[lastK] + pastedLines[lastK] + afterCursor
 
     const newLines = [
       apSuf ? firstSegment.replace(/\s+$/, '') + apSuf : firstSegment,
-      ...pastedLines.slice(1, -1).map(seg => leadingSpaces + seg),
+      ...pastedLines.slice(1, -1).map((seg, k) => linePrefixes[k + 1] + seg),
       lastSegment,
     ]
 
@@ -2201,7 +2528,9 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     onChange(lines.join('\n'))
     // Move focus to the end of the last inserted segment
     const newFocusIndex = focusedIndex + newLines.length - 1
-    const newCursorPos = leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
+    const newCursorPos = inCodeLine
+      ? pastedLines[lastK].length
+      : leadingSpaces.length + pastedLines[pastedLines.length - 1].length + afterCursor.length
     setTimeout(() => {
       setFocusedIndex(newFocusIndex)
       scheduleRestoreSelection(activeBlockInputRef, newCursorPos, newCursorPos)
@@ -2503,13 +2832,15 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     getAnchorForLine: (index) => {
       const lines = content.split('\n')
       if (index == null || index < 0 || index >= lines.length) return null
-      return { anchorId: lineIdsRef.current.ids[getBlockRangeAndIndent(lines, index).end], headingPath: draftContext([index])?.headingPath || [] }
+      return { anchorId: lineIdsRef.current.ids[index], headingPath: draftContext([index])?.headingPath || [] }
     },
-    // Where text drafted from a source panel selection should land: under the
-    // line being edited, else at the end of the section in view.
+    // Where text drafted from a source panel selection should land: at the
+    // line being edited (see draftPlacement), else at the end of the section
+    // in view. insertLinesAfter puts text after the anchor line's nested
+    // lines, as before.
     getDraftAnchor: (visibleLine) => {
       const lines = content.split('\n')
-      if (focusedIndex != null) return { anchorId: lineIdsRef.current.ids[getBlockRangeAndIndent(lines, focusedIndex).end], headingPath: draftContext([focusedIndex])?.headingPath || [] }
+      if (focusedIndex != null) return { anchorId: lineIdsRef.current.ids[focusedIndex], headingPath: draftContext([focusedIndex])?.headingPath || [] }
       let i = Math.max(0, Math.min(visibleLine ?? 0, lines.length - 1))
       const levelOf = (l) => { const m = stripApBlockId(l).trim().match(/^(#{1,6})\s/); return m ? m[1].length : 0 }
       // A heading with nothing under it before the next heading (a title over
@@ -2568,6 +2899,23 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
     })
     return visible
   }, [weakOnly, blocks, weakOf])
+
+  // The draft box goes under the nearest line that is actually drawn. Under
+  // a line that isn't (folded away, filtered out, or a table row drawn as
+  // part of its table) it would never show. Where the cards land is unchanged.
+  const draftBoxRow = useMemo(() => {
+    if (draftBoxIndex === undefined) return undefined
+    const drawn = (j) => {
+      const b = blocks[j]
+      if (!b) return false
+      if (weakVisible ? !weakVisible.has(j) : b.isHidden) return false
+      const tableRow = b.type === 'table-row' || b.type === 'table-separator'
+      return !tableRow || isTableHeadRow(allLines, j) || focusedIndex === j
+    }
+    let j = draftBoxIndex
+    while (j > 0 && !drawn(j)) j--
+    return j
+  }, [draftBoxIndex, blocks, weakVisible, allLines, focusedIndex])
 
   // ── Weak-spot hover: a weak line's review history, above the line ──
   const [hover, setHover] = useState(null) // { index, rect }
@@ -2634,11 +2982,11 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
       }
     }}>
       {blocks.map((b, i) => {
-        if ((b.type === 'table-row' || b.type === 'table-separator') && !isTableHeadRow(allLines, i)) {
+        if (!b.code && (b.type === 'table-row' || b.type === 'table-separator') && !isTableHeadRow(allLines, i)) {
           if (focusedIndex !== i && b.isHidden) return null // Hide nested table rows strictly
           if (focusedIndex !== i) return null
         }
-        const bounds = findTableBounds(allLines, i)
+        const bounds = b.code ? null : findTableBounds(allLines, i)
         const isTableHead = !!bounds && bounds.start === i
         const displayLine = isTableHead ? allLines.slice(bounds.start, bounds.end + 1).join('\n') : b.line
         const displayType = isTableHead ? 'table' : b.type
@@ -2679,12 +3027,14 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
                 onOpenLink={handleOpenLink}
                 activeBlockInputRef={activeBlockInputRef}
                 hasChildren={b.hasChildren}
-                isCollapsed={collapsedKeys.has(b.key)}
+                isCollapsed={collapsedIds.has(b.id)}
                 onToggleCollapse={toggleCollapse}
-                blockKey={b.key}
+                blockKey={b.id}
                 onZettelSearch={handleZettelSearch}
                 weakStatus={weak?.status || null}
                 weakLapses={weak?.lapses || 0}
+                codeInfo={b.code || null}
+                codeActive={!!b.code && focusedIndex !== null && focusedIndex >= b.code.open && focusedIndex <= b.code.close}
               />
               {zettelSearch?.index === i && (
                  <ZettelkastenSearch 
@@ -2694,7 +3044,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
                  />
               )}
             </div>
-            {draftGroup && draftAnchorIndex === i && (
+            {draftGroup && draftBoxRow === i && (
               <DraftGroup group={draftGroup} settings={settings}
                 onAccept={acceptDrafts} onDiscard={onDraftDiscard} onRedo={onDraftRedo}
                 onEdit={onDraftEdit} onRedraft={onDraftRedraft} onCancel={onDraftCancel} onOpenSettings={onOpenAiSettings} />
@@ -2702,7 +3052,7 @@ const BlockEditor = forwardRef(function BlockEditor({ content, onChange, onCardC
           </div>
         )
       })}
-      {draftGroup && draftAnchorIndex === undefined && (
+      {draftGroup && draftBoxRow === undefined && (
         <DraftGroup group={draftGroup} settings={settings}
           onAccept={acceptDrafts} onDiscard={onDraftDiscard} onRedo={onDraftRedo}
           onEdit={onDraftEdit} onRedraft={onDraftRedraft} onCancel={onDraftCancel} onOpenSettings={onOpenAiSettings} />

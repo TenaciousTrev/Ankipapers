@@ -158,7 +158,7 @@ export default function AskPanel({
     const res = await aiChat({ messages: next.map((m) => ({ role: m.role, content: m.content })), context, stick },
       { signal: ctl.signal, onText: setStreaming })
     setBusy(false); setStreaming('')
-    if (res.cancelled) return
+    if (res.canceled) return
     if (res.error) { setError(res.error); return }
     setThreads((t) => ({ ...t, [pid]: [...(t[pid] || []), { role: 'assistant', content: res.text, sources: sourceMapRef.current }] }))
   }

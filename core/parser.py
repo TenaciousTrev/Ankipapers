@@ -15,6 +15,21 @@ import hashlib
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
+try:
+    from .code_blocks import code_block_crumb_html, code_line_map
+except ImportError:
+    # Loaded as a single file rather than as part of the package (see
+    # tests/test_sub_sup.py, which can point at the installed add-on's copy).
+    import importlib.util as _ilu
+    import os as _os
+
+    _spec = _ilu.spec_from_file_location(
+        "ap_code_blocks", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "code_blocks.py")
+    )
+    _cb = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_cb)
+    code_block_crumb_html, code_line_map = _cb.code_block_crumb_html, _cb.code_line_map
+
 
 @dataclass
 class ParsedCard:
@@ -78,9 +93,11 @@ HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
 # Bullet point: - text or * text
 BULLET_PATTERN = re.compile(r"^(\s*)([-*])\s+(.+)$")
 
-# Stable block id suffix (hidden in source; stripped before card patterns / hash)
+# Stable block id suffix (hidden in source; stripped before card patterns / hash).
+# A run of the same anchor repeated counts as one: older Tab / Shift+Tab code
+# re-appended the anchor on every press, and the copies must not reach Anki.
 BLOCK_ID_SUFFIX = re.compile(
-    r"\s*<!--ap:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-->\s*$",
+    r"\s*<!--ap:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-->(?:<!--ap:\1-->)*\s*$",
     re.IGNORECASE,
 )
 
@@ -377,7 +394,15 @@ def convert_to_anki_cloze(text: str) -> str:
 def parse_document(content: str) -> List[ParsedLine]:
     """Parse an entire document and return a list of ParsedLine objects."""
     lines = content.split("\n")
-    return [parse_line(i, line) for i, line in enumerate(lines)]
+    parsed = [parse_line(i, line) for i, line in enumerate(lines)]
+    # Inside a ``` block nothing is card syntax: ">>" is a shift, "{{" is a
+    # Rust format escape, "#" is a comment. The fences and code lines become
+    # plain text lines.
+    for i in code_line_map(lines):
+        parsed[i].card = None
+        parsed[i].line_type = "code"
+        parsed[i].heading_level = 0
+    return parsed
 
 
 def supplement_text_from_child(child_content: str) -> Optional[str]:
@@ -488,7 +513,7 @@ def render_breadcrumb_crumb(text: str) -> str:
 
     Underscores are deliberately not treated as emphasis, here or on a card
     body: "__init__" and "my_var" are far more common in these notes than
-    _emphasis_, and italicising them would corrupt the code they appear in.
+    _emphasis_, and italicizing them would corrupt the code they appear in.
     """
     if not text:
         return text
@@ -534,12 +559,30 @@ def get_block_breadcrumbs(content: str, line_index: int) -> List[str]:
 
     breadcrumbs = []
     current_indent = card_level
+    code_lines = code_line_map(lines)
 
-    for i in range(line_index - 1, -1, -1):
+    i = line_index
+    while i > 0:
+        i -= 1
         line = lines[i]
         stripped = line.strip()
         if not stripped:
             continue
+
+        # A ``` block is one unit: its parent level is its opening fence's,
+        # and the whole block becomes a single code crumb. Nothing inside it
+        # is examined line by line -- a Python "# comment" is not a heading.
+        block = code_lines.get(i)
+        if block is not None:
+            block_level = get_indent(lines[block.open])
+            if block_level < current_indent:
+                breadcrumbs.insert(0, code_block_crumb_html(lines, block))
+                current_indent = block_level
+            i = block.open
+            if current_indent == 0:
+                break
+            continue
+
         if stripped.startswith('#'):
             break
 
@@ -621,8 +664,11 @@ def get_context_heading(content: str, line_index: int) -> str:
     lines = content.split("\n")
     headings = {}  # level -> heading text
     current_min_level = 4  # Track the highest hierarchy level we've seen (1 is highest)
+    code_lines = code_line_map(lines)
 
     for i in range(line_index, -1, -1):
+        if i in code_lines:
+            continue
         heading_match = HEADING_PATTERN.match(lines[i].strip())
         if heading_match:
             level = len(heading_match.group(1))
@@ -656,7 +702,13 @@ def get_context_heading(content: str, line_index: int) -> str:
     if heading_path:
         context_html += f'<div class="ap-meta-heading">{heading_path}</div>'
     if block_path_list:
-        block_path_str = BREADCRUMB_SEP.join(block_path_list)
+        # A code crumb is a block element; a <br> beside it would only add a
+        # blank line.
+        block_path_str = ""
+        for k, crumb in enumerate(block_path_list):
+            if k and not crumb.startswith("<div") and not block_path_list[k - 1].startswith("<div"):
+                block_path_str += BREADCRUMB_SEP
+            block_path_str += crumb
         context_html += f'<div class="ap-meta-block">{block_path_str}</div>'
         
     return context_html

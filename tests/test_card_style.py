@@ -83,8 +83,8 @@ class EnsureNoteTypes(unittest.TestCase):
 
 
 
-class ColourSchemes(unittest.TestCase):
-    """Settings → Colour scheme also colours the Basic card style. Carolina is
+class ColorSchemes(unittest.TestCase):
+    """Settings → Color scheme also colors the Basic card style. Carolina is
     the base stylesheet itself; the others layer on top of it; Solarized comes
     last so it looks the same in every scheme."""
 
@@ -97,13 +97,13 @@ class ColourSchemes(unittest.TestCase):
             css = cm.card_css("basic", scheme)
             self.assertEqual(css, cm._ANKIPAPERS_CSS + layer, scheme)
 
-    def test_purple_restores_the_original_colours(self):
+    def test_purple_restores_the_original_colors(self):
         css = cm.card_css("basic", "purple")
-        for colour in ("#6c5ce7", "#4169E1", "#123a8a", "#7aa7ff"):
-            self.assertIn(colour, css)
+        for color in ("#6c5ce7", "#4169E1", "#123a8a", "#7aa7ff"):
+            self.assertIn(color, css)
 
-    def test_mono_keeps_the_answer_colours(self):
-        # Greyscale chrome, but the card-type colours come from the base sheet.
+    def test_mono_keeps_the_answer_colors(self):
+        # Grayscale chrome, but the card-type colors come from the base sheet.
         self.assertNotIn("ap-answer-basic", cm._MONO_CSS)
         self.assertNotIn("ap-answer-reversible", cm._MONO_CSS)
         self.assertNotIn(".cloze", cm._MONO_CSS)
@@ -111,8 +111,8 @@ class ColourSchemes(unittest.TestCase):
     def test_crimson_moves_cloze_and_links_off_red(self):
         # Cloze becomes violet and links blue in day and night mode, so
         # neither blends into the crimson; basic / reversible stay as they are.
-        for colour in ("#7a3fb8", "#c4a5f5", "#1d5fbf", "#7fb2ff"):
-            self.assertIn(colour, cm._CRIMSON_CSS)
+        for color in ("#7a3fb8", "#c4a5f5", "#1d5fbf", "#7fb2ff"):
+            self.assertIn(color, cm._CRIMSON_CSS)
         self.assertNotIn("ap-answer-basic", cm._CRIMSON_CSS)
         self.assertNotIn("ap-answer-reversible", cm._CRIMSON_CSS)
 
@@ -136,9 +136,9 @@ class ColourSchemes(unittest.TestCase):
             for var in ("--ap-bg", "--ap-fg", "--ap-bold", "--ap-cloze", "--ap-rev", "--ap-link"):
                 self.assertEqual(pal.count(var + ":"), 2, (scheme, var))
 
-    def test_classic_solarized_slots_default_to_its_own_colours(self):
+    def test_classic_solarized_slots_default_to_its_own_colors(self):
         # Cloze stays green, reversible answers and links blue, underline
-        # coloured rather than drawn, unless a palette re-points them.
+        # colored rather than drawn, unless a palette re-points them.
         for decl in ("--ap-cloze: var(--ap-green)", "--ap-rev: var(--ap-blue)",
                      "--ap-link: var(--ap-blue)", "--ap-u-deco: none"):
             self.assertIn(decl, cm._SOLARIZED_CSS)
@@ -149,7 +149,7 @@ class ColourSchemes(unittest.TestCase):
             pal = cm._SOLARIZED_PALETTES[scheme]
             day_block, night_block = pal.split(cm._SOLARIZED_NIGHT)
             self.assertIn(f"--ap-crumb: {day};", day_block, scheme)
-            # Night sets its own (soft) crumb so the dark day colour can't carry over.
+            # Night sets its own (soft) crumb so the dark day color can't carry over.
             self.assertIn("--ap-crumb:", night_block, scheme)
             self.assertNotIn(day, night_block, scheme)
 

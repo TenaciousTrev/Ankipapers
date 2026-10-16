@@ -22,7 +22,7 @@ function lastSegment(path) { return (path || '').split('/').filter(Boolean).pop(
 
 function tabLabel(s) {
   if (s.chapter) {
-    const n = (s.neighbours?.index ?? s.chapter_index ?? 0) + 1
+    const n = (s.neighbors?.index ?? s.chapter_index ?? 0) + 1
     return `${s.source.kind === 'pdf' ? 'Ch.' : 'Module'} ${n} · ${s.chapter.title}`
   }
   return s.source.title || s.source.original_name || 'Source'

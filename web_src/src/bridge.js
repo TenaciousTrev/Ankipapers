@@ -236,6 +236,15 @@ export async function openUrl(url) {
   await call('open_url', { url });
 }
 
+// The web browser docked beside the editor is a native Qt view
+// (gui/web_browser.py); these only show or hide it and pass the colors.
+export async function setWebBrowser(open, theme = null) {
+  return call('set_web_browser', { open, theme });
+}
+export async function getWebBrowser() {
+  return call('get_web_browser');
+}
+
 // Source panel
 export async function pickPdfFile() {
   return call('pick_pdf_file');
@@ -278,7 +287,7 @@ function createMockBridge() {
     // Dev-only papers for the draft-cards, sources and chat screens.
     {
       id: 'demo-hf', title: 'Cardiology',
-      content: '# Heart failure\n## HFrEF\nFirst-line drugs in HFrEF >> ACEi/ARB/ARNI, β-blocker, MRA, SGLT2i\nEjection fraction cut-off for HFrEF >> ≤ 40%\nSacubitril/valsartan (an ARNI) reduces mortality in HFrEF compared with enalapril.\nNever start it within 36 hours of the last ACE inhibitor dose (angioedema risk).\n## HFpEF\nSGLT2 inhibitors in HFpEF >> fewer HF hospitalisations\n',
+      content: '# Heart failure\n## HFrEF\nFirst-line drugs in HFrEF >> ACEi/ARB/ARNI, β-blocker, MRA, SGLT2i\nEjection fraction cut-off for HFrEF >> ≤ 40%\nSacubitril/valsartan (an ARNI) reduces mortality in HFrEF compared with enalapril.\nNever start it within 36 hours of the last ACE inhibitor dose (angioedema risk).\n## HFpEF\nSGLT2 inhibitors in HFpEF >> fewer HF hospitalizations\n',
       deck_name: 'Medicine', folder_path: 'Medicine', tags: [], card_refs: [],
       created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
     },
@@ -288,7 +297,7 @@ function createMockBridge() {
     })),
     ...['1. Introduction to AI Concept', '2. Introduction to Generative AI and Agents', 'Exam tips'].map((title, i) => ({
       id: 'demo-ai' + i, title,
-      content: `# ${title}\n## What is AI\nArtificial intelligence <> software that imitates human behaviour and capabilities\n`,
+      content: `# ${title}\n## What is AI\nArtificial intelligence <> software that imitates human behavior and capabilities\n`,
       deck_name: 'Default', folder_path: i < 2 ? 'Software Engineering/Azure/AI-901/1. AI Concepts' : 'Software Engineering/Azure/AI-901', tags: [], card_refs: [],
       created_at: Date.now() / 1000, modified_at: Date.now() / 1000,
     })),
@@ -347,8 +356,8 @@ function createMockBridge() {
     rename_folder: () => ({ ok: true }),
     move_folder: () => ({ ok: true }),
     get_media_dir: () => ({ path: '', base_url: '' }),
-    pick_image: () => ({ cancelled: true }),
-    paste_image: () => ({ cancelled: true }),
+    pick_image: () => ({ canceled: true }),
+    paste_image: () => ({ canceled: true }),
     get_clipboard_text: () => ({ text: (typeof window !== 'undefined' && window.__clipboardText) || '' }),
     open_in_browser: ({ note_id }) => { console.log('Mock: Open in browser', note_id); return { ok: true }; },
     diagnose_crosslink: ({ note_id }) => ({
@@ -391,11 +400,13 @@ function createMockBridge() {
         last_generated: first ? { at: Date.now() / 1000 - 7200, paper_id: first.id, title: first.title } : null,
       }
     },
-    import_markdown: () => ({ cancelled: true }),
-    export_markdown: () => ({ cancelled: true }),
-    export_pdf: () => ({ cancelled: true }),
-    export_pdf_html: () => ({ cancelled: true }),
+    import_markdown: () => ({ canceled: true }),
+    export_markdown: () => ({ canceled: true }),
+    export_pdf: () => ({ canceled: true }),
+    export_pdf_html: () => ({ canceled: true }),
     export_papers_to_disk: () => ({ root: '', written: [] }),
+    set_web_browser: ({ open }) => ({ open: !!open }),
+    get_web_browser: () => ({ open: false }),
     get_settings: () => ({
       default_deck: 'Default', auto_save_interval_seconds: 30, font_size: 14,
       font_family: 'JetBrains Mono', editor_theme: 'dark', show_card_indicators: true, show_line_numbers: true, color_scheme: 'carolina', weak_spot_markers: true,
@@ -429,7 +440,7 @@ function createMockBridge() {
       { shortcut: ',2l', phrase: 'line one\nline two' },
     ] }),
     open_url: ({ url }) => { console.log('Mock: Open URL', url); return { ok: true }; },
-    pick_pdf_file: () => ({ cancelled: true }),
+    pick_pdf_file: () => ({ canceled: true }),
     // The viewer from public/, and a test book under web_src/.devtest/ if one is there.
     pdf_viewer_url: () => ({ url: '/pdf_viewer.html' }),
     pdf_url: () => ({ error: 'not implemented' }),
@@ -454,7 +465,7 @@ if (typeof window !== 'undefined') {
     openInBrowser, diagnoseCrosslink, moveCardsToDeck,
     searchPapers, getHomeStats, getNoteStats, unsuspendNote,
     importMarkdown, exportMarkdown, exportPdf, exportPapersToDisk,
-    getSettings, saveSettings, openUrl,
+    getSettings, saveSettings, openUrl, setWebBrowser, getWebBrowser,
     pickPdfFile, getPdfViewerUrl, getPdfUrl, extractPdfText, extractWebText,
     saveSourceLink, loadSourceLink, openSourceAtLocation,
   };

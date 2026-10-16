@@ -1,7 +1,7 @@
 /* ─── AI and sources ─────────────────────────────────────────────────
    Draft cards, the Sources panel, folder sources, the Ask panel and
-   Settings → AI. Colours come only from the theme variables in
-   global.css, so every colour scheme and both themes apply. */
+   Settings → AI. Colors come only from the theme variables in
+   global.css, so every color scheme and both themes apply. */
 
 @keyframes ai-spin { to { transform: rotate(360deg); } }
 .spin { animation: ai-spin 0.9s linear infinite; }

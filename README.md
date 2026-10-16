@@ -21,7 +21,7 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Writing cards](#writing-cards)
-- [Organising a paper](#organising-a-paper)
+- [Organizing a paper](#organizing-a-paper)
 - [Context on your cards](#context-on-your-cards)
 - [Linking papers](#linking-papers)
 - [The hidden anchors](#the-hidden-anchors)
@@ -44,13 +44,13 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 **Draft cards with AI, sources beside your paper, and Ask.**
 - **Draft cards:** select some lines (or click into one) and press **Draft cards** on the toolbar, choose it from the right-click menu, or press `Ctrl+Shift+D`. Card lines written in your syntax (`>>`, `<>`, `{{c1::…}}`) appear under the passage as dashed drafts. They aren't saved and Generate skips them until you accept one (✓), which turns it into an ordinary line. Click a draft to edit it (Enter saves and accepts, Escape stops editing), ✗ discards it, ↻ redoes just that card, and Accept all / Discard all / Redraft work on the whole group. The bottom bar counts drafts apart from your cards.
 - **Sources:** the paperclip on the toolbar opens the Sources panel. Attach a PDF, Word, PowerPoint, HTML or text file, or a web page, to the open paper; files are copied into your Anki Papers folder and stay with the paper. PowerPoint and Word open in a reader view (slides with their speaker notes), and web pages are saved as a copy you can read offline. Select text in a source to **Add to notes**, **Draft cards** or **Ask**; lines added this way remember where they came from, and **Go to source** (right-click) reopens the page with the passage highlighted.
-- **Folder sources (books and courses):** right-click a folder for **Attach a book…** (a PDF), **Attach a web source…** (a Microsoft Learn course or learning path, a docs site, or any page that links to its chapters) or **Attach a file…**. Every paper in the folder sees the folder's sources, labelled "from <folder>". A book or course is split into chapters (from the PDF's bookmarks, or the course's modules), each matched to the paper that covers it; that paper then opens the source at its own chapter. The chapter bar above the paper (previous / next chapter) shows when you turn it on; see below. Name a new paper after a chapter and it links itself; turn on **Settings → Chapters waiting for a paper** to also see the chapters without a paper, faded in the sidebar, and create one with a click. A course's learning paths can stay as headings or become sub-folders.
+- **Folder sources (books and courses):** right-click a folder for **Attach a book…** (a PDF), **Attach a web source…** (a Microsoft Learn course or learning path, a docs site, or any page that links to its chapters) or **Attach a file…**. Every paper in the folder sees the folder's sources, labeled "from <folder>". A book or course is split into chapters (from the PDF's bookmarks, or the course's modules), each matched to the paper that covers it; that paper then opens the source at its own chapter. The chapter bar above the paper (previous / next chapter) shows when you turn it on; see below. Name a new paper after a chapter and it links itself; turn on **Settings → Chapters waiting for a paper** to also see the chapters without a paper, faded in the sidebar, and create one with a click. A course's learning paths can stay as headings or become sub-folders.
 - **Ask:** the speech-bubble button (or `Ctrl+Shift+A`) opens a chat about the open paper. Chips choose what it reads: this paper, the source open in the Sources panel, the whole chapter, the papers this one links to. Answers cite `line N` and source pages as chips that jump there; "Stick to my sources" makes it say when your material doesn't cover something. Any answer can be inserted as an `&&` supplement or sent to Draft cards. Nothing goes into Anki directly.
 - **Settings → AI:** choose Claude, Gemini, or any OpenAI-compatible endpoint (OpenAI, OpenRouter, or a local model in Ollama or LM Studio), paste your API key and press **Test connection**. On a Mac the key is kept in the macOS Keychain, never in the add-on's settings files. Anki Papers' own Python calls the provider over HTTPS; there's no server in between, and nothing to install. Card rules, the card types it may write, and the language are yours to set. Turn AI features off and every AI button disappears; sources keep working without AI.
 - **Folders can be ten levels deep** (it was three).
 - **Learning paths in sub-folders:** when a course's learning paths have their own sub-folders (say `AI-901/1. AI Concepts` and `AI-901/2. AI Apps & Agents`), each path is matched to its sub-folder by name or by where its papers already are. With **Settings → Chapters waiting for a paper** turned on, modules that don't have a paper yet show faded inside their own learning path's folder, in course order, and a paper made for one is created there. You can change which folder a path uses when you attach the course, or later from the folder's right-click menu → **Learning paths and sources…**.
 - **Books show their whole outline:** **Attach a book…** lists every bookmark in the PDF (parts, the chapters inside them and their sections), indented, with printed page numbers. Choose the paper for each one; papers whose names match are filled in, and anything set to "Not a chapter" is left out.
-- **The chapter bar is yours to show:** the line above a chapter paper (which book, which chapter, previous / next) is off by default, keeping the single-toolbar look. Turn it on for one paper with the book button in the toolbar (the choice is saved with the paper), or for every chapter paper with **Settings → Chapter Bar**. While that setting is on, the toolbar button is greyed out.
+- **The chapter bar is yours to show:** the line above a chapter paper (which book, which chapter, previous / next) is off by default, keeping the single-toolbar look. Turn it on for one paper with the book button in the toolbar (the choice is saved with the paper), or for every chapter paper with **Settings → Chapter Bar**. While that setting is on, the toolbar button is grayed out.
 - **Removing a book or web source:** right-click the folder → **Remove "…"**, or use the bin icon in the Sources panel. Your papers and their cards aren't changed.
 
 **Weak spots and an outline.**
@@ -59,25 +59,25 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 - **Search this paper:** on the Outline tab the search box reads **"Search <paper name>…"** and searches only the open paper (including unsaved edits), listing each match as `H1 › H2 › H3 · line N`. The Papers tab still searches everything; each tab keeps its own search.
 - Clicking a line still edits it, exactly as before; the weak-spot box closes as soon as you do.
 
-**Every colour scheme has a Basic and a Solarized card style.** Pick a colour scheme, then Basic or Solarized under Card style: Carolina, Crimson and Black & white each get their own Solarized palette (same monospace layout, the scheme's colours; Black & white draws a real underline), and Original purple keeps the classic Solarized.
+**Every color scheme has a Basic and a Solarized card style.** Pick a color scheme, then Basic or Solarized under Card style: Carolina, Crimson and Black & white each get their own Solarized palette (same monospace layout, the scheme's colors; Black & white draws a real underline), and Original purple keeps the classic Solarized.
 
-**Four colour schemes.** Settings → Colour scheme picks **Original purple**, **Black & white** (greyscale, keeping the green / amber / pink card-type colours), **Carolina blue** (the default) or **Crimson** (crimson & white, with violet cloze and blue links so neither blends into the red), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
+**Four color schemes.** Settings → Color scheme picks **Original purple**, **Black & white** (grayscale, keeping the green / amber / pink card-type colors), **Carolina blue** (the default) or **Crimson** (crimson & white, with violet cloze and blue links so neither blends into the red), in both Dark and Light. The Basic card style on your Anki cards follows the scheme, and every card restyles when you save the setting. Source view is now plain black text on a white page in every scheme and theme. The Settings window also fits on short screens now: only its middle scrolls, so the title and Save button are always in reach.
 
-**Carolina blue and #19468D.** A Carolina blue (#4B9CD3) and #19468D colourway in both themes: deep #19468D-tinted navy with Carolina accents in dark mode, and #19468D accents on pale blue-white in light mode. Reversible cards are now amber and document links violet, so neither blends into the blues. The **Basic** card style follows suit — #19468D headings (pale Carolina in night mode), a Carolina bar beside `&&` notes, amber reversible answers and violet links — and reaches every existing card the next time you Generate. The Solarized card style is unchanged.
+**Carolina blue and #19468D.** A Carolina blue (#4B9CD3) and #19468D colorway in both themes: deep #19468D-tinted navy with Carolina accents in dark mode, and #19468D accents on pale blue-white in light mode. Reversible cards are now amber and document links violet, so neither blends into the blues. The **Basic** card style follows suit — #19468D headings (pale Carolina in night mode), a Carolina bar beside `&&` notes, amber reversible answers and violet links — and reaches every existing card the next time you Generate. The Solarized card style is unchanged.
 
 **A new home page.** A greeting with **New paper** and **Import**; tiles for your papers, your cards (split into basic, reversible and cloze) and the paper you last generated; your three most recently edited papers; and a **heatmap of the cards you've made**, six months at a time with arrows to step back through your history one month per click. One square per day (Sunday at the top of each column, Saturday at the bottom); hover a square for that day's count. Above it: your current streak (consecutive days with at least one new card), the average per day in that streak, and the cards and average per day for the month on the right. "Cards" here means lines turned into cards, counted from Anki's own record of when each note was created, so the history reaches back to your very first card. The guide now sits at the bottom as a row of topics that open in place.
 
-**Search finds the exact line.** Sidebar search now lists every matching line as `Document › H1 › H2 › H3 · line N` instead of a text excerpt, and clicking one opens the paper fully unfolded, centred on that line, which flashes briefly so you can spot it. See [Searching](#searching).
+**Search finds the exact line.** Sidebar search now lists every matching line as `Document › H1 › H2 › H3 · line N` instead of a text excerpt, and clicking one opens the paper fully unfolded, centered on that line, which flashes briefly so you can spot it. See [Searching](#searching).
 
 **Line numbers.** A gutter down the left of the editor and Source view shows each line's number in the paper. Folded sections leave a gap, so a number always means the same line, and it's the same number search shows. Settings → Line Numbers turns them off.
 
-**One toolbar, Chrome-style tabs.** The title box and the separate header row are gone. Everything now sits in a single toolbar under the tabs: back and forward, the deck picker, then every formatting button, with Editor/Source, import and export, the Links panel and the source panel at the right end. The deck picker stretches to fill the spare room, and on a narrow window the right-hand group wraps onto a second line as one piece. Tabs are shaped like Chrome's: the active tab flows into the toolbar below it. **To rename a paper, right-click its tab and choose Rename**, type the new name, and press Enter (Esc cancels). The rename saves straight away, and links to the paper keep working because they point at the paper, not its name. The bottom of the window is now one bar too: status on the left, the card count in the centre, and Save and Generate Cards on the right.
+**One toolbar, Chrome-style tabs.** The title box and the separate header row are gone. Everything now sits in a single toolbar under the tabs: back and forward, the deck picker, then every formatting button, with Editor/Source, import and export, the Links panel and the source panel at the right end. The deck picker stretches to fill the spare room, and on a narrow window the right-hand group wraps onto a second line as one piece. Tabs are shaped like Chrome's: the active tab flows into the toolbar below it. **To rename a paper, right-click its tab and choose Rename**, type the new name, and press Enter (Esc cancels). The rename saves straight away, and links to the paper keep working because they point at the paper, not its name. The bottom of the window is now one bar too: status on the left, the card count in the center, and Save and Generate Cards on the right.
 
 **Bold and italic are saved as `<b>` and `<i>` tags.** `Ctrl+B`, `Ctrl+I` and the toolbar buttons now write `<b>bold</b>` and `<i>italic</i>` — the same tags Anki's own editor uses, and the same way underline, subscript and superscript work — and pressing them again removes the formatting. Older `**bold**` and `*italic*` still display correctly. To bring existing papers in line, **Settings → Bold & italic format → Convert old bold & italic** rewrites them once: it shows how many it found and asks first, saves a backup of every paper to `<profile>/ankipapers/backups/`, and leaves code and maths untouched. Your cards look exactly the same afterwards. Nested formatting such as underlined subscript now also displays correctly in the editor and PDF.
 
 **Generate a whole folder at once.** Right-click a folder in the sidebar and choose **Generate all cards in folder** to make the cards for every paper in that folder and all its subfolders. You confirm once. If some of those cards were edited in Anki and your conflict setting is *Ask*, you get one combined dialog for the whole folder and make one choice for all of it; any other setting is simply followed. A progress bar then names each paper as it's generated — keep Anki Papers open until it finishes; closing waits for the run to complete. A summary at the end totals the created, updated and removed cards, and lists any paper that couldn't be generated and why, while the rest still finish.
 
-**Solarized Styling for your cards.** Settings → Card Style now offers Solarized Styling alongside the built-in Basic look: a monospace, colour-coded card where bold, italic, underline and cloze answers each get their own colour, and the heading breadcrumb sits quietly above the card in small capitals. It's light when Anki is in light mode and dark in dark mode, with every text colour chosen to stay comfortably readable on its background. Saving the setting restyles every Anki Papers card at once, and the style syncs to AnkiWeb and your phone with the cards. Switching back to Basic restores the original look exactly. The design is adapted from Shamim Ahmed's [How to Design Beautiful Anki Cards](https://medshamim.com/med/how-to-design-beautiful-anki-cards) (2018).
+**Solarized Styling for your cards.** Settings → Card Style now offers Solarized Styling alongside the built-in Basic look: a monospace, color-coded card where bold, italic, underline and cloze answers each get their own color, and the heading breadcrumb sits quietly above the card in small capitals. It's light when Anki is in light mode and dark in dark mode, with every text color chosen to stay comfortably readable on its background. Saving the setting restyles every Anki Papers card at once, and the style syncs to AnkiWeb and your phone with the cards. Switching back to Basic restores the original look exactly. The design is adapted from Shamim Ahmed's [How to Design Beautiful Anki Cards](https://medshamim.com/med/how-to-design-beautiful-anki-cards) (2018).
 
 **Your macOS Text Replacements work in the editor (Mac only).** The shortcuts you've set up in System Settings → Keyboard → Text Replacements now expand in Anki Papers: type a shortcut, then Space or Return, and it becomes its phrase. Control+Z brings the shortcut back. It needs a whole word, so `,sig` expands but `word,sig` doesn't, and it never fires inside code or math. Edits you make in System Settings are picked up when you return to the window. macOS doesn't do this on its own here, because Anki's web engine never asks macOS for the list. If you also use a text expander such as aText, keep each shortcut in only one of the two so they don't both fire. It's on by default, and Settings can turn it off.
 
@@ -95,7 +95,7 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **Papers are files on your disk.** Every paper is now written to `<profile>/ankipapers/papers/` as a `.md` file, in real folders mirroring the sidebar, with a small `.ap.json` beside it. The editor reads those files directly. A copy still goes into the Anki collection and rides along to AnkiWeb as a backup. See [Where your papers live](#where-your-papers-live) — and if you were using Anki Papers before this version, there is a **one-time step** to copy your existing papers out.
 
-**Cards keep their identity when you reword them.** Generate used to recognise a card only by its text being byte-for-byte identical, so editing a line destroyed the old card and built a new one — losing its review history, and in some cases leaving a duplicate behind. Every card line now carries a permanent hidden name, so Generate updates the card you edited instead of replacing it. Existing papers adopt this silently on their next Generate: nothing is created, updated, or deleted.
+**Cards keep their identity when you reword them.** Generate used to recognize a card only by its text being byte-for-byte identical, so editing a line destroyed the old card and built a new one — losing its review history, and in some cases leaving a duplicate behind. Every card line now carries a permanent hidden name, so Generate updates the card you edited instead of replacing it. Existing papers adopt this silently on their next Generate: nothing is created, updated, or deleted.
 
 **PDF export** renders the document as it appears in the editor — indentation, tables, images, and cards as clean question-and-answer blocks — on Letter paper with half-inch margins.
 
@@ -105,7 +105,7 @@ Your papers are **plain markdown files on your own disk**, in folders that match
 
 **Pictures on cards.** An image indented under a card now rides along with it, with no `&&` prefix needed, and changes to it reach cards that already exist — adding, swapping or removing a picture updates the note in place instead of requiring you to delete and rebuild the card.
 
-**Tables shrink to fit and sit centred**, with S / M / L / Full width caps on hover (40 / 60 / 80 / 100%). Pressing Enter at the end of a table now steps out of it instead of quietly breaking it apart.
+**Tables shrink to fit and sit centered**, with S / M / L / Full width caps on hover (40 / 60 / 80 / 100%). Pressing Enter at the end of a table now steps out of it instead of quietly breaking it apart.
 
 **A collapsible sidebar.** `Ctrl+\` folds the folder tree down to an icon rail, or drag its edge to any width you like. Hovering the rail slides the tree out over the editor without reflowing your text, and both the width and the collapsed state persist.
 
@@ -219,7 +219,7 @@ Ordinary markdown pipe tables, which means they also render properly on GitHub, 
 | 40 - 49% | Mildly Reduced |
 ```
 
-A table **shrinks to fit its contents and sits centred**, rather than stretching across the whole column. Hover it for **S / M / L / Full** buttons that cap how wide it may grow — 40%, 60%, 80% and 100% of the text column. The default is L. A table only reaches its cap when the content needs the room; past that the cells wrap.
+A table **shrinks to fit its contents and sits centered**, rather than stretching across the whole column. Hover it for **S / M / L / Full** buttons that cap how wide it may grow — 40%, 60%, 80% and 100% of the text column. The default is L. A table only reaches its cap when the content needs the room; past that the cells wrap.
 
 The setting is recorded on the end of the header row:
 
@@ -253,7 +253,7 @@ Without `[[NH]]`, the card would helpfully announce the answer in its own header
 
 ---
 
-## Organising a paper
+## Organizing a paper
 
 Headings and indentation do two jobs at once: they keep the document readable, and they tell each card where it came from.
 
@@ -284,7 +284,7 @@ Cardiology › Electrophysiology › SVT › Atrial flutter
 Ventricular rate in untreated typical flutter >> ~150 (2:1 block)
 ```
 
-The breadcrumb is built from the heading structure above the line, and it updates when you reorganise the document. Add `[[NH]]` to a line to suppress it on that one card.
+The breadcrumb is built from the heading structure above the line, and it updates when you reorganize the document. Add `[[NH]]` to a line to suppress it on that one card.
 
 The same breadcrumb appears in the **Create link…** search results, so two headings called "Treatment" in different documents stay distinguishable — you see `Gastroenterology › IBD › Ulcerative colitis › Treatment`, not just "Treatment".
 
@@ -383,7 +383,7 @@ Every result is a place, not an excerpt: one row per matching line, reading `Doc
 
 ## Saving and generating
 
-- **Save** (`Ctrl+S`) writes the open paper. While it runs, both toolbar buttons grey out so a generate can't start mid-save.
+- **Save** (`Ctrl+S`) writes the open paper. While it runs, both toolbar buttons gray out so a generate can't start mid-save.
 - **Generate Cards** (`Ctrl+G`) saves first, then creates, updates, and removes Anki notes for that paper.
 - **Autosave** runs on a timer (interval configurable in Settings).
 - **Closing the window** waits for any in-flight save or generate to finish, and asks whether to keep waiting if it is slow.
@@ -427,7 +427,7 @@ The profile folder is used rather than the add-on folder because **Anki wipes an
 
 **The disk is what you see.** The editor reads these files, so a change you make to a `.md` in another editor shows up in Anki Papers.
 
-**The collection is your backup.** A copy of every paper still goes into the Anki collection, which means it syncs to AnkiWeb with everything else and lands on your other devices. Nothing about the previous behaviour was removed — disk storage was added in front of it.
+**The collection is your backup.** A copy of every paper still goes into the Anki collection, which means it syncs to AnkiWeb with everything else and lands on your other devices. Nothing about the previous behavior was removed — disk storage was added in front of it.
 
 > **A note on sync size.** The collection copy lives in a single collection-config entry, which Anki transmits on every sync and documents as intended for a few kilobytes. A large library will exceed that comfortably. It works, and it is a useful backstop, but if you sync often with a very large library, this is the part to watch.
 
@@ -507,13 +507,13 @@ The PDF is drawn by the same renderer as the editor, so what you see is what pri
 | `font_family` / `font_size` | Editor typeface |
 | `editor_theme` | `dark`, `light`, or `auto` |
 | `show_card_indicators` | Card markers in the left margin |
-| `color_scheme` | `carolina` (default), `purple`, `mono` or `crimson`: colours the app and the Basic card style |
+| `color_scheme` | `carolina` (default), `purple`, `mono` or `crimson`: colors the app and the Basic card style |
 | `show_line_numbers` | Line numbers down the left of the editor and Source view (on by default) |
 | `show_chapter_bar` | `false` (default): the chapter bar shows only on papers where the toolbar's book button turned it on; `true`: on every paper that is a chapter of its folder's book or course |
 | `show_waiting_chapters` | `false` (default): hidden; `true`: chapters of a folder's book or course without a paper show faded in the sidebar |
 | `toolbar_scroll` | `false` (default): the toolbar wraps onto a second line on a narrow window; `true`: one row that scrolls sideways |
 | `anki_edit_conflict` | `ask`, `preserve`, `overwrite`, or `abort` when a note was edited in Anki |
-| `card_style` | `basic` (built-in) or `solarized` (Solarized Styling), each in the colour scheme's own version — restyles every card when changed |
+| `card_style` | `basic` (built-in) or `solarized` (Solarized Styling), each in the color scheme's own version — restyles every card when changed |
 | `text_replacements_enabled` | Mac only: apply your macOS Text Replacements as you type (on by default) |
 | `ai_enabled` | Show the AI features (Draft cards, Ask). On by default |
 | `ai_provider` | `anthropic` (Claude), `gemini`, or `openai` (any OpenAI-compatible endpoint) |

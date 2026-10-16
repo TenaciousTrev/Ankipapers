@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useImperativeHandle, forwardRef, useCallback,
 import { ExternalLink } from 'lucide-react'
 import { openInBrowser } from '../bridge'
 import { getLineIndexAtCursor, getLineTextAtIndex, resolveNoteIdForLine } from '../crossLink'
-import { BASIC_CARD_RE, toggleTagSegment, findTextReplacement, isInsideCodeFence } from '../blockFormat'
+import { BASIC_CARD_RE, toggleTagSegment, findTextReplacement } from '../blockFormat'
 
 // ─── Card Counting ──────────────────────────────────
 function countCards(text) {
@@ -269,7 +269,7 @@ function highlightLine(line) {
   return escapeHtml(line)
 }
 
-// One block per line, so each line can be found (to centre and highlight it
+// One block per line, so each line can be found (to center and highlight it
 // when a search result lands here) and so a soft-wrapped line keeps a single
 // number beside its first row; the number is drawn in the left padding by
 // CSS (.with-line-numbers .src-line::before). An empty line holds a
@@ -311,7 +311,7 @@ const SourceEditor = forwardRef(function SourceEditor({ content, onChange, onCar
   }, [cardRefs])
 
   useImperativeHandle(ref, () => ({
-    // Put the caret at the start of a line (0-based), centre it, and give it
+    // Put the caret at the start of a line (0-based), center it, and give it
     // the same brief highlight the editor uses. Used when a search result or
     // link lands while Source view is open.
     goToLine: (lineIndex) => {
@@ -382,15 +382,15 @@ const SourceEditor = forwardRef(function SourceEditor({ content, onChange, onCar
       const lineStart = value.lastIndexOf('\n', caret - 1) + 1
       const lineEnd = value.indexOf('\n', caret)
       const lineText = value.slice(lineStart, lineEnd === -1 ? value.length : lineEnd)
-      const lineIndex = value.slice(0, lineStart).split('\n').length - 1
-      const hit = isInsideCodeFence(value.split('\n'), lineIndex)
-        ? null
-        : findTextReplacement(lineText, caret - lineStart, textReplacements)
+      const hit = findTextReplacement(lineText, caret - lineStart, textReplacements)
       if (hit) {
         e.preventDefault()
         onHistoryCheckpoint?.()   // first Ctrl+Z brings the shortcut back
         const at = lineStart + hit.start
-        const insert = hit.phrase + (isSpaceKey ? ' ' : '\n')
+        // On a table row a line break would split the row and break the
+        // table, so a phrase written on several lines goes in as one.
+        const phrase = /^\s*\|/.test(lineText) ? hit.phrase.replace(/\s*\n\s*/g, ' ') : hit.phrase
+        const insert = phrase + (isSpaceKey ? ' ' : '\n')
         ta.value = value.slice(0, at) + insert + value.slice(caret)
         ta.selectionStart = ta.selectionEnd = at + insert.length
         ta.dispatchEvent(new Event('input', { bubbles: true }))

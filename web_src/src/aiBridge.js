@@ -21,7 +21,7 @@ export function runJob(cmd, args = {}, { onText, signal } = {}) {
       const tick = async () => {
         if (signal?.aborted) {
           await call('ai_cancel', { job })
-          resolve({ cancelled: true })
+          resolve({ canceled: true })
           return
         }
         const st = await call('ai_poll', { job })
@@ -29,7 +29,7 @@ export function runJob(cmd, args = {}, { onText, signal } = {}) {
         if (!st || st.status === 'missing') { resolve({ error: 'The request was lost. Try again.' }); return }
         if (st.status === 'running') { setTimeout(tick, POLL_MS); return }
         if (st.status === 'error') { resolve({ error: st.error }); return }
-        if (st.status === 'cancelled') { resolve({ cancelled: true }); return }
+        if (st.status === 'canceled') { resolve({ canceled: true }); return }
         resolve({ ...(st.result || {}), _text: st.text })
       }
       setTimeout(tick, POLL_MS)
@@ -136,7 +136,7 @@ export function createAiSourcesMock(papers) {
       return startJob({ status: 'done', result: { text, model: cfg.model } }, text, 1500)
     },
     ai_poll: ({ job }) => (jobs[job] ? jobs[job]() : { status: 'missing' }),
-    ai_cancel: ({ job }) => { jobs[job] = () => ({ status: 'cancelled' }); return { ok: true } },
+    ai_cancel: ({ job }) => { jobs[job] = () => ({ status: 'canceled' }); return { ok: true } },
     src_for_paper: ({ paper_id }) => {
       const p = papers.find((x) => x.id === paper_id)
       const out = (reg.papers[paper_id] || []).map((sid) => ({ source: pub(reg.items[sid]), scope: 'paper' }))
@@ -149,7 +149,7 @@ export function createAiSourcesMock(papers) {
           const title = (pid) => papers.find((x) => x.id === pid)?.title
           out.push({ source: pub(reg.items[e.source_id]), scope: 'folder', folder, chapter: idx >= 0 ? chs[idx] : null,
             chapter_count: chs.length, page_offset: e.page_offset || 0,
-            neighbours: idx >= 0 ? { index: idx, count: chs.length,
+            neighbors: idx >= 0 ? { index: idx, count: chs.length,
               prev: chs[idx - 1] ? { ...chs[idx - 1], paper_title: title(chs[idx - 1].paper_id) } : null,
               next: chs[idx + 1] ? { ...chs[idx + 1], paper_title: title(chs[idx + 1].paper_id) } : null } : undefined,
             chapters: idx >= 0 ? undefined : chs.map((c) => ({ ...c, paper_title: title(c.paper_id) })) })

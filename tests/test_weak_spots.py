@@ -1,6 +1,6 @@
 """Weak-spot review stats (a read-only view of Anki).
 
-note_review_stats() summarises each line's note from Anki's cards / revlog /
+note_review_stats() summarizes each line's note from Anki's cards / revlog /
 notes tables; it runs here against a small fake collection.
 
 Run with:  python3 -m unittest discover -s tests

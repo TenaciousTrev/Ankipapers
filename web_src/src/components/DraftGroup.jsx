@@ -10,7 +10,7 @@ import { Sparkles, Check, CheckCheck, X, RefreshCw, Loader2, BookOpen, Globe, Fi
  * stops editing.
  */
 
-// One line of card syntax, coloured like the editor colours card lines.
+// One line of card syntax, colored like the editor colors card lines.
 // Plain text nodes only -- the model's output is never put into innerHTML.
 export function CardSyntax({ text, basicSep = '>>', revSep = '<>' }) {
   const t = text || ''

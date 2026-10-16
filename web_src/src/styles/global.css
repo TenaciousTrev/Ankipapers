@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════
    Anki Papers — Design System
    ═══════════════════════════════════════════════════ */
-/* Colourway: Carolina blue (#4B9CD3) and #19468D.
+/* Colorway: Carolina blue (#4B9CD3) and #19468D.
    Dark mode sits on deep shades of #19468D's hue with Carolina as the accent;
    light mode uses #19468D as the accent (it reads well as text and under white
    text) with Carolina for fills and highlights. --tint-rgb is the Carolina
@@ -179,6 +179,9 @@ body {
    pointer leaves the 5px handle constantly during a drag. */
 body.is-resizing-sidebar { cursor: col-resize; user-select: none; }
 body.is-resizing-sidebar .sidebar-resizer { background: var(--accent); }
+body.is-resizing-sources { cursor: col-resize; user-select: none; }
+body.is-resizing-sources iframe { pointer-events: none; }
+body.is-resizing-sources .source-panel-resizer { background: var(--accent); }
 /* Past the snap threshold the handle turns red-ish to say "let go and it
    collapses" rather than silently doing something unexpected. */
 body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
@@ -559,7 +562,7 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
 .source-editor-wrap {
   flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
 }
-/* Source view is plain black on white in every theme and colour scheme. */
+/* Source view is plain black on white in every theme and color scheme. */
 .source-editor-stack {
   background: #ffffff;
   position: relative;
@@ -640,7 +643,7 @@ body.is-sidebar-snapping .sidebar-resizer { background: var(--orange); }
   color: var(--text-muted); user-select: none; pointer-events: none;
   font-variant-numeric: tabular-nums;
 }
-/* Headings are taller than a normal line; centre the number on their text
+/* Headings are taller than a normal line; center the number on their text
    (.block-heading's 8px top margin plus a 24 / 20 / 17px line). */
 .block-row-inner:has(.block-h1) .block-line-number { padding-top: 19px; }
 .block-row-inner:has(.block-h2) .block-line-number { padding-top: 17px; }
@@ -913,7 +916,7 @@ textarea.block-input.block-input-textarea {
 
 /* ── Document links ───────────────────────────────────────────────
    A phrase pointing at a header (or a whole document) elsewhere.
-   Double-click opens the target. The colour is theme-aware: true navy
+   Double-click opens the target. The color is theme-aware: true navy
    is unreadable on the dark theme, so dark mode uses a lighter blue
    that still reads as "navy" in character. Tune these two values to
    taste — nothing else depends on them. */
@@ -1300,7 +1303,7 @@ textarea.block-input.block-input-textarea {
    it while reviewing. */
 .cloze-hint { color: var(--pink-hint); font-weight: 600; }
 
-/* Tables shrink to fit their content and sit centred, capped at a width the
+/* Tables shrink to fit their content and sit centered, capped at a width the
    author picks. Real table layout (rather than one grid per row) is what
    makes that possible: each row used to be its own grid, and columns only
    lined up because every row split the same full width into equal 1fr
@@ -1313,7 +1316,7 @@ textarea.block-input.block-input-textarea {
   table-layout: auto;
   width: max-content;          /* as wide as the content needs… */
   max-width: 80%;              /* …until it hits the cap, then cells wrap */
-  margin-inline: auto;         /* centred like an image */
+  margin-inline: auto;         /* centered like an image */
   border: 1px solid var(--border);
   border-radius: 0;
 }
@@ -1539,7 +1542,7 @@ textarea.block-input.block-input-textarea {
   margin-top: 22px; align-self: flex-start;
   font-size: 9.5px; line-height: 15px; color: var(--text-muted); text-align: right;
 }
-/* Weekday labels and the six months stay together on one row, centred
+/* Weekday labels and the six months stay together on one row, centered
    between the arrows; a window too narrow for them scrolls sideways rather
    than wrapping months under labels that no longer line up. */
 .heatmap-center { flex: 1; display: flex; justify-content: safe center; gap: 10px; min-width: 0; overflow-x: auto; }
@@ -2204,7 +2207,7 @@ textarea.block-input.block-input-textarea {
   opacity: 0.85;
 }
 /* ─── Tab bar (Chrome-style) ────────────────────── */
-/* The active tab is the toolbar's colour and has no bottom edge, so it and
+/* The active tab is the toolbar's color and has no bottom edge, so it and
    the toolbar read as one piece; small inverse curves at its bottom corners
    (::before / ::after) flare it into the toolbar the way Chrome does.
    Inactive tabs have no fill and are split by thin dividers. */
@@ -2318,7 +2321,7 @@ sub, sup { line-height: 0; }
 .generate-conflict-paper { margin-right: 8px; color: var(--text-primary); }
 
 /* ═══════════════════════════════════════════════════
-   COLOUR SCHEMES (Settings → Colour scheme)
+   COLOR SCHEMES (Settings → Color scheme)
    ═══════════════════════════════════════════════════
    Carolina blue / #19468D is the base palette above. The other schemes
    re-point the same variables, keyed on <html data-scheme> and data-theme;
@@ -2400,7 +2403,7 @@ sub, sup { line-height: 0; }
   --code-bg: var(--bg-surface);
 }
 
-/* ── Black & white: greyscale, keeping the card-type colours ── */
+/* ── Black & white: grayscale, keeping the card-type colors ── */
 [data-scheme="mono"]:not([data-theme="light"]) {
   --bg-primary: #0a0a0a;
   --bg-secondary: #111111;
@@ -2550,7 +2553,7 @@ sub, sup { line-height: 0; }
    WEAK SPOTS AND OUTLINE
    ═══════════════════════════════════════════════════ */
 /* Lines whose cards you keep missing (Settings → Weak-Spot Markers). Amber
-   and red stay the same in every colour scheme: they mean "attention". */
+   and red stay the same in every color scheme: they mean "attention". */
 :root, [data-theme="dark"] {
   --weak: #e8a33c;
   --weak-bg: rgba(232, 163, 60, 0.07);
@@ -2593,7 +2596,7 @@ sub, sup { line-height: 0; }
 .weak-spots-btn:hover { filter: brightness(1.05); }
 .weak-spots-btn.active { background: var(--weak); color: #2a1a00; }
 
-/* Weak-spot hover box (portalled to <body>; positioned by WeakSpotHover) */
+/* Weak-spot hover box (portaled to <body>; positioned by WeakSpotHover) */
 .hover-box {
   position: fixed; top: 0; left: 0; visibility: hidden; z-index: 1500;
   background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px;
@@ -2644,3 +2647,72 @@ sub, sup { line-height: 0; }
 /* The Outline tab's search box with no paper open */
 .sidebar-search-trigger:disabled { opacity: 0.55; cursor: default; box-shadow: none; }
 .sidebar-search-trigger:disabled:hover { border-color: var(--border); }
+
+/* ─── Code blocks (``` … ```) ─────────────────────── */
+/* One panel drawn across the block's rows: the opening fence is its header
+   (language, Copy), the closing fence its bottom edge, and each code line a
+   row in between. See CodeRow in BlockEditor.jsx and codeBlocks.js. */
+.block-row.block-row-code { margin: 0; align-items: stretch; }
+.block-row-code .block-collapse-wrapper { margin-top: 0; margin-bottom: 0; }
+.block-row.block-row-code:hover { background: transparent; }
+.block-row-code .block {
+  padding: 0 4px; min-height: 0; border-radius: 0;
+  background: var(--code-bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.block-row-code .block:hover,
+.block-row-code .block.block-editing { background: var(--code-bg) !important; }
+.block-row-code-open { margin-top: 4px !important; }
+.block-row-code-close { margin-bottom: 4px !important; }
+.block-row-code-open .block { border-top: 1px solid var(--border); border-radius: 8px 8px 0 0; }
+.block-row-code-close .block { border-bottom: 1px solid var(--border); border-radius: 0 0 8px 8px; }
+.block-row-code .block-collapse-wrapper,
+.block-row-code .block-handle { margin-top: 0; }
+.block-row-inner:has(.block-row-code) .block-line-number { padding-top: 3px; }
+
+.code-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 3px 8px; font-family: var(--font-sans); font-size: 11px;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.code-head-label { letter-spacing: 0.02em; }
+.code-copy {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 11px; padding: 1px 4px; border-radius: 4px;
+}
+.code-copy:hover { color: var(--text-primary); background: var(--bg-hover); }
+.code-foot { height: 6px; }
+.code-line,
+.code-fence-text,
+textarea.block-input.block-input-code {
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.6;
+}
+.code-line {
+  padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--text-primary); min-height: 1.6em;
+}
+.code-fence-text { padding: 2px 8px; color: var(--text-muted); white-space: pre; }
+textarea.block-input.block-input-code { padding-top: 0; padding-bottom: 0; min-height: 1.6em; }
+
+/* Syntax colors (dark, then light). Same classes on cards: ap-tok-*. */
+.tok-kw { color: #c792ea; }
+.tok-str { color: #c3e88d; }
+.tok-com { color: #8b97a3; font-style: italic; }
+.tok-num { color: #f78c6c; }
+.tok-fn { color: #82aaff; }
+.tok-type { color: #ffcb6b; }
+.tok-tag { color: #f07178; }
+.tok-attr { color: #ffcb6b; }
+.tok-prop { color: #82aaff; }
+[data-theme="light"] .tok-kw { color: #8250df; }
+[data-theme="light"] .tok-str { color: #0a7d32; }
+[data-theme="light"] .tok-com { color: #6e7781; }
+[data-theme="light"] .tok-num { color: #b35900; }
+[data-theme="light"] .tok-fn { color: #0550ae; }
+[data-theme="light"] .tok-type { color: #953800; }
+[data-theme="light"] .tok-tag { color: #116329; }
+[data-theme="light"] .tok-attr { color: #953800; }
+[data-theme="light"] .tok-prop { color: #0550ae; }

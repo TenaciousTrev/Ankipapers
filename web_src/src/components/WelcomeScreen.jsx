@@ -20,6 +20,8 @@ import {
   History,
   MessageCircle,
   Paperclip,
+  Braces,
+  Globe,
 } from 'lucide-react'
 
 function formatRelativeTime(modifiedAt) {
@@ -62,12 +64,14 @@ function RefGroup({ icon: Icon, title, blurb, children }) {
 const GUIDE_TOPICS = [
   { id: 'start', icon: Sparkles, label: 'Start here' },
   { id: 'flashcards', icon: FileText, label: 'Making flashcards' },
-  { id: 'organising', icon: Hash, label: 'Organising notes' },
+  { id: 'organizing', icon: Hash, label: 'Organizing notes' },
+  { id: 'code', icon: Braces, label: 'Code blocks' },
   { id: 'linking', icon: Link2, label: 'Linking papers' },
   { id: 'graph', icon: Share2, label: 'The graph' },
   { id: 'tabs', icon: Layers, label: 'Tabs and search' },
   { id: 'ai', icon: MessageCircle, label: 'Draft cards and Ask' },
   { id: 'sources', icon: Paperclip, label: 'Sources, books and courses' },
+  { id: 'browser', icon: Globe, label: 'Web browser' },
   { id: 'keys', icon: Keyboard, label: 'Keys' },
   { id: 'disk', icon: HardDrive, label: 'Papers on disk' },
 ]
@@ -281,7 +285,7 @@ export default function WelcomeScreen({
                   Hides the words in braces and asks you to fill in the gap.
                 </Ref>
                 <Ref code="# Heading" tone="heading">
-                  A title. It organises your notes and never becomes a card.
+                  A title. It organizes your notes and never becomes a card.
                 </Ref>
               </RefGroup>
           )}
@@ -336,16 +340,16 @@ export default function WelcomeScreen({
                 </Ref>
                 <Ref code="Card style" tone="muted">
                   How your cards look in Anki. Settings → Card Style switches between
-                  the built-in Basic look and Solarized Styling: a calm, colour-coded
+                  the built-in Basic look and Solarized Styling: a calm, color-coded
                   style that is light in Anki's light mode and dark in dark mode.
                   Saving restyles every card at once, phone included after a sync.
                 </Ref>
               </RefGroup>
           )}
-          {guide === 'organising' && (
+          {guide === 'organizing' && (
               <RefGroup
                 icon={Hash}
-                title="Organising your notes"
+                title="Organizing your notes"
                 blurb="Headings and indenting do two jobs at once: they keep the document readable, and they tell each card where it came from."
               >
                 <Ref code="# Topic" tone="heading">
@@ -368,7 +372,7 @@ export default function WelcomeScreen({
                 <Ref code="| Column | Column |" tone="muted">
                   A table. Write the rows with pipes between the cells and put a row
                   of <code>| --- | --- |</code> under the first one to make it the
-                  header. Tables are only as wide as they need to be and sit centred;
+                  header. Tables are only as wide as they need to be and sit centered;
                   hover one for <b>S / M / L / Full</b> buttons that decide how wide
                   it may grow before the cells start wrapping. Pressing Enter inside a
                   table adds a row, and pressing it at the very end steps back out.
@@ -417,6 +421,57 @@ export default function WelcomeScreen({
                 </Ref>
               </RefGroup>
           )}
+          {guide === 'code' && (
+              <RefGroup
+                icon={Braces}
+                title="Code blocks"
+                blurb="Write code in a paper and quiz yourself on it. A block is drawn as one panel, colored for Python, Rust, HTML, CSS and JavaScript, and nothing inside it ever becomes a card."
+              >
+                <Ref code="```python" tone="muted">
+                  Starts a block. Put the language straight after the three backticks:
+                  python, rust, html, css or javascript (py, rs, js and ts work too).
+                  Press Enter and the closing <code>```</code> is added for you, with your
+                  cursor on the first line of code. Any other language name still
+                  works, just without the colors.
+                </Ref>
+                <Ref code="```" tone="muted">
+                  Ends the block. A <code>```</code> with nothing closing it stays an
+                  ordinary line, so a forgotten one can never turn the rest of the
+                  paper into code.
+                </Ref>
+                <Ref code="Tab / Shift+Tab" tone="key">
+                  Indents a line of code. Press Tab at the start of the line after a
+                  colon or an opening brace, twice for two steps, and Shift+Tab to take
+                  it back out. Each step is that language's own size: 4 spaces in Python
+                  and Rust, 2 in HTML, CSS and JavaScript. Enter starts the next line at
+                  the same indent, and Backspace at the start of a line moves it out a
+                  step. Tab on a <code>```</code> line moves the whole block, and the
+                  cards under it, one level.
+                </Ref>
+                <Ref code="➵" tone="muted">
+                  What Tab writes behind the scenes, one per step. Spaces at the start
+                  of a line already mean “tucked under the line above”, so code stores
+                  its indentation as ➵ instead and your outline and your code never get
+                  mixed up. You never see it in the editor; the plain text view,
+                  Ctrl+Shift+E, is the one place it shows. If you edit code there, type ➵
+                  rather than a real tab. A text replacement for ➵
+                  {IS_MAC ? ' (System Settings → Keyboard → Text Replacements)' : ''} works
+                  too, if you'd rather, and does the same as Tab.
+                </Ref>
+                <Ref code="Question >> Answer under ```" tone="basic">
+                  Indent a card under the closing <code>```</code> and the whole block,
+                  colored, sits at the top of the card in its breadcrumb. That's how to
+                  ask “What is the output?” or “Does this compile?”. Works for all three
+                  kinds of card, and for cards tucked in deeper still.
+                </Ref>
+                <Ref code="Copy" tone="key">
+                  The Copy button in a block's header copies the code with real spaces,
+                  ready to run. Exporting to Markdown or PDF does the same. Going the
+                  other way, importing Markdown or pasting code into a block turns its
+                  spaces into ➵ for you.
+                </Ref>
+              </RefGroup>
+          )}
           {guide === 'linking' && (
               <RefGroup
                 icon={Link2}
@@ -452,7 +507,7 @@ export default function WelcomeScreen({
                 <Ref code="<!--ap:…-->" tone="muted">
                   If you open a paper in a text editor you'll see these on some lines.
                   They are the name that makes a line findable — links point at them,
-                  and card generation uses them to recognise a card you have reworded
+                  and card generation uses them to recognize a card you have reworded
                   instead of replacing it. The editor hides them and keeps them out of
                   your cards and PDFs. Leave them alone and they look after
                   themselves; delete one and whatever pointed at that line loses it.
@@ -607,13 +662,47 @@ export default function WelcomeScreen({
                   the previous and next chapter. It's hidden by default to keep one
                   toolbar. Press the book button in the toolbar to show it on that paper
                   (it remembers), or turn on <b>Settings → Chapter Bar</b> to show it on
-                  every chapter paper; while that's on, the toolbar button is greyed out.
+                  every chapter paper; while that's on, the toolbar button is grayed out.
                 </Ref>
                 <Ref code="Remove a source" tone="muted">
                   Right-click the folder and choose <b>Remove “…”</b>, or use the bin icon in
                   the Sources panel. <b>Learning paths and sources…</b> in the same menu
                   changes which sub-folder a learning path uses. Your papers and their cards
                   are never changed.
+                </Ref>
+              </RefGroup>
+          )}
+          {guide === 'browser' && (
+              <RefGroup
+                icon={Globe}
+                title="Web browser"
+                blurb="A small browser that opens beside your paper, for looking something up without leaving Anki Papers."
+              >
+                <Ref code="Globe button" tone="key">
+                  At the right end of the toolbar. It opens the browser to the right
+                  of your paper; click it again, or ✕ in the browser's own bar, to
+                  close it. Drag the line between the two to make it wider or
+                  narrower, and that width is remembered. It reopens on the last page
+                  you were on.
+                </Ref>
+                <Ref code="Address bar" tone="key">
+                  Type a web address, or anything else to search Google for it. ←, →
+                  and ↻ work as in any browser, and ↗ opens the page in your usual
+                  browser. Links that would open a new window open here instead.{' '}
+                  {IS_MAC ? '⌘L' : 'Ctrl+L'} jumps to the address bar.
+                </Ref>
+                <Ref code="Staying signed in" tone="muted">
+                  Sites you sign in to remember you, as in any browser. This browser is
+                  separate from Chrome and Safari and keeps its logins as cookies in a
+                  folder on this computer{IS_MAC ? <> (<code>~/Library/Application Support/Anki/QtWebEngine</code>)</> : ''},
+                  not in {IS_MAC ? 'your Keychain' : 'a password manager'}. It never saves passwords; you
+                  type one once and the site keeps you signed in after that.
+                </Ref>
+                <Ref code="🗑" tone="key">
+                  Clear browsing data. After asking, it signs you out of every site and
+                  forgets this browser's cookies, history, cache and saved site data.
+                  It starts fresh straight away, and the old files are deleted the next
+                  time Anki starts.
                 </Ref>
               </RefGroup>
           )}

@@ -35,7 +35,7 @@ export default function useDrafts({ paperRef, onError }) {
     abortRef.current[paperId] = ctl
     const res = await aiDraft({ text: ctx.text, heading_path: ctx.headingPath || [], existing: ctx.existing || [] }, { signal: ctl.signal })
     if (groupsRef.current[paperId]?.key !== key) return
-    if (res.cancelled) { patch(paperId, () => null); return }
+    if (res.canceled) { patch(paperId, () => null); return }
     if (res.error) { patch(paperId, (g) => ({ ...g, status: 'error', error: res.error })); return }
     const items = (res.cards || []).map((text) => ({ id: `d${++seq.current}`, text, pageLabel: ctx.source?.pageLabel || null }))
     patch(paperId, (g) => (items.length

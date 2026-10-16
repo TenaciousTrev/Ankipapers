@@ -23,6 +23,7 @@ import {
   tableSizeOf, stripTableSize, TABLE_SIZE_DEFAULT, BASIC_CARD_RE,
 } from './blockFormat'
 import { stripApBlockId } from './docLinks'
+import { findCodeBlocks, blockCodeText, highlightLines } from './codeBlocks'
 
 /** Width of one indent level in the printed document, in px. */
 const INDENT_PX = 22
@@ -151,7 +152,16 @@ export function renderBody(content, mediaDir = '') {
   const fmt = (t) => formatInlineRaw(t, mediaDir)
   const lines = String(content ?? '').split('\n')
   const out = []
+  // A ``` block prints as one code box, its ➵ turned back into indentation.
+  const codeAt = new Map(findCodeBlocks(lines).map((b) => [b.open, b]))
   for (let i = 0; i < lines.length; i++) {
+    const code = codeAt.get(i)
+    if (code) {
+      const html = highlightLines(blockCodeText(lines, code), code.lang).join('\n')
+      out.push(`<div class="row codeblock" style="margin-left:${indentLevelOf(lines[i]) * INDENT_PX}px"><pre><code>${html}</code></pre></div>`)
+      i = code.close
+      continue
+    }
     const body = printableBody(lines[i])
     const type = getBlockType(body)
     if (type === 'table-row' || type === 'table-separator') {
@@ -244,6 +254,14 @@ figcaption{ font-size:11px; color:var(--text-muted); margin-top:3px; }
 .table th{ font-weight:600; color:var(--text-primary); background:#f5f5f8; }
 code{ background:#f2f2f6; color:var(--code); padding:1px 5px; border-radius:4px;
       font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:11.5px; }
+.codeblock{ margin:5px 0; break-inside:avoid; page-break-inside:avoid; }
+.codeblock pre{ background:#f6f8fa; border:1px solid var(--border); border-radius:6px;
+                padding:7px 10px; white-space:pre-wrap; color:#1f2328;
+                font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:11px; line-height:1.5; }
+.codeblock code{ background:none; color:inherit; padding:0; font-size:inherit; }
+.tok-kw{color:#8250df} .tok-str{color:#0a7d32} .tok-com{color:#6e7781;font-style:italic}
+.tok-num{color:#b35900} .tok-fn{color:#0550ae} .tok-type{color:#953800}
+.tok-tag{color:#116329} .tok-attr{color:#953800} .tok-prop{color:#0550ae}
 .ap-link{ color:var(--ap-link); text-decoration:underline;
           text-decoration-thickness:1.5px; text-underline-offset:2px; }
 .math-inline,.math-block{ font-family:'JetBrains Mono',ui-monospace,monospace;

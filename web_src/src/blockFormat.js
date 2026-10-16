@@ -92,41 +92,32 @@ export function buildReplacementMap(items) {
 
 /**
  * The replacement to apply when Space or Return is pressed at `caret`, or
- * null. The shortcut is the run of non-space characters just before the
- * caret, back to the previous space or the start of the line, and must equal
- * a shortcut exactly -- so ",sig" fires but "word,sig" does not, and a
- * shortcut that is the start of a longer one never fires early. Never fires
- * inside inline code (`...`) or inline math ($...$, $$...$$).
+ * null. The candidate is the run of non-space characters just before the
+ * caret, back to the previous space or the start of the line. The whole run
+ * is tried first, then shorter endings of it, longest first -- but a shorter
+ * ending only counts when the character in front of it is not a letter,
+ * digit or underscore. So ",sig" fires, and so do "`,sig", "(,sig" and
+ * "|,sig", while "word,sig" does not; a shortcut that is the start of a
+ * longer one never fires early.
+ *
+ * It fires everywhere a line can hold text -- inline code, ``` blocks, $math$
+ * and tables included -- as macOS does in every text field. Skipping code and
+ * math used to make a shortcut typed after a stray backtick silently do
+ * nothing.
  * Returns { start, end, shortcut, phrase }, positions within `text`.
  */
 export function findTextReplacement(text, caret, replacements) {
   if (!replacements || !replacements.size || !(caret > 0)) return null
-  const m = String(text).slice(0, caret).match(/(?:^|\s)(\S+)$/)
+  const m = String(text).slice(0, caret).match(/\S+$/)
   if (!m) return null
-  const shortcut = m[1]
-  const phrase = replacements.get(shortcut)
-  if (phrase == null) return null
-  const start = caret - shortcut.length
-  // An odd number of delimiters before the shortcut means it sits inside an
-  // unclosed span: inline code, then block math, then inline math.
-  const pre = String(text).slice(0, start)
-  const odd = (re, str = pre) => ((str.match(re) || []).length % 2) === 1
-  if (odd(/`/g)) return null
-  if (odd(/\$\$/g)) return null
-  if (odd(/(?<!\\)\$/g, pre.replace(/\$\$/g, ''))) return null
-  return { start, end: caret, shortcut, phrase }
-}
-
-/** True when line `index` sits inside a ``` fenced code block (or is a fence). */
-export function isInsideCodeFence(lines, index) {
-  let open = false
-  for (let i = 0; i <= index && i < lines.length; i++) {
-    if (/^\s*```/.test(lines[i])) {
-      if (i === index) return true
-      open = !open
-    }
+  const word = m[0]
+  for (let i = 0; i < word.length; i++) {
+    if (i > 0 && /[\p{L}\p{N}_]/u.test(word[i - 1])) continue
+    const shortcut = word.slice(i)
+    const phrase = replacements.get(shortcut)
+    if (phrase != null) return { start: caret - shortcut.length, end: caret, shortcut, phrase }
   }
-  return open
+  return null
 }
 
 // ─── Block type detection ───────────────────────────

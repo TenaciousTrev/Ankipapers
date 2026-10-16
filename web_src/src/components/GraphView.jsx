@@ -6,7 +6,7 @@ import { collectLinks, buildGraph } from '../docLinks'
  * Graph of how the documents connect.
  *
  * The layout is a small force simulation (repulsion + edge springs + a gentle
- * pull to centre) run on an SVG. Hand-rolled rather than pulled from a
+ * pull to center) run on an SVG. Hand-rolled rather than pulled from a
  * charting library so the add-on bundle stays small and there is no runtime
  * dependency to keep working inside Anki's webview.
  *
@@ -14,7 +14,7 @@ import { collectLinks, buildGraph } from '../docLinks'
  * embedded Chromium rather than a browser tab:
  *
  *   1. The simulation STOPS. Once nothing is moving any more the animation
- *      frame is cancelled outright, so an open graph costs nothing until you
+ *      frame is canceled outright, so an open graph costs nothing until you
  *      touch it. It used to coast forever at 60fps — measured at roughly half
  *      a CPU core, indefinitely, on a graph of five nodes.
  *
@@ -97,7 +97,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
 
   // ── force simulation ──
   useLayoutEffect(() => {
-    // Centre on the ACTUAL canvas, not a guess — otherwise the cluster settles
+    // Center on the ACTUAL canvas, not a guess — otherwise the cluster settles
     // in a corner on wide screens.
     const box = svgRef.current?.getBoundingClientRect()
     const W = Math.max(320, box?.width || 900)
@@ -147,7 +147,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
         const fx = (dx / d) * f, fy = (dy / d) * f
         a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy
       }
-      // centre + integrate
+      // center + integrate
       let maxMove = 0
       for (const n of ns) {
         n.vx += (W / 2 - n.x) * 0.004
@@ -260,7 +260,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
     if (dragRef.current) {
       const n = simRef.current.byId.get(dragRef.current.id)
       if (n) n.fixed = false
-      kick(0.25)   // let the neighbours settle around where you dropped it
+      kick(0.25)   // let the neighbors settle around where you dropped it
     }
     dragRef.current = null
     panRef.current = null
@@ -281,7 +281,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
 
   const q = query.trim().toLowerCase()
   const matches = (n) => q && n.label.toLowerCase().includes(q)
-  const neighbours = useMemo(() => {
+  const neighbors = useMemo(() => {
     if (!hover) return null
     const set = new Set([hover])
     for (const e of visible.edges) {
@@ -326,7 +326,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
         >
           <g ref={rootGRef}>
             {visible.edges.map((e) => {
-              const dim = neighbours && !(neighbours.has(e.from) && neighbours.has(e.to))
+              const dim = neighbors && !(neighbors.has(e.from) && neighbors.has(e.to))
               return (
                 <line
                   key={e.key}
@@ -347,7 +347,7 @@ export default function GraphView({ papers, currentPaperId, onOpen, onClose }) {
               const r = n.kind === 'header'
                 ? Math.max(4.5, 8.5 - (n.level || 1) * 1.1)
                 : Math.min(22, 12 + Math.sqrt(n.degree) * 2.2)
-              const dim = neighbours && !neighbours.has(n.id)
+              const dim = neighbors && !neighbors.has(n.id)
               return (
                 <g
                   key={n.id}

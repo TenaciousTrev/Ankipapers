@@ -375,7 +375,7 @@ class Registry:
                     gf[group] = target
         self.save(data)
 
-    def chapter_neighbours(self, folder: str, source_id: str, key: str) -> Dict[str, Any]:
+    def chapter_neighbors(self, folder: str, source_id: str, key: str) -> Dict[str, Any]:
         data = self.load()
         for e in data["folders"].get(folder, []):
             if e.get("source_id") != source_id:

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { AlertTriangle, ExternalLink, PlayCircle } from 'lucide-react'
 
 // The review history of a weak line, opened ABOVE it when you rest the pointer
-// on it (Settings → Weak-Spot Markers). Portalled to <body> and placed against
+// on it (Settings → Weak-Spot Markers). Portaled to <body> and placed against
 // the line's on-screen rectangle so the editor's scrolling can't clip it; a
 // line at the very top of the window has no room above, so it opens below.
 

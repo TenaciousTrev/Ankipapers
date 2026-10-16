@@ -85,7 +85,7 @@ _ANKIPAPERS_CSS = """
 
 /* Inline code inside a breadcrumb. The card's own `code` rule is a white chip
    with a border, which at the breadcrumb's 16px competes with the answer for
-   attention — a breadcrumb is meant to be quiet context. Keep the colour that
+   attention — a breadcrumb is meant to be quiet context. Keep the color that
    marks it as code and drop the chip. */
 .ap-meta-block code,
 .ap-meta-heading code {
@@ -101,6 +101,69 @@ _ANKIPAPERS_CSS = """
   background: none;
   border: none;
 }
+
+/* ─── Code block in the breadcrumb ─────────────── */
+/* A ``` block that a card is indented under (parser.code_block_crumb_html).
+   A block of its own, so the crumbs before and after it stay on their own
+   centered lines (as an inline-block it shared a line with the crumb above,
+   which dropped to its bottom edge). fit-content keeps it shrink-wrapped and
+   centered like the rest of the breadcrumb; the code itself reads
+   left-aligned, in its own colors, whatever the card style. */
+.ap-crumb-code {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px auto 4px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.ap-crumb-code pre {
+  margin: 0;
+  padding: 10px 14px;
+  overflow-x: auto;
+  white-space: pre;
+  font-family: Menlo, 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #1f2328;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+.ap-crumb-code code,
+.card .ap-crumb-code code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+.ap-tok-kw { color: #8250df; }
+.ap-tok-str { color: #0a7d32; }
+.ap-tok-com { color: #6e7781; font-style: italic; }
+.ap-tok-num { color: #b35900; }
+.ap-tok-fn { color: #0550ae; }
+.ap-tok-type { color: #953800; }
+.ap-tok-tag { color: #116329; }
+.ap-tok-attr { color: #953800; }
+.ap-tok-prop { color: #0550ae; }
+.nightMode .ap-crumb-code pre,
+.night_mode .ap-crumb-code pre {
+  color: #e6edf3;
+  background: #1e2430;
+  border-color: #3a4250;
+}
+.nightMode .ap-tok-kw, .night_mode .ap-tok-kw { color: #c792ea; }
+.nightMode .ap-tok-str, .night_mode .ap-tok-str { color: #c3e88d; }
+.nightMode .ap-tok-com, .night_mode .ap-tok-com { color: #8b97a3; }
+.nightMode .ap-tok-num, .night_mode .ap-tok-num { color: #f78c6c; }
+.nightMode .ap-tok-fn, .night_mode .ap-tok-fn { color: #82aaff; }
+.nightMode .ap-tok-type, .night_mode .ap-tok-type { color: #ffcb6b; }
+.nightMode .ap-tok-tag, .night_mode .ap-tok-tag { color: #f07178; }
+.nightMode .ap-tok-attr, .night_mode .ap-tok-attr { color: #ffcb6b; }
+.nightMode .ap-tok-prop, .night_mode .ap-tok-prop { color: #82aaff; }
 
 /* ─── Context Image ─────────────────────────────── */
 .ap-meta-image {
@@ -262,7 +325,7 @@ img {
   width: max-content;      /* only as wide as the content needs… */
   max-width: 80%;          /* …then cap it and let the cells wrap */
   border-collapse: collapse;
-  margin: 16px auto;       /* centred, like a picture */
+  margin: 16px auto;       /* centered, like a picture */
   font-size: 16px;
   table-layout: auto;
 }
@@ -341,7 +404,7 @@ _SOLARIZED_CSS = """
    built-in stylesheet above. Inspired by Shamim Ahmed's "How to Design
    Beautiful Anki Cards" (medshamim.com, 2018): his slate palette is the dark
    version, used when Anki is in dark mode; the light version keeps his hues,
-   deepened so every text colour clears the WCAG 4.5:1 contrast minimum on the
+   deepened so every text color clears the WCAG 4.5:1 contrast minimum on the
    light background. */
 .card {
   --ap-bg: #F5F7FA;
@@ -355,7 +418,7 @@ _SOLARIZED_CSS = """
   --ap-code: #A8480C;
   --ap-code-bg: #E6EAF0;
   --ap-rule: rgba(51,59,69,0.14);
-  /* Slots a colour scheme can re-point (see _SOLARIZED_PALETTES); the classic
+  /* Slots a color scheme can re-point (see _SOLARIZED_PALETTES); the classic
      look takes cloze from green and reversible answers and links from blue. */
   --ap-cloze: var(--ap-green);
   --ap-rev: var(--ap-blue);
@@ -378,7 +441,7 @@ _SOLARIZED_CSS = """
 }
 
 /* ── Solarized theme layer (inspired by Shamim Ahmed's Anki design) ──
-   Appended after the built-in stylesheet; every colour comes from the
+   Appended after the built-in stylesheet; every color comes from the
    --ap-* variables above, so the dark and light versions share one ruleset. */
 .card { background: var(--ap-bg) !important; color: var(--ap-fg); }
 .card .ankipapers-card {
@@ -387,8 +450,8 @@ _SOLARIZED_CSS = """
   text-align: left; max-width: 700px; word-wrap: break-word;
 }
 .card .ap-question, .card .ap-answer, .card .ap-cloze { font-size: 18px; font-weight: 400; color: var(--ap-fg); }
-/* Only the breadcrumb (and the Papers button) is centred; everything below
-   the breadcrumb's rule reads left-aligned. Pictures and tables stay centred
+/* Only the breadcrumb (and the Papers button) is centered; everything below
+   the breadcrumb's rule reads left-aligned. Pictures and tables stay centered
    by their own auto margins. */
 .card .ap-meta { border-bottom: 1px solid var(--ap-rule); text-align: center; }
 .card .ap-meta-heading { color: var(--ap-crumb); letter-spacing: 0.08em; }
@@ -421,15 +484,15 @@ _SOLARIZED_CSS = """
 
 CARD_STYLES = ("basic", "solarized")
 
-# ═══ Colour schemes ═══════════════════════════════════════════════════════
-# The app's colour scheme (Settings → Colour scheme) also colours the Basic
+# ═══ Color schemes ═══════════════════════════════════════════════════════
+# The app's color scheme (Settings → Color scheme) also colors the Basic
 # card style. _ANKIPAPERS_CSS above is the Carolina blue / #19468D look; the
 # other schemes are layered on top of it here, repeating each selector of the
 # base sheet (day and night) so they win on order alone. Solarized is appended
-# after the scheme layer and overrides every one of these colours, so it is
+# after the scheme layer and overrides every one of these colors, so it is
 # the same in every scheme.
 _PURPLE_CSS = """
-/* ═══ Colour scheme: original purple ═══ */
+/* ═══ Color scheme: original purple ═══ */
 .ankipapers-card { color: #1a1a2e; }
 .ap-meta-heading { color: #6c5ce7; }
 .nightMode .ap-meta-heading,
@@ -459,9 +522,9 @@ _PURPLE_CSS = """
 .night_mode .ankipapers-card .ap-link { color: #7aa7ff; text-decoration-color: rgba(122, 167, 255, 0.75); }
 """
 
-# Greyscale, except the answer colours, which tell card types apart.
+# Grayscale, except the answer colors, which tell card types apart.
 _MONO_CSS = """
-/* ═══ Colour scheme: black & white ═══ */
+/* ═══ Color scheme: black & white ═══ */
 .ankipapers-card { color: #1a1a2e; }
 .ap-meta-heading { color: #111111; }
 .nightMode .ap-meta-heading,
@@ -489,7 +552,7 @@ _MONO_CSS = """
 # Crimson & white. Cloze turns violet and links blue, so neither reads as
 # part of the red; basic (green) and reversible (amber) are unchanged.
 _CRIMSON_CSS = """
-/* ═══ Colour scheme: crimson & white ═══ */
+/* ═══ Color scheme: crimson & white ═══ */
 .ap-meta-heading { color: #9e1b32; }
 .nightMode .ap-meta-heading,
 .night_mode .ap-meta-heading { color: #ff8a9a; }
@@ -518,7 +581,7 @@ _CRIMSON_CSS = """
 .night_mode .ankipapers-card .ap-cloze-hint { color: #d9c6fa; }
 """
 
-# Solarized in each colour scheme: the same Solarized rules, re-pointed to the
+# Solarized in each color scheme: the same Solarized rules, re-pointed to the
 # scheme's palette by redefining the --ap-* variables (day, then night). Each
 # block repeats Solarized's own selectors and comes after it, so it wins on
 # order. Original purple keeps the classic Solarized palette untouched.
@@ -556,7 +619,7 @@ _SOLARIZED_PALETTES = {
     ),
     "mono": _solarized_palette(
         "black & white",
-        # Greyscale, keeping the answer colours; underline is a real underline.
+        # Grayscale, keeping the answer colors; underline is a real underline.
         {"bg": "#F7F7F7", "fg": "#222222", "muted": "#6B6B6B", "bold": "#000000", "italic": "#555555",
          "underline": "#222222", "u-deco": "underline", "green": "#1E7A45", "cloze": "#C2306F",
          "rev": "#A8620A", "link": "#111111", "code": "#222222", "code-bg": "#E8E8E8",
@@ -573,10 +636,10 @@ _SCHEME_CSS = {"carolina": "", "purple": _PURPLE_CSS, "mono": _MONO_CSS, "crimso
 
 
 def card_css(style: Optional[str] = "basic", color_scheme: Optional[str] = "carolina") -> str:
-    """The stylesheet for a card style in a colour scheme. "basic" is the
-    built-in look coloured by the scheme; "solarized" layers Solarized Styling
+    """The stylesheet for a card style in a color scheme. "basic" is the
+    built-in look colored by the scheme; "solarized" layers Solarized Styling
     on top, in the scheme's Solarized palette (original purple keeps the
-    classic one). Anything unrecognised falls back to basic / carolina, so a
+    classic one). Anything unrecognized falls back to basic / carolina, so a
     bad config value can never break the cards."""
     style = (style or "basic").strip().lower()
     scheme = (color_scheme or "carolina").strip().lower()
@@ -1420,7 +1483,7 @@ def generate_cards(
     #
     # Why this matters: _resolve_existing_ref_for_card() matches on the anchor
     # first and falls back to content_hash. A card with no anchor is therefore
-    # recognised only by its text being byte-for-byte identical, so editing
+    # recognized only by its text being byte-for-byte identical, so editing
     # the line orphans its note — the old note is no longer claimed and a new
     # one is created in its place. Anchoring the line makes the match survive
     # any edit to the wording.

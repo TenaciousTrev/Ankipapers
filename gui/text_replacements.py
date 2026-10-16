@@ -4,7 +4,7 @@ Replacements), for the editor to apply as you type.
 Why this exists: macOS only applies text replacements inside apps built on
 Apple's own text views. Anki's web engine (Qt WebEngine / Chromium) never asks
 macOS for the list, so replacements silently do nothing in Anki Papers. The
-editor re-creates the behaviour itself, and this module supplies the list.
+editor re-creates the behavior itself, and this module supplies the list.
 
 It uses Apple's documented API, NSSpellChecker.userReplacementsDictionary,
 called through the Objective-C runtime with ctypes -- Anki does not bundle

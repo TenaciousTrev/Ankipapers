@@ -50,7 +50,7 @@ export default function BottomToolbar({ cardCounts, viewMode, modifiedAt, draftC
   const isBusy = externalIsSaving || localIsSaving || localIsGenerating
 
   return (
-    // Three columns: status on the left, card counts centred on the whole bar
+    // Three columns: status on the left, card counts centered on the whole bar
     // (not just the space between), Save/Generate on the right.
     <div className="bottom-toolbar">
       <div className="bottom-status">

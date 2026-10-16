@@ -8,7 +8,7 @@ import { BookOpen, Globe, ChevronLeft, ChevronRight, FilePlus } from 'lucide-rea
  */
 export default function ChapterStrip({ entry, onGo }) {
   if (!entry?.chapter) return null
-  const nb = entry.neighbours || {}
+  const nb = entry.neighbors || {}
   const isBook = entry.source.kind === 'pdf'
   const Icon = isBook ? BookOpen : Globe
   const off = entry.page_offset || 0
