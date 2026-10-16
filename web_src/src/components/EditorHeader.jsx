@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react'
-import { Pencil, Eye, FileDown, FileInput, FileText, Link2, ChevronLeft, ChevronRight, Sparkles, MessageCircle, Paperclip, BookOpen, Globe } from 'lucide-react'
+import { Pencil, Eye, FileDown, FileInput, FileText, Link2, ChevronLeft, ChevronRight, Sparkles, MessageCircle, Paperclip, BookOpen, Globe, Share } from 'lucide-react'
 import FormattingButtons from './FormattingToolbar'
 
 // The one toolbar under the tabs: back/forward, deck picker and formatting
 // buttons on the left (the deck picker stretches to fill the row), view
 // mode / import-export / panel toggles pinned to the right. The paper is
 // renamed from its tab (right-click → Rename), not from here.
-export default function EditorHeader({ canBack, canForward, onBack, onForward, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onFormat, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown, aiEnabled = true, onDraftCards, showAskPanel, onToggleAsk, showWebBrowser = false, onToggleWebBrowser, sourceCount = 0, scrollable = false, chapterBar = null }) {
+export default function EditorHeader({ canBack, canForward, onBack, onForward, deckName, decks, viewMode, showSourcePanel, showLinksPanel, onFormat, onDeckChange, onViewChange, onToggleSource, onToggleLinks, onExportPdf, onExportMarkdown, onImportMarkdown, onShare, aiEnabled = true, onDraftCards, showAskPanel, onToggleAsk, showWebBrowser = false, onToggleWebBrowser, sourceCount = 0, scrollable = false, chapterBar = null }) {
   // Settings → Toolbar → Scroll sideways: one row that scrolls instead of
   // wrapping. A mouse wheel scrolls it too, like the tab strip.
   const barRef = useRef(null)
@@ -77,7 +77,7 @@ export default function EditorHeader({ canBack, canForward, onBack, onForward, d
 
         <div className="fmt-sep" />
 
-        <button className="header-icon-btn" title="Import Markdown" onClick={onImportMarkdown}>
+        <button className="header-icon-btn" title="Import Markdown or a shared paper" onClick={onImportMarkdown}>
           <FileInput size={16} />
         </button>
         <button className="header-icon-btn" title="Export Markdown" onClick={onExportMarkdown}>
@@ -86,6 +86,11 @@ export default function EditorHeader({ canBack, canForward, onBack, onForward, d
         <button className="header-icon-btn" title="Export PDF" onClick={onExportPdf}>
           <FileDown size={16} />
         </button>
+        {onShare && (
+          <button className="header-icon-btn" title="Share this paper with its pictures (.zip)" onClick={onShare}>
+            <Share size={16} />
+          </button>
+        )}
 
         <div className="fmt-sep" />
 

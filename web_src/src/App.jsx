@@ -5,7 +5,7 @@ import {
   deleteFolder, renameFolder, moveFolder,
   pickImage, pasteImage, exportPdf, exportMarkdown, importMarkdown, getSettings, saveSettings as saveSettingsBridge,
   getMediaDir, getTextReplacements, convertEmphasisToTags, openInBrowser, moveCardsToDeck, saveSourceLink, loadSourceLink, openUrl,
-  getNoteStats, unsuspendNote, setWebBrowser, getWebBrowser,
+  getNoteStats, unsuspendNote, setWebBrowser, getWebBrowser, sharePaper, shareFolder,
 } from './bridge'
 import { buildOutline } from './outline'
 import { buildCardRefIndex, resolveNoteIdFromIndex } from './crossLink'
@@ -871,11 +871,48 @@ export default function App() {
     const result = await importMarkdown()
     if (result.canceled) return
     if (result.error) { showToast(`Import failed: ${result.error}`, 'error'); return }
+    if (result.share) await refreshFolders()
     await refreshPapers()
     setPaper(result)
     setActivePaperId(result.id)
-    showToast('Markdown imported', 'success')
-  }, [refreshPapers])
+    if (!result.share) { showToast('Markdown imported', 'success'); return }
+    const pics = `${result.pictures} picture${result.pictures === 1 ? '' : 's'}`
+    const missing = result.missing?.length
+      ? ` (${result.missing.length} picture${result.missing.length === 1 ? ' was' : 's were'} missing on the sender's computer)`
+      : ''
+    showToast(result.kind === 'folder'
+      ? `Imported the folder “${result.folder}”: ${result.papers} paper${result.papers === 1 ? '' : 's'}, ${pics}${missing}`
+      : `Imported “${result.title}” with ${pics}${missing}`, 'success')
+  }, [refreshPapers, refreshFolders])
+
+  // Share: the paper or folder plus every picture it shows, as one .zip.
+  const reportShare = useCallback((result, what) => {
+    if (!result || result.canceled) return
+    if (result.error) { showToast(`Share failed: ${result.error}`, 'error'); return }
+    const pics = `${result.pictures} picture${result.pictures === 1 ? '' : 's'}`
+    if (result.missing?.length) {
+      // It worked; a picture already missing here just couldn't come along.
+      showToast(`Shared ${what} with ${pics}. Not found, so left out: ${result.missing.join(', ')}`, 'success')
+    } else {
+      showToast(`Shared ${what} with ${pics}`, 'success')
+    }
+  }, [])
+
+  const handleSharePaper = useCallback(async () => {
+    if (!paper || isBusyRef.current) return
+    setBusy(true)
+    try {
+      await persistPaper(paper)
+      reportShare(await sharePaper(paper.id), `“${paper.title}”`)
+    } finally {
+      setBusy(false)
+    }
+  }, [paper, setBusy, persistPaper, reportShare])
+
+  const handleShareFolder = useCallback(async (folderPath) => {
+    if (paper) await persistPaper(paper)
+    reportShare(await shareFolder(folderPath), `the folder “${folderPath.split('/').pop()}”`)
+  }, [paper, persistPaper, reportShare])
 
   const handleExportMarkdown = useCallback(async () => {
     if (!paper || isBusyRef.current) return
@@ -1692,6 +1729,7 @@ export default function App() {
         onDeleteFolder={handleDeleteFolder}
         onRenameFolder={handleRenameFolder}
         onGenerateFolder={handleGenerateFolder}
+        onShareFolder={handleShareFolder}
         onMoveFolder={handleMoveFolder}
         collapsed={sidebarCollapsed}
         width={sidebarWidth}
@@ -1747,6 +1785,7 @@ export default function App() {
               onToggleLinks={() => setShowLinksPanel((v) => !v)}
               onExportPdf={handleExportPdf} onExportMarkdown={handleExportMarkdown}
               onImportMarkdown={handleImportMarkdown}
+              onShare={handleSharePaper}
               aiEnabled={aiOn}
               onDraftCards={handleDraftFromEditor}
               sourceCount={sourcesList.length}

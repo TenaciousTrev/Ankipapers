@@ -104,3 +104,9 @@ gui_hooks.top_toolbar_did_init_links.append(
         )
     )
 )
+
+# Keep Tools → Check Media from listing (and Delete Unused from trashing) the
+# pictures papers show but no card uses. See gui/media_protect.py.
+from .gui.media_protect import protect_paper_media  # noqa: E402
+
+gui_hooks.media_check_did_finish.append(protect_paper_media)

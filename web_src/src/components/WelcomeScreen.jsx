@@ -22,6 +22,7 @@ import {
   Paperclip,
   Braces,
   Globe,
+  Share,
 } from 'lucide-react'
 
 function formatRelativeTime(modifiedAt) {
@@ -73,6 +74,7 @@ const GUIDE_TOPICS = [
   { id: 'sources', icon: Paperclip, label: 'Sources, books and courses' },
   { id: 'browser', icon: Globe, label: 'Web browser' },
   { id: 'keys', icon: Keyboard, label: 'Keys' },
+  { id: 'sharing', icon: Share, label: 'Sharing and pictures' },
   { id: 'disk', icon: HardDrive, label: 'Papers on disk' },
 ]
 
@@ -788,6 +790,47 @@ export default function WelcomeScreen({
                   where the column happened to end — it also rejoins words split
                   across a line, so <code>propa-</code> and <code>gation</code> come
                   back as one word. It's in the right-click menu too.
+                </Ref>
+              </RefGroup>
+          )}
+          {guide === 'sharing' && (
+              <RefGroup
+                icon={Share}
+                title="Sharing and pictures"
+                blurb="A paper only stores each picture's name; the picture itself lives in your Anki media folder. Sharing packs the pictures in with the papers, so whoever opens it sees exactly what you see."
+              >
+                <Ref code="Share button" tone="key">
+                  On the toolbar, next to Export PDF. Saves this paper and every picture
+                  it shows as one .zip you can email or drop in a shared folder. If a
+                  picture is missing from your media folder it's left out, and you're
+                  told which.
+                </Ref>
+                <Ref code="Right-click a folder" tone="key">
+                  <b>Share folder with pictures…</b> does the same for a whole folder:
+                  every paper in it and its subfolders, keeping their structure.
+                </Ref>
+                <Ref code="Import" tone="key">
+                  The Import button opens a share as well as Markdown. Its pictures go
+                  into your Anki media folder, and a shared folder arrives as a folder of
+                  its own (named “Name (2)” if you already have one). Links between the
+                  shared papers keep working. Cards aren't included; press Ctrl+G to make
+                  your own.
+                </Ref>
+                <Ref code="_ap_3f9a….png" tone="muted">
+                  Pictures you paste or add are named from their contents. The same
+                  picture always gets the same name, so sharing never duplicates one and
+                  two different pictures can't collide. The leading underscore is Anki's
+                  own sign for “in use”, so its Check Media never lists them as unused,
+                  on your phone either.
+                </Ref>
+                <Ref code="Check Media" tone="muted">
+                  Anki's Tools → Check Media counts a picture as unused when no card
+                  shows it, which used to include pictures that only appear in a paper.
+                  With Anki Papers installed it leaves every picture your papers show off
+                  that list, so <b>Delete Unused</b> can't remove them, and its report
+                  says how many it kept. Pictures from before the underscore names are
+                  only guarded this way on your computer, so don't press Delete Unused in
+                  AnkiMobile or AnkiDroid's Check Media.
                 </Ref>
               </RefGroup>
           )}

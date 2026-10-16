@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
-import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap, ListTree, BookOpen, Globe, Paperclip } from 'lucide-react'
+import { FilePlus, FolderPlus, FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Trash2, Pencil, ExternalLink, Home, X, Settings, CornerUpLeft, Search, PanelLeftClose, PanelLeftOpen, Zap, ListTree, BookOpen, Globe, Paperclip, Share } from 'lucide-react'
 import OutlinePanel from './OutlinePanel'
 
 // Hovering the rail slides the tree out; both numbers are deliberate. 260ms in
@@ -60,7 +60,7 @@ function SearchMatchBadges({ result }) {
   )
 }
 
-export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, collapsed = false, width = 260, onToggleCollapse, outline = null, outlineTitle = '', outlineCurrentLine = 0, onJumpToHeading, currentPaper = null, folderSources = {}, onFolderSource, onCreateWaitingChapter, showWaiting = false }) {
+export default function Sidebar({ papers, folders, activePaperId, onSelectPaper, onGoToLine, onCreatePaper, onDeletePaper, onCreateFolder, onMovePaper, onMoveFolder, onSelectFolder, selectedFolder, onGoHome, onOpenSettings, onDeleteFolder, onRenameFolder, onGenerateFolder, onShareFolder, collapsed = false, width = 260, onToggleCollapse, outline = null, outlineTitle = '', outlineCurrentLine = 0, onJumpToHeading, currentPaper = null, folderSources = {}, onFolderSource, onCreateWaitingChapter, showWaiting = false }) {
   // Papers (the folder tree) or Outline (the open paper's headings).
   const [tab, setTab] = useState('papers')
   const [peeking, setPeeking] = useState(false)
@@ -766,6 +766,13 @@ export default function Sidebar({ papers, folders, activePaperId, onSelectPaper,
                       <Zap size={13} />
                       <span>Generate all cards in folder</span>
                     </div>
+                    {onShareFolder && (
+                      <div className="context-item" title="Every paper in it and its subfolders, with their pictures, as one .zip"
+                        onClick={() => { const f = contextMenu.folder; setContextMenu(null); onShareFolder(f.path) }}>
+                        <Share size={13} />
+                        <span>Share folder with pictures…</span>
+                      </div>
+                    )}
                     <div className="context-menu-sep" />
                   </>
                 )}

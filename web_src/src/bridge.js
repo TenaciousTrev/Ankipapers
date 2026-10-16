@@ -236,6 +236,15 @@ export async function openUrl(url) {
   await call('open_url', { url });
 }
 
+// Sharing: a .zip with the paper (or folder) and every picture it shows
+// (core/share.py). Importing one goes through importMarkdown().
+export async function sharePaper(paperId) {
+  return call('share_paper', { paper_id: paperId });
+}
+export async function shareFolder(folderPath) {
+  return call('share_folder', { folder_path: folderPath });
+}
+
 // The web browser docked beside the editor is a native Qt view
 // (gui/web_browser.py); these only show or hide it and pass the colors.
 export async function setWebBrowser(open, theme = null) {
@@ -405,6 +414,8 @@ function createMockBridge() {
     export_pdf: () => ({ canceled: true }),
     export_pdf_html: () => ({ canceled: true }),
     export_papers_to_disk: () => ({ root: '', written: [] }),
+    share_paper: () => ({ canceled: true }),
+    share_folder: () => ({ canceled: true }),
     set_web_browser: ({ open }) => ({ open: !!open }),
     get_web_browser: () => ({ open: false }),
     get_settings: () => ({
@@ -465,7 +476,7 @@ if (typeof window !== 'undefined') {
     openInBrowser, diagnoseCrosslink, moveCardsToDeck,
     searchPapers, getHomeStats, getNoteStats, unsuspendNote,
     importMarkdown, exportMarkdown, exportPdf, exportPapersToDisk,
-    getSettings, saveSettings, openUrl, setWebBrowser, getWebBrowser,
+    getSettings, saveSettings, openUrl, setWebBrowser, getWebBrowser, sharePaper, shareFolder,
     pickPdfFile, getPdfViewerUrl, getPdfUrl, extractPdfText, extractWebText,
     saveSourceLink, loadSourceLink, openSourceAtLocation,
   };
